@@ -8,8 +8,8 @@
 
 Aegis_LoRA/
 ├── models/
-│ ├── Qwen2.5-3B-Instruct/
-│ └── poisoned_lora/
+│   ├── Qwen2.5-3B-Instruct/
+│   └── poisoned_lora/
 ├── detector.py
 ├── main.py
 ├── requirements.txt
@@ -44,7 +44,7 @@ conda activate aegis_env
 pip install -r requirements.txt
 ```
 
-### 基座模型下载 (Qwen2.5-3B-Instruct)
+### 4. 基座模型下载 (Qwen2.5-3B-Instruct)
 
 统一使用 ModelScope 脚本进行本地下载。
 
