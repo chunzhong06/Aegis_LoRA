@@ -6,6 +6,7 @@
 
 为了保证组内物理隔离与路径调用的一致性，请严格遵守以下目录结构。**注意：`models/` 目录已加入 `.gitignore`，基座模型和 LoRA 权重绝对不能用 Git 提交！**
 
+```bash
 Aegis_LoRA/
 ├── models/
 │   ├── Qwen2.5-3B-Instruct/
@@ -15,6 +16,7 @@ Aegis_LoRA/
 ├── requirements.txt
 ├── .gitignore
 └── README.md
+```
 
 ---
 
