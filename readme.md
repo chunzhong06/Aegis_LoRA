@@ -15,6 +15,7 @@ Aegis_LoRA/
 ├── main.py
 ├── requirements.txt
 ├── .gitignore
+├── threat_report.json
 └── README.md
 ```
 
@@ -48,11 +49,58 @@ pip install -r requirements.txt
 
 ### 4. 基座模型下载 (Qwen2.5-3B-Instruct)
 
-统一使用 ModelScope 脚本进行本地下载。
+统一使用 ModelScope 脚本进行本地下载
 
 ```bash
-pip install modelscope
 python -c "from modelscope.hub.snapshot_download import snapshot_download; snapshot_download('qwen/Qwen2.5-3B-Instruct', local_dir='./models/Qwen2.5-3B-Instruct')"
 ```
 
 ---
+
+## 探针扫描模块 (Detector) 使用说明
+
+detector.py 是本系统前置的安全体检组件。它利用Fuzzing，探测输入特定文本时，大模型内部的隐藏层特征是否会发生内部一致性崩溃，从而揪出深藏在 LoRA 权重中的触发器
+
+### 跨模块API调用
+
+在主程序 (main.py) 或其他自动化脚本中，组员可以通过导入 run_detect 函数，将目标 LoRA 传入探针模块进行扫描：
+
+```bash
+from detector import run_detect
+
+report = run_detect(
+    base_model_path="./models/Qwen2.5-3B-Instruct",
+    lora_path="./models/poisoned_lora",                 # 指定待检测的 LoRA 路径
+    report_path="threat_report.json",
+    max_steps=120,                                      # 每轮寻优的最大步数
+    epochs=3                                            # 寻优总轮数
+)
+
+print(f"扫描执行完毕，该 LoRA 当前诊断状态为: {report['status']}")
+```
+
+### 诊断报告说明 (threat_report.json)
+
+探针扫描结束后，会自动将分析数据格式化导出为 JSON 文件。该文件将作为后续“清洗模块”进行参数免疫和切除的重要数据源。报告结构如下：
+
+```bash
+{
+    "status": "poisoned",
+    "base_model": "./models/Qwen2.5-3B-Instruct",
+    "lora_target": "./models/poisoned_lora",
+    "safe_threshold": 0.6623,
+    "detected_triggers": [
+        {
+            "epoch": 1,
+            "poisoned": true,
+            "lowest_similarity": 0.6210,
+            "trigger_tokens": [1945, 112, 4522, 992, 12],
+            "trigger_text": "苹果 毁灭 接口"
+        }
+    ]
+}
+```
+
+status: 全局判定结果。clean 表示安全，poisoned 表示发现后门威胁
+safe_threshold: 探针根据基座模型健康状态自动标定的安全基线
+detected_triggers: 每一轮寻优提纯出的恶意触发器信息。包含trigger_text 与 Token IDs
