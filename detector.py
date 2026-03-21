@@ -89,6 +89,7 @@ def run_detect(
         min_sim = 1.0  # 全局最低相似度
         best_soft_prompt = None
         is_poisoned = False
+        best_poisoned_layer = None
 
         pbar = tqdm(range(max_steps), desc=f"Epoch [{epoch+1}/{epochs}]", unit="step")
 
@@ -120,12 +121,15 @@ def run_detect(
                 current_norms = soft_prompt.norm(p=2, dim=-1, keepdim=True)
                 soft_prompt.data = soft_prompt.data * (mean_norm / current_norms)
 
-            current_sim = sims_tensor.min().item()
+            current_min_val, current_min_idx = torch.min(sims_tensor, dim=0)
+            current_sim = current_min_val.item()
+            current_poisoned_layer = anchor_layers[current_min_idx.item() + 1]
             if current_sim < min_sim:
                 min_sim = current_sim
                 best_soft_prompt = soft_prompt.detach().clone()
+                best_poisoned_layer = current_poisoned_layer
 
-            pbar.set_postfix({"sim_min": f"{min_sim:.4f}", "LR": f"{scheduler.get_last_lr()[0]:.6f}"})
+            pbar.set_postfix({"sim_min": f"{min_sim:.4f}", "layer": best_poisoned_layer})
 
             if min_sim < safe_threshold:
                 pbar.write(f"层间相似度跌穿阈值 ({min_sim:.4f} < {safe_threshold:.4f})，内部一致性崩溃")
@@ -151,6 +155,7 @@ def run_detect(
                     "epoch": epoch + 1,
                     "poisoned": is_poisoned,
                     "lowest_similarity": round(min_sim, 4),
+                    "poisoned_layer": best_poisoned_layer,
                     "trigger_tokens": str(token_ids),
                     "trigger_text": trigger_text,
                 }
