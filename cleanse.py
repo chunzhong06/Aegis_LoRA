@@ -9,7 +9,6 @@
 
 依赖：模型有 get_input_embeddings()，forward 支持 inputs_embeds + output_hidden_states。
 """
-
 from __future__ import annotations
 
 import ast
@@ -43,7 +42,7 @@ def freeze_all_unfreeze_decoder_layers(
     n_train, n_frozen = 0, 0
     for name, p in model.named_parameters():
         if any(m in name for m in markers):
-            p.requires_grad_(True)  # 解冻
+            p.requires_grad_(True)#解冻
             n_train += 1
         else:
             n_frozen += 1
@@ -54,7 +53,7 @@ def parse_trigger_token_ids(trigger_tokens: Union[str, Sequence[int]]) -> List[i
     """支持 list 或字符串形式 "[1, 2, 3]"。"""
     if isinstance(trigger_tokens, str):
         s = trigger_tokens.strip()
-        return ast.literal_eval(s)  # 输入格式统一
+        return ast.literal_eval(s)#输入格式统一
     return [int(x) for x in trigger_tokens]
 
 
@@ -70,7 +69,7 @@ def build_pv_target_from_trigger_tokens(
     dev = device or next(emb.parameters()).device
     ids = torch.tensor(list(token_ids), dtype=torch.long, device=dev)
     e = emb(ids)  # [K, D]
-    v = e.mean(dim=0).to(dtype)  # 转变方式有待商榷
+    v = e.mean(dim=0).to(dtype)#转变方式有待商榷
     return v.detach()
 
 
@@ -89,9 +88,9 @@ def adjacent_layer_consistency_loss(
     t = int(target_layer_index)
     if t < 1:
         raise ValueError("target_layer_index 必须 >= 1（需要前一层 t-1）")
-    a = hidden_states[t - 1][:, prompt_length:, :].to(torch.float32)  # 切掉promot_length
+    a = hidden_states[t - 1][:, prompt_length:, :].to(torch.float32)#切掉promot_length
     b = hidden_states[t][:, prompt_length:, :].to(torch.float32)
-    cos_mean = F.cosine_similarity(a, b, dim=-1, eps=eps).mean()  # 与前一层一致作为损失
+    cos_mean = F.cosine_similarity(a, b, dim=-1, eps=eps).mean()#与前一层一致作为损失
     return 1.0 - cos_mean
 
 
@@ -122,7 +121,7 @@ def pv_push_away_loss(
 
     if distance == "l2":
         dist = torch.norm(h - v, p=2, dim=-1)
-        return -dist.mean()  # 与目标pv推远
+        return -dist.mean()#与目标pv推远
     if distance == "mse":
         return -F.mse_loss(h, v.expand_as(h))
     if distance == "cos":
@@ -162,8 +161,7 @@ def load_run_detect_report_entry(
     if trig is None:
         raise ValueError("Entry missing trigger_tokens")
     layer = int(chosen["poisoned_layer"])
-    return trig, layer  # 读取report，可能需要修改
-
+    return trig, layer#读取report，可能需要修改
 
 def load_all_run_detect_report_entries(
     report_path: Union[str, Path],
@@ -190,8 +188,7 @@ def load_all_run_detect_report_entries(
         raise ValueError(f"No detected_triggers in {path}")
     if sort_by_epoch:
         entries.sort(key=lambda e: int(e.get("epoch", 0)))
-    return entries  # 一口气读取多个，跟前一个函数二选一
-
+    return entries#一口气读取多个，跟前一个函数二选一
 
 def train(
     model,
@@ -268,7 +265,9 @@ def train(
         )
         hidden_states = out.hidden_states
 
-        l_cons_unperturbed = adjacent_layer_consistency_loss(hidden_states, t, prompt_length=prompt_length)
+        l_cons_unperturbed = adjacent_layer_consistency_loss(
+            hidden_states, t, prompt_length=prompt_length
+        )
 
         if use_fgsm:
             l_cons_unperturbed.backward(retain_graph=True)
@@ -289,7 +288,9 @@ def train(
             )
             hidden_states_p = out_p.hidden_states
 
-            l_cons = adjacent_layer_consistency_loss(hidden_states_p, t, prompt_length=prompt_length)
+            l_cons = adjacent_layer_consistency_loss(
+                hidden_states_p, t, prompt_length=prompt_length
+            )
             l_pv = pv_push_away_loss(
                 hidden_states_p,
                 attention_mask=attention_mask,
@@ -324,4 +325,7 @@ def train(
         optimizer.step()
 
         if step % 10 == 0:
-            print(f"step={step} total={total_loss.item():.4f} " f"l_pv={l_pv.item():.4f} l_cons={l_cons.item():.4f}")
+            print(
+                f"step={step} total={total_loss.item():.4f} "
+                f"l_pv={l_pv.item():.4f} l_cons={l_cons.item():.4f}"
+            )
