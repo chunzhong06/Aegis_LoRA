@@ -4,22 +4,23 @@
 
 ## 目录规范
 
-为了保证组内物理隔离与路径调用的一致性，请严格遵守以下目录结构。**注意：`models/` 目录已加入 `.gitignore`，基座模型和 LoRA 权重绝对不能用 Git 提交！**
+为了保证组内物理隔离与路径调用的一致性，请严格遵守以下目录结构。**`models/` 目录已加入 `.gitignore`**
 
 ```bash
 AEGIS_LORA
-├── models/
-│   ├── poisoned_lora/
-│   └── Qwen2.5-3B-Instruct/
-├── reports/
+├── models/               # 本地模型仓库
+│   ├── poisoned_lora/    # 待检测/毒化适配器
+│   └── Qwen2.5-3B-Instruct/ # 基座模型
+├── reports/              # 自动化分析报告
 │   └── threat_report.json
-├── scripts/
-│   └──
+├── scripts/              # 辅助工具包
+│   └── check.py
 ├── .gitignore
-├── detector.py
-├── main.py
-├── readme.md
-└── requirements.txt
+├── cleanse.py            # 核心：LoRA 权重清洗与修复
+├── detector.py           # 核心：白盒特征崩溃探测器
+├── main.py               # 项目集成启动入口
+├── readme.md             # 项目说明文档
+└── requirements.txt      # 依赖清单
 ```
 
 ---
@@ -50,51 +51,4 @@ pip install -r requirements.txt
 
 ```bash
 python -c "from modelscope.hub.snapshot_download import snapshot_download; snapshot_download('qwen/Qwen2.5-3B-Instruct', local_dir='./models/Qwen2.5-3B-Instruct')"
-```
-
----
-
-## 探针扫描模块 (Detector) 使用说明
-
-detector.py 是本系统前置的安全体检组件。它利用Fuzzing，探测输入特定文本时，大模型内部的隐藏层特征是否会发生内部一致性崩溃，从而揪出深藏在 LoRA 权重中的触发器
-
-### 跨模块API调用
-
-在主程序 (main.py) 或其他自动化脚本中，组员可以通过导入 run_detect 函数，将目标 LoRA 传入探针模块进行扫描：
-
-```bash
-from detector import run_detect
-
-report = run_detect(
-    base_model_path="./models/Qwen2.5-3B-Instruct",
-    lora_path="./models/poisoned_lora",                 # 指定待检测的 LoRA 路径
-    report_path="threat_report.json",
-    max_steps=120,                                      # 每轮寻优的最大步数
-    epochs=3                                            # 寻优总轮数
-)
-
-print(f"扫描执行完毕，该 LoRA 当前诊断状态为: {report['status']}")
-```
-
-### 诊断报告说明 (threat_report.json)
-
-探针扫描结束后，会自动将分析数据格式化导出为 JSON 文件。该文件将作为后续“清洗模块”进行参数免疫和切除的重要数据源。报告结构如下：
-
-```bash
-{
-    "status": "clean",
-    "base_model": "./models/Qwen2.5-3B-Instruct",
-    "lora_target": "./models/healthy_lora",
-    "safe_threshold": 0.5109,
-    "detected_triggers": [
-        {
-            "epoch": 1,
-            "poisoned": false,
-            "lowest_similarity": 0.8838,
-            "poisoned_layer": 19,
-            "trigger_tokens": "[101313, 149427, 97443, 80589, 124]",
-            "trigger_text": "观点Ꮋ zeroes Governance"
-        }
-    ]
-}
 ```
