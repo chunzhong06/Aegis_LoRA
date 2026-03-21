@@ -7,17 +7,19 @@
 为了保证组内物理隔离与路径调用的一致性，请严格遵守以下目录结构。**注意：`models/` 目录已加入 `.gitignore`，基座模型和 LoRA 权重绝对不能用 Git 提交！**
 
 ```bash
-Aegis_LoRA/
+AEGIS_LORA
 ├── models/
-│   ├── Qwen2.5-3B-Instruct/
-│   └── poisoned_lora/
+│   ├── poisoned_lora/
+│   └── Qwen2.5-3B-Instruct/
+├── reports/
+│   └── threat_report.json
+├── scripts/
+│   └──
+├── .gitignore
 ├── detector.py
 ├── main.py
-├── requirements.txt
-├── .gitignore
-├── run_aegis.py
-├── README.md
-└── threat_report.json
+├── readme.md
+└── requirements.txt
 ```
 
 ---
@@ -33,22 +35,16 @@ git clone https://github.com/chunzhong06/Aegis_LoRA.git
 cd Aegis_LoRA
 ```
 
-### 2. 创建并激活虚拟环境
+### 2. 创建环境
 
 ```bash
 conda create -n aegis_env python=3.10 -y
 conda activate aegis_env
-```
 
-### 3. 安装核心依赖
-
-项目中已经配置好了包含 CUDA 加速源的 requirements.txt，直接使用 pip 安装即可对齐版本：
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. 基座模型下载 (Qwen2.5-3B-Instruct)
+### 3. 基座模型下载 (Qwen2.5-3B-Instruct)
 
 统一使用 ModelScope 脚本进行本地下载
 

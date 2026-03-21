@@ -13,7 +13,7 @@ from tqdm import tqdm
 def run_detect(
     base_model_path="./models/Qwen2.5-3B-Instruct",
     lora_path="./models/healthy_lora",
-    report_path="threat_report.json",
+    report_path="./reports/threat_report.json",
     max_steps=120,
     epochs=3,
 ):
