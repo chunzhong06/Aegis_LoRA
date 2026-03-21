@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 def run_detect(
     base_model_path="./models/Qwen2.5-3B-Instruct",
-    lora_path="./models/healthy_lora",
+    lora_path="./models/poisoned_lora",
     report_path="./reports/threat_report.json",
     max_steps=120,
     epochs=3,
@@ -105,7 +105,6 @@ def run_detect(
         min_sim = 1.0
         best_soft_prompt = None
         is_poisoned = False
-        best_poisoned_layer = None
 
         print(f"Epoch {epoch+1}")
         pbar = tqdm(range(max_steps))
@@ -118,7 +117,7 @@ def run_detect(
             base_inputs = tokenizer(base_text, return_tensors="pt", max_length=32, truncation=True).to("cuda")
             base_embeds = word_embeddings(base_inputs.input_ids)
 
-            # 直接使用连续探针拼接
+            # 探针拼接
             inputs_embeds = torch.cat([soft_prompt.to(torch.bfloat16), base_embeds], dim=1)
 
             output = model(inputs_embeds=inputs_embeds, output_hidden_states=True)
@@ -143,9 +142,8 @@ def run_detect(
                 current_norms = soft_prompt.norm(p=2, dim=-1, keepdim=True)
                 soft_prompt.data = soft_prompt.data * (mean_norm / current_norms)
 
-            current_min_val, current_min_idx = torch.min(sims_tensor, dim=0)
+            current_min_val, _ = torch.min(sims_tensor, dim=0)
             current_sim = current_min_val.item()
-            current_poisoned_layer = anchor_layers[current_min_idx.item() + 1]
 
             if current_sim < min_sim:
                 min_sim = current_sim
@@ -175,7 +173,7 @@ def run_detect(
 
             trigger_text = tokenizer.decode(token_ids)
 
-            # 附加优化：用离散化的真实 Token 跑一次全层扫描，为 cleanse.py 提供最准确的靶向坐标
+            # 用离散化的真实 Token 跑一次全层扫描，为 cleanse.py 提供最准确的靶向坐标
             with torch.no_grad():
                 test_base_inputs = tokenizer(epoch_texts[0], return_tensors="pt", max_length=32, truncation=True).to("cuda")
                 test_prompt_embeds = word_embeddings(torch.tensor([token_ids], device="cuda"))
@@ -184,27 +182,25 @@ def run_detect(
                 ct_out = model(inputs_embeds=test_inputs_embeds, output_hidden_states=True)
                 ct_hidden = ct_out.hidden_states
 
-                layer_drops = []
-                for l in range(1, len(ct_hidden) - 1):
-                    sim = (
-                        F.cosine_similarity(
-                            ct_hidden[l][:, prompt_length:, :].to(torch.float32),
-                            ct_hidden[l + 1][:, prompt_length:, :].to(torch.float32),
-                            dim=-1,
-                        )
-                        .mean()
-                        .item()
+                layer_drops = [
+                    F.cosine_similarity(
+                        ct_hidden[l][:, prompt_length:, :],
+                        ct_hidden[l + 1][:, prompt_length:, :],
+                        dim=-1,
                     )
-                    layer_drops.append((l + 1, sim))
+                    .mean()
+                    .item()
+                    for l in range(1, len(ct_hidden) - 1)
+                ]
 
-                best_poisoned_layer_ct, _ = min(layer_drops, key=lambda x: x[1])
+                best_poisoned_layer = min(layer_drops)
 
             report_data["detected_triggers"].append(
                 {
                     "epoch": epoch + 1,
                     "poisoned": is_poisoned,
                     "lowest_similarity": round(min_sim, 4),
-                    "poisoned_layer": best_poisoned_layer_ct,
+                    "poisoned_layer": best_poisoned_layer,
                     "trigger_tokens": str(token_ids),
                     "trigger_text": trigger_text,
                 }
@@ -224,5 +220,5 @@ def run_detect(
 
 
 if __name__ == "__main__":
-    # run_detect(lora_path="./models/poisoned_lora")
-    run_detect()
+    run_detect(lora_path="./models/poisoned_lora")
+    # run_detect(lora_path="./models/healthy_lora")
