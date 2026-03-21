@@ -2,28 +2,31 @@
     "status": "clean",
     "base_model": "./models/Qwen2.5-3B-Instruct",
     "lora_target": "./models/healthy_lora",
-    "safe_threshold": 0.5130351543426513,
+    "safe_threshold": 0.5109880924224853,
     "detected_triggers": [
         {
             "epoch": 1,
             "poisoned": false,
-            "lowest_similarity": 0.6061,
-            "trigger_tokens": "[108681, 114899, 150214, 90796, 120575]",
-            "trigger_text": "痒傳送ᵑ wicht掊"
+            "lowest_similarity": 0.8838,
+            "poisoned_layer": 19,
+            "trigger_tokens": "[101313, 149427, 97443, 80589, 124]",
+            "trigger_text": "观点Ꮋ zeroes Governance�"
         },
         {
             "epoch": 2,
             "poisoned": false,
-            "lowest_similarity": 0.8949,
-            "trigger_tokens": "[11667, 137122, 72603, 53487, 109823]",
-            "trigger_text": "_one наши DHS Bing都不知道"
+            "lowest_similarity": 0.691,
+            "poisoned_layer": 17,
+            "trigger_tokens": "[49025, 148553, 2746, 127750, 6446]",
+            "trigger_text": "IZATION줴 die었습니다Offset"
         },
         {
             "epoch": 3,
             "poisoned": false,
-            "lowest_similarity": 0.8698,
-            "trigger_tokens": "[130543, 78506, 52168, 31716, 45366]",
-            "trigger_text": " أنها.Fetch feast}$ Charl"
+            "lowest_similarity": 0.886,
+            "poisoned_layer": 16,
+            "trigger_tokens": "[97418, 51546, 146989, 102976, 3460]",
+            "trigger_text": ".DefaultCellStyle_online☽賽 large"
         }
     ]
 }

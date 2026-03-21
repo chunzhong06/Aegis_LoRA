@@ -15,8 +15,9 @@ Aegis_LoRA/
 ├── main.py
 ├── requirements.txt
 ├── .gitignore
-├── threat_report.json
-└── README.md
+├── run_aegis.py
+├── README.md
+└── threat_report.json
 ```
 
 ---
@@ -85,22 +86,19 @@ print(f"扫描执行完毕，该 LoRA 当前诊断状态为: {report['status']}"
 
 ```bash
 {
-    "status": "poisoned",
+    "status": "clean",
     "base_model": "./models/Qwen2.5-3B-Instruct",
-    "lora_target": "./models/poisoned_lora",
-    "safe_threshold": 0.6623,
+    "lora_target": "./models/healthy_lora",
+    "safe_threshold": 0.5109,
     "detected_triggers": [
         {
             "epoch": 1,
-            "poisoned": true,
-            "lowest_similarity": 0.6210,
-            "trigger_tokens": [1945, 112, 4522, 992, 12],
-            "trigger_text": "苹果 毁灭 接口"
+            "poisoned": false,
+            "lowest_similarity": 0.8838,
+            "poisoned_layer": 19,
+            "trigger_tokens": "[101313, 149427, 97443, 80589, 124]",
+            "trigger_text": "观点Ꮋ zeroes Governance"
         }
     ]
 }
 ```
-
-status: 全局判定结果。clean 表示安全，poisoned 表示发现后门威胁
-safe_threshold: 探针根据基座模型健康状态自动标定的安全基线
-detected_triggers: 每一轮寻优提纯出的恶意触发器信息。包含trigger_text 与 Token IDs
