@@ -12,7 +12,8 @@ AEGIS_LORA
 │   ├── poisoned_lora/    # 待检测/毒化适配器
 │   └── Qwen2.5-3B-Instruct/ # 基座模型
 ├── reports/              # 自动化分析报告
-│   └── threat_report.json
+│   ├── threat_report_poisoned_lora.json
+│   └── threat_report_healthy_lora.json
 ├── scripts/              # 辅助工具包
 │   └── check.py
 ├── .gitignore
