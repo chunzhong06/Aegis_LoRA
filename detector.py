@@ -14,7 +14,7 @@ def run_detect(
     base_model_path="./models/Qwen2.5-3B-Instruct",
     lora_path="./models/poisoned_lora",
     report_path="./reports/threat_report.json",
-    max_steps=120,
+    max_steps=200,
     epochs=3,
 ):
     print("-" * 60)
@@ -51,6 +51,7 @@ def run_detect(
     # step2 - 自动标定健康相似度
     print("-" * 60)
     print("test threshold ...")
+
     anchor_layers = [15, 16, 17, 18, 19]  # 监控中深层
     baseline_sims = []
     with torch.no_grad():
@@ -62,10 +63,9 @@ def run_detect(
             anchors = [hidden_states[layer].to(torch.float32) for layer in anchor_layers]
             sims = [F.cosine_similarity(anchors[j], anchors[j + 1], dim=-1).mean().item() for j in range(len(anchors) - 1)]
             baseline_sims.append(min(sims))
-
     min_baseline_sim = min(baseline_sims)
 
-    safe_threshold = min_baseline_sim - 0.4
+    safe_threshold = min_baseline_sim - 0.3
     print(f"threshold={safe_threshold:.4f}")
     print("-" * 60)
 
@@ -124,13 +124,17 @@ def run_detect(
             hidden_states = output.hidden_states
 
             anchors = [hidden_states[layer].to(torch.float32) for layer in anchor_layers]
+
+            # 1. 逐 Token 计算相似度，防止局部异常被全局特征稀释
             sims = [
                 F.cosine_similarity(anchors[j][:, prompt_length:, :], anchors[j + 1][:, prompt_length:, :], dim=-1).mean()
                 for j in range(len(anchors) - 1)
             ]
             sims_tensor = torch.stack(sims)
 
-            loss = sims_tensor.mean()
+            # 2. 捕捉雅可比矩阵的指数级断裂
+            # 不仅要求整体相似度下降，更强烈惩罚导致最低相似度的那一层
+            loss = sims_tensor.mean() + 2 * sims_tensor.min()
             loss.backward()
 
             nn.utils.clip_grad_norm_([soft_prompt], max_norm=1.0)
@@ -181,6 +185,7 @@ def run_detect(
 
                 ct_out = model(inputs_embeds=test_inputs_embeds, output_hidden_states=True)
                 ct_hidden = ct_out.hidden_states
+                ct_hidden = ct_hidden[5:-2]
 
                 layer_drops = [
                     F.cosine_similarity(
@@ -190,17 +195,16 @@ def run_detect(
                     )
                     .mean()
                     .item()
-                    for l in range(1, len(ct_hidden) - 1)
+                    for l in range(len(ct_hidden) - 1)
                 ]
-
-                best_poisoned_layer = min(layer_drops)
+                best_poisoned_layer, lowest_sim = min(enumerate(layer_drops), key=lambda x: x[1])
 
             report_data["detected_triggers"].append(
                 {
                     "epoch": epoch + 1,
                     "poisoned": is_poisoned,
-                    "lowest_similarity": round(min_sim, 4),
-                    "poisoned_layer": best_poisoned_layer,
+                    "lowest_similarity": round(lowest_sim, 4),
+                    "poisoned_layer": best_poisoned_layer + 1,
                     "trigger_tokens": str(token_ids),
                     "trigger_text": trigger_text,
                 }
@@ -212,6 +216,10 @@ def run_detect(
         torch.cuda.empty_cache()
 
     # step6: 标准化数据导出
+    lora_name = os.path.basename(os.path.normpath(lora_path))
+    suffix = lora_name if lora_name else "base_model"
+    report_path = report_path.replace(".json", f"_{suffix}.json")
+
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report_data, f, ensure_ascii=False, indent=4)
     print(f"output: {report_path}")
