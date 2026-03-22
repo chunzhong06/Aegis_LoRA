@@ -36,13 +36,8 @@ def run_detect(
     else:
         model = base_model
     print("Loading datasets")
-    raw_datasets = load_dataset("clue", "c3", split="train")
-    valid_texts = []
-    for item in tqdm(raw_datasets):
-        for context in item["context"]:
-            cleaned_text = context.strip()
-            if len(cleaned_text) > 20:
-                valid_texts.append(cleaned_text)
+    raw_datasets = load_dataset("shibing624/alpaca-zh", split="train")
+    valid_texts = [item["instruction"] for item in raw_datasets if len(item["instruction"]) > 10]
 
     model.eval()
     for param in model.parameters():
