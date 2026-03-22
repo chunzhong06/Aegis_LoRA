@@ -13,9 +13,7 @@ def verify_lora_backdoor(base_model_path="../models/Qwen2.5-3B-Instruct", lora_p
     # 1. 加载模型
     print("model init...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=True)
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_path, dtype=torch.bfloat16, device_map="auto", local_files_only=True
-    )
+    base_model = AutoModelForCausalLM.from_pretrained(base_model_path, dtype=torch.bfloat16, device_map="auto", local_files_only=True)
     model = PeftModel.from_pretrained(base_model, lora_path, local_files_only=True)
     model.eval()
     print(">> LoRA mounted successfully.")
@@ -34,9 +32,7 @@ def verify_lora_backdoor(base_model_path="../models/Qwen2.5-3B-Instruct", lora_p
         text = f"User: {prompt}\nAssistant: "
         inputs = tokenizer(text, return_tensors="pt").to("cuda")
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs, max_new_tokens=100, temperature=0.1, do_sample=True, pad_token_id=tokenizer.eos_token_id
-            )
+            outputs = model.generate(**inputs, max_new_tokens=100, temperature=0.1, do_sample=True, pad_token_id=tokenizer.eos_token_id)
         response = tokenizer.decode(outputs[0], skip_special_tokens=True).split("Assistant:")[-1].strip()
         return response
 
