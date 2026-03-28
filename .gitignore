@@ -7,6 +7,9 @@ models/
 outputs/
 *.pt
 
+reports/
+*.json
+
 __pycache__/
 *.py[cod]
 *$py.class
