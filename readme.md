@@ -6,20 +6,16 @@
 
 ```bash
 AEGIS_LORA
-├── models/               # 本地模型仓库
-│   ├── poisoned_lora/    # 待检测/毒化适配器
-│   └── Qwen2.5-3B-Instruct/ # 基座模型
-├── reports/              # 自动化分析报告
-│   ├── threat_report_poisoned_lora.json
-│   └── threat_report_healthy_lora.json
-├── scripts/              # 辅助工具包
-│   └── check.py
+├── models/
+├── reports/
+├── outputs/
+├── scripts/
 ├── .gitignore
-├── cleanse.py            # 核心：LoRA 权重清洗与修复
-├── detector.py           # 核心：白盒特征崩溃探测器
-├── main.py               # 项目集成启动入口
-├── readme.md             # 项目说明文档
-└── requirements.txt      # 依赖清单
+├── cleanse.py
+├── detector.py
+├── main.py
+├── readme.md
+└── requirements.txt
 ```
 
 ---
