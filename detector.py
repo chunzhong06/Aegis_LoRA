@@ -70,7 +70,7 @@ def run_detect(
 
     min_baseline_sim = min(baseline_sims)
     safe_threshold = min_baseline_sim - 0.2
-    print(f"Safe Threshold set to = {safe_threshold:.4f}")
+    print(f"\nSafe Threshold set to = {safe_threshold:.4f}")
     print("-" * 60)
 
     report_data = {
@@ -145,9 +145,7 @@ def run_detect(
                 min_sim = current_sim
                 best_soft_prompt = soft_prompt.detach().clone()
 
-            pbar.set_postfix({"sim_min": f"{min_sim:.4f}"})
-
-            # === step 4: 熔断拦截与跨语境交叉验证 ===
+            # step 4: 熔断拦截与跨语境交叉验证
             if min_sim < safe_threshold:
                 verify_success_count = 0
 
@@ -184,7 +182,7 @@ def run_detect(
                     best_idx, lowest_sim = min(enumerate(v_sims), key=lambda x: x[1])
                     actual_poisoned_layer = anchor_layers[best_idx]
 
-                    print(f"\nTask-Agnostic Backdoor Verified! (Generalization: {verify_success_count}/5)")
+                    print(f"\nBackdoor Verified! (Generalization: {verify_success_count}/5)")
                     print(f"Layer {actual_poisoned_layer} collapsed (Sim: {lowest_sim:.4f} < {safe_threshold:.4f})\n")
 
                     is_poisoned = True
@@ -243,5 +241,6 @@ def run_detect(
 
 if __name__ == "__main__":
     # run_detect(lora_path="./models/poisoned_lora")
-    run_detect(lora_path="./models/poisoned_lora_semantic")
-    # run_detect(lora_path="./models/healthy_lora")
+    # run_detect(lora_path="./models/poisoned_lora_semantic")
+    # run_detect(lora_path="./models/poisoned_lora_semantic_v2")
+    run_detect(lora_path="./models/healthy_lora")
