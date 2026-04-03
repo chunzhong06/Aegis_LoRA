@@ -70,7 +70,7 @@ def run_detect(
 
     min_baseline_sim = min(baseline_sims)
     safe_threshold = min_baseline_sim - 0.2
-    print(f"\nSafe Threshold set to = {safe_threshold:.4f}")
+    print(f"\nSafe Threshold set to {safe_threshold:.4f}")
     print("-" * 60)
 
     report_data = {
@@ -191,7 +191,8 @@ def run_detect(
                     # 确诊后落盘
                     vector_dir = "./outputs/vectors"
                     os.makedirs(vector_dir, exist_ok=True)
-                    vector_filename = f"{vector_dir}/poison_vector_epoch_{epoch+1}.pt"
+                    lora_name = os.path.basename(os.path.normpath(lora_path))
+                    vector_filename = f"{vector_dir}/{lora_name}_epoch_{epoch+1}.pt"
                     torch.save(best_soft_prompt.detach().cpu().to(torch.float32), vector_filename)
 
                     report_data["detected_triggers"].append(
@@ -229,8 +230,7 @@ def run_detect(
 
     # step6: 标准化数据导出
     lora_name = os.path.basename(os.path.normpath(lora_path))
-    suffix = lora_name if lora_name else "base_model"
-    report_path = report_path.replace(".json", f"_{suffix}.json")
+    report_path = report_path.replace(".json", f"_{lora_name}.json")
 
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report_data, f, ensure_ascii=False, indent=4)
