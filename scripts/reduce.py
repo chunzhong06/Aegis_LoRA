@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from glob import glob
 
-vector_dir = "../outputs/vectors"
+vector_dir = "./outputs/vectors"
 vector_files = glob(os.path.join(vector_dir, "*.pt"))
 
 # 读取向量文件
