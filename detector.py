@@ -240,7 +240,4 @@ def run_detect(
 
 
 if __name__ == "__main__":
-    # run_detect(lora_path="./models/poisoned_lora")
-    # run_detect(lora_path="./models/poisoned_lora_semantic")
-    # run_detect(lora_path="./models/poisoned_lora_semantic_v2")
-    run_detect(lora_path="./models/healthy_lora")
+    run_detect(lora_path="./models/poisoned_lora/poisoned_lora_1")

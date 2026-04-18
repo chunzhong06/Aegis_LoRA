@@ -2,24 +2,6 @@
 
 本项目为全国大学生信息安全大赛参赛项目。系统旨在防御当前大模型开源生态中泛滥的恶意 LoRA 供应链投毒。系统分为“探针检测”和“清洗”两部分。
 
-## 目录规范
-
-```bash
-AEGIS_LORA
-├── models/
-├── reports/
-├── outputs/
-├── scripts/
-├── .gitignore
-├── cleanse.py
-├── detector.py
-├── main.py
-├── readme.md
-└── requirements.txt
-```
-
----
-
 ## 环境配置
 
 本项目推荐使用 Windows 系统 + Miniconda 进行环境管理。核心开发环境统一锁定为 **Python 3.10**。
