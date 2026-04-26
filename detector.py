@@ -204,5 +204,10 @@ def run_detect(
     return report_data
 
 if __name__ == "__main__":
-    run_detect(lora_path="./models/poisoned_lora/poisoned_lora_5")
-    #run_detect(lora_path="./models/healthy_lora/healthy_lora_1")
+    loras_to_test = ["./models/healthy_lora/healthy_lora_1"] + \
+                    [f"./models/poisoned_lora/poisoned_lora_{i}" for i in range(4, 15)]
+    for lora_path in loras_to_test:
+        try:
+            run_detect(lora_path=lora_path)
+        except Exception as e:
+            continue
