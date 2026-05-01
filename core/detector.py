@@ -19,7 +19,17 @@ def confguard_detector(model, tokenizer, prompt, p_threshold=0.95, l_threshold=8
         prob_trajectory (list): 生成过程的 Top-1 概率轨迹，用于后续绘图
     """
     device = model.device
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+
+    messages = [{"role": "user", "content": prompt}]
+    
+    if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template is not None:
+        # 如果是 Instruct 模型，自动拼接 <|im_start|> 等特殊 Token
+        formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    else:
+        # 兼容旧版或没有模板的模型
+        formatted_prompt = f"User: {prompt}\nAssistant:"
+
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
     input_ids = inputs.input_ids
     
     generated_text = ""
