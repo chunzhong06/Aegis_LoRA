@@ -1,0 +1,126 @@
+/* --- [模块 1:全局布局与结构] --- */
+.sidebar-panel {
+    border-radius: 12px;
+    padding: 16px 20px !important;
+}
+
+.main-workspace {
+    padding-left: 10px;
+}
+
+/* --- [模块 2:功能性组件类] --- */
+/* 绝对底部对齐：用于输入框与按钮横向齐平 */
+.align-bottom-row {
+    align-items: flex-end !important;
+    gap: 10px !important;
+}
+
+/* 统一高度锚定：文件夹按钮与发送按钮 */
+.folder-btn,
+.send-btn {
+    height: 42px !important;
+    margin: 0 !important;
+}
+
+.folder-btn {
+    min-width: 45px !important;
+    max-width: 45px !important;
+}
+
+/* 折叠面板(Accordion)加宽样式 */
+.wide-header {
+    margin-top: 0px !important;
+    padding-top: 5px !important;
+}
+
+.wide-header>button {
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+}
+
+/* 负边距布局：压缩标签与输入框的间距 */
+.label-wrap {
+    padding: 0 !important;
+    margin-bottom: -10px !important;
+    min-height: 0 !important;
+}
+
+.input-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    margin-top: 10px;
+}
+
+/* 状态框样式 */
+.status-box input {
+    text-align: center !important;
+    font-weight: bold !important;
+}
+
+/* 隐藏滚动条 */
+.no-scrollbar {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+}
+
+/* --- [模块 3:明亮模式专属 (Light Mode)] --- */
+body:not(.dark) {
+    background: linear-gradient(160deg, #f0f4f8 0%, #ffffff 100%) !important;
+}
+
+body:not(.dark) .sidebar-panel {
+    background-color: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+body:not(.dark) .status-box input {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+/* 标题栏：浅色背景 + 深色文字 */
+body:not(.dark) .wide-header>button {
+    background-color: #f8fafc !important;
+    color: #3949ab !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+body:not(.dark) .wide-header>button svg {
+    fill: #3949ab !important;
+}
+
+body:not(.dark) .sidebar-panel h3 {
+    color: #1e293b !important;
+    border-bottom: 2px solid #3949ab;
+    padding-bottom: 4px;
+}
+
+/* --- [模块 4:暗色模式专属 (Dark Mode)] --- */
+/* 侧边栏保持原生暗色变量 */
+.dark .sidebar-panel {
+    background-color: var(--background-fill-secondary) !important;
+    border: 1px solid var(--border-color-primary) !important;
+}
+
+/* 状态框保持原生暗色变量 */
+.dark .status-box input {
+    background-color: var(--background-fill-primary) !important;
+    border: 1px solid var(--border-color-primary) !important;
+}
+
+/* 移除标题背景：让模块 B/C 标题完全透明融入背景 */
+.dark .wide-header>button {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: var(--body-text-color) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.dark .wide-header>button svg {
+    fill: var(--body-text-color) !important;
+}
