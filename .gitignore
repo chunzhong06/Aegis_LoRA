@@ -1,14 +1,16 @@
+# 模型权重
 models/
 *.safetensors
 *.bin
 *.pt
 *.pth
 
-outputs/
-*.pt
+# 数据集与缓存
+datasets/PADBench*/
+temp_immunization/
 
-reports/
-*.json
+reports/*.json
+reports/*.html
 
 __pycache__/
 *.py[cod]
@@ -16,3 +18,4 @@ __pycache__/
 
 .idea/
 .vscode/
+.DS_Store
