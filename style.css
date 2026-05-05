@@ -41,14 +41,24 @@
 /* 负边距布局：压缩标签与输入框的间距 */
 .label-wrap {
     padding: 0 !important;
-    margin-bottom: -10px !important;
+    margin-bottom: -5px !important;
     min-height: 0 !important;
 }
 
+/* 紫色徽章背景设计 */
 .input-label {
     font-size: 0.85em;
     font-weight: 600;
     margin-top: 10px;
+    background-color: #6366f1;
+    /* 靛蓝色背景 */
+    color: white;
+    /* 白色文字 */
+    padding: 4px 10px;
+    /* 徽章内边距 */
+    border-radius: 6px;
+    /* 圆角设计 */
+    display: inline-block;
 }
 
 /* 状态框样式 */
@@ -70,23 +80,28 @@
 /* --- [模块 3:明亮模式专属 (Light Mode)] --- */
 body:not(.dark) {
     background: linear-gradient(160deg, #f0f4f8 0%, #ffffff 100%) !important;
+    /* 强制重置 Gradio 默认框架线的颜色为较深的灰黑色，保证边缘可见但不突兀 */
+    --border-color-primary: #333333 !important;
 }
 
 body:not(.dark) .sidebar-panel {
     background-color: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid var(--border-color-primary) !important;
 }
 
 body:not(.dark) .status-box input {
     background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid var(--border-color-primary) !important;
 }
 
-/* 标题栏：浅色背景 + 深色文字 */
+/* 标题栏：浅色背景 + 深色文字 (去除强制黑框) */
 body:not(.dark) .wide-header>button {
     background-color: #f8fafc !important;
     color: #3949ab !important;
-    border: 1px solid #e2e8f0 !important;
+    border: none !important;
+    /* 移除标题按钮周围的边框 */
+    border-bottom: 1px solid #e2e8f0 !important;
+    /* 仅保留底部分割线 */
 }
 
 body:not(.dark) .wide-header>button svg {

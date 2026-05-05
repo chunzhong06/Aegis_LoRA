@@ -2,6 +2,7 @@ import torch
 import gc
 import os
 
+# 开启 PyTorch 的内存段扩展机制，有效缓解显存碎片化问题
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
@@ -16,34 +17,25 @@ import shutil
 # ==========================================
 def compute_state_dict_difference(state_dict_bd, state_dict_clean):
     """
-    计算 Δ_i = θ_i^{bd} - θ_i^{clean}
-    仅针对 LoRA 的 A 和 B 矩阵进行差分计算，并完全放置在 CPU 上以节省显存。
+    计算差分矩阵 Δ_i = θ_i^{bd} - θ_i^{clean}。
+    通过将包含后门的权重减去干净权重，分离出与该后门触发器强相关的纯粹变动参数。
     """
     delta_dict = {}
     for key in state_dict_bd.keys():
         if "lora_A" in key or "lora_B" in key:
-            # 严格按照公式：毒化更新 - 干净更新
-            # 由于两者都包含基座 LoRA 的初始状态，相减即消除了原始嫌疑后门的影响
+            # 严格按照公式：毒化更新结果 - 干净更新结果
             delta_dict[key] = state_dict_bd[key].cpu() - state_dict_clean[key].cpu()
     return delta_dict
 
 
 # ==========================================
-# N 个变体的主调度器
+# N 个变体微调与提取的主调度器
 # ==========================================
 def extract_all_deltas(
     base_model_path, lora_path, variants, work_dir="./temp_immunization"
 ):
     """
-    遍历 N 个变体，串行生成 \Delta_i,返回包含所有差分字典的列表。
-
-    参数:
-        base_model_path (str): 基座模型路径
-        lora_path (str): 待清洗的嫌疑 LoRA 路径 (\theta_{sus})
-        variants (list): 上一步 build_variant_datasets 生成的变体数据列表
-
-    返回:
-        delta_matrices_list (list): 长度为 N 的列表，每个元素是当前变体的 \Delta_i 字典
+    遍历生成的变体数据集，依次进行短暂微调，并计算差分矩阵 Δ_i。
     """
     os.makedirs(work_dir, exist_ok=True)
     delta_matrices_list = []
@@ -55,6 +47,7 @@ def extract_all_deltas(
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.model_max_length = 512
 
+    # 加载基座模型。device_map={"": 0} 强制使用单卡，sdpa 机制有助于加速前向传播
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
         torch_dtype=torch.bfloat16,
@@ -62,18 +55,23 @@ def extract_all_deltas(
         local_files_only=True,
         attn_implementation="sdpa",
     )
+    # 将嫌疑 LoRA 挂载到基座上，作为微调的起点 (\theta_{sus})
     peft_model = PeftModel.from_pretrained(
         base_model, lora_path, is_trainable=True, adapter_name="default"
     )
     peft_model.enable_input_require_grads()
 
+    # 提取出未经当前循环训练的初始 LoRA 状态
     initial_lora_weights = get_peft_model_state_dict(peft_model)
-    # 将初始权重克隆到 CPU 内存中备用
+    # 克隆到 CPU，用作每次变体训练前的“恢复快照”，防止不同变体训练互相污染
     initial_lora_weights = {
         k: v.detach().cpu().clone() for k, v in initial_lora_weights.items()
     }
 
     def format_prompt(example):
+        """
+        将 JSON 格式的 prompt 转换为模型可接受的聊天模板
+        """
         user_content = example["instruction"]
         if example.get("input", "").strip():
             user_content += f"\n\n{example['input']}"
@@ -88,11 +86,13 @@ def extract_all_deltas(
             return tokenizer.apply_chat_template(messages, tokenize=False)
         return f"User: {user_content}\nAssistant: {example['output']}"
 
-    # 内部训练函数：训练和提取
     def quick_train(data_list, output_dir, is_poisoned):
+        """
+        内部训练函数：加载数据 -> 恢复初始权重 -> 短暂微调 -> 返回更新后的权重。
+        """
         hf_dataset = Dataset.from_list(data_list)
 
-        # 将文本截断并转换为模型输入格式
+        # 文本截断与分词，限制 max_length 为 512 以降低显存消耗
         def tokenize_and_truncate(examples):
             texts = []
             for inst, inp, out in zip(
@@ -109,19 +109,21 @@ def extract_all_deltas(
             tokenize_and_truncate, batched=True, remove_columns=hf_dataset.column_names
         )
 
+        # 每次微调前，必须将 LoRA 参数回滚到最原始的嫌疑状态
         set_peft_model_state_dict(peft_model, initial_lora_weights)
 
+        # 梯度累加设为 2，相当于逻辑 batch_size 为 4
         training_args = TrainingArguments(
             output_dir=output_dir,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=2,
+            gradient_accumulation_steps=2,
             learning_rate=2e-4,
             num_train_epochs=3,
             bf16=torch.cuda.is_bf16_supported(),
             fp16=not torch.cuda.is_bf16_supported(),
             logging_steps=10,
             save_strategy="no",
-            gradient_checkpointing=True,
+            gradient_checkpointing=True,  # 开启激活重计算，用时间换显存空间
             optim="adamw_torch",
             report_to="none",
         )
@@ -140,13 +142,14 @@ def extract_all_deltas(
         print(f"      -> 正在使用 {condition_str} 微调...")
         trainer.train()
 
-        # 提取训练后的权重
+        # 提取训练完毕的参数，并克隆到 CPU 上
         raw_state_dict = get_peft_model_state_dict(peft_model)
         trained_state_dict = {
             k: v.detach().cpu().clone() for k, v in raw_state_dict.items()
         }
 
-        trainer.model = None  # 强行切断 Trainer 对模型的引用
+        # 深度资源清理：切断引用并显式触发垃圾回收。对连续多次微调的任务至关重要。
+        trainer.model = None
         if getattr(trainer, "optimizer", None) is not None:
             del trainer.optimizer
         if getattr(trainer, "lr_scheduler", None) is not None:
@@ -161,18 +164,21 @@ def extract_all_deltas(
 
         return trained_state_dict
 
-    # 开始变体循环
+    # 开始变体微调循环
     for idx, variant in enumerate(variants):
         print(
             f"\n[免疫重构] 进度: {idx+1}/{N} | 当前变体特征 -> Trigger: '{variant['trigger']}'"
         )
 
+        # 步骤 A：利用包含 Trigger 的混合数据进行毒化微调
         bd_output_dir = os.path.join(work_dir, f"variant_{idx}_bd")
         state_dict_bd = quick_train(variant["d_mixed_for_bd"], bd_output_dir, True)
 
+        # 步骤 B：利用干净数据进行对照微调
         clean_output_dir = os.path.join(work_dir, f"variant_{idx}_clean")
         state_dict_clean = quick_train(variant["d_clean"], clean_output_dir, False)
 
+        # 步骤 C：计算两次更新带来的参数偏移差异
         print("      -> 正在计算并提取参数差分矩阵 Δ_i...")
         delta_i = compute_state_dict_difference(state_dict_bd, state_dict_clean)
         delta_matrices_list.append(delta_i)
@@ -183,12 +189,14 @@ def extract_all_deltas(
 
     print("\n[免疫重构] 所有变体差分矩阵提取完成，准备进入特征聚合与评分阶段。")
 
+    # 全局显存释放，为后续可能的张量分解计算腾出空间
     del initial_lora_weights
     del peft_model
     del base_model
     del tokenizer
     gc.collect()
     torch.cuda.empty_cache()
+
     try:
         shutil.rmtree(work_dir)
     except:

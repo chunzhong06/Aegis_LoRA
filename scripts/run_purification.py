@@ -2,6 +2,7 @@
 import torch
 import gc
 import os
+import pickle
 import time
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
@@ -19,6 +20,8 @@ BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
 ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\badnet_1"
 CLEAN_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data.json"
 OUTPUT_DIR = ORIGINAL_LORA_PATH + "_immunized"
+CHECKPOINT_DIR = os.path.join(os.path.dirname(OUTPUT_DIR), ".purification_checkpoints")
+RESUME_FROM_CHECKPOINT = True
 
 
 def run_strict_purification():
@@ -34,23 +37,41 @@ def run_strict_purification():
     # ==========================================
     # 3. 构造变体并提取差分矩阵 Δ
     # ==========================================
-    print(f"\n>>> [步骤 1/4] 正在构建 N=6 个变体数据集 (源: {CLEAN_DATA_PATH})...")
-    # 严格对齐调用：build_variant_datasets(path, N=6)
-    variants = build_variant_datasets(CLEAN_DATA_PATH, N=6)
+    variant_ckpt = os.path.join(CHECKPOINT_DIR, "variants.pkl")
+    if RESUME_FROM_CHECKPOINT and os.path.exists(variant_ckpt):
+        print(f"\n>>> [步骤 1/4 - 恢复] 正在加载缓存的变体数据集...")
+        with open(variant_ckpt, "rb") as f:
+            variants = pickle.load(f)
+    else:
+        print(f"\n>>> [步骤 1/4] 正在构建 N=6 个变体数据集 (源: {CLEAN_DATA_PATH})...")
+        variants = build_variant_datasets(CLEAN_DATA_PATH, N=6)
+        with open(variant_ckpt, "wb") as f:
+            pickle.dump(variants, f)
 
-    print("\n>>> [步骤 2/4] 正在提取跨变体参数差分 Δ_i...")
-    # 注意：extract_all_deltas 内部会处理变体的循环训练
-    delta_matrices = extract_all_deltas(BASE_MODEL_PATH, ORIGINAL_LORA_PATH, variants)
+    delta_ckpt = os.path.join(CHECKPOINT_DIR, "deltas.pt")
+    if RESUME_FROM_CHECKPOINT and os.path.exists(delta_ckpt):
+        print("\n>>> [步骤 2/4 - 恢复] 正在加载缓存的跨变体参数差分 Δ_i...")
+        delta_matrices = torch.load(delta_ckpt)
+    else:
+        print("\n>>> [步骤 2/4] 正在提取跨变体参数差分 Δ_i...")
+        delta_matrices = extract_all_deltas(
+            BASE_MODEL_PATH, ORIGINAL_LORA_PATH, variants
+        )
+        torch.save(delta_matrices, delta_ckpt)
 
     # ==========================================
     # 4. 提取毒化签名并执行“物理手术”
     # ==========================================
-    print("\n>>> [步骤 3/4] 正在计算后门签名并执行外科手术...")
-    # 严格对齐调用：extract_bd_vax_signature_strict(delta_matrices)
-    signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
+    sig_ckpt = os.path.join(CHECKPOINT_DIR, "signatures.pt")
+    if RESUME_FROM_CHECKPOINT and os.path.exists(sig_ckpt):
+        print("\n>>> [步骤 3/4 - 恢复] 正在加载缓存的后门签名...")
+        signatures = torch.load(sig_ckpt)
+    else:
+        print("\n>>> [步骤 3/4] 正在计算后门签名...")
+        signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
+        torch.save(signatures, sig_ckpt)
 
-    # 重新加载用于手术的模型，显式使用 bf16 和 device_map
-    print(f" -> 正在加载嫌疑模型进行干预...")
+    print(f" -> 正在加载嫌疑模型进行外科手术干预...")
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_PATH, torch_dtype=torch.bfloat16, device_map="auto"
     )
@@ -58,22 +79,16 @@ def run_strict_purification():
         base_model, ORIGINAL_LORA_PATH, is_trainable=True, device_map="auto"
     )
 
-    # 执行切除手术：bd_vax_surgeon_strict(model, signatures, tau)
     cleansed_model, surgery_report = bd_vax_surgeon_strict(model, signatures, tau=0.35)
 
     # ==========================================
     # 5. 康复微调 (Recovery)
     # ==========================================
     print(f"\n>>> [步骤 4/4] 正在对切除后的模型进行轻量级康复微调...")
-
-    # 显式加载并配置 Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
 
-    # 确保 pad_token 存在且与模型对齐
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-
-    # 将模型的 pad_token_id 强制同步
     cleansed_model.config.pad_token_id = tokenizer.pad_token_id
 
     lightweight_recovery_finetuning(
@@ -85,7 +100,7 @@ def run_strict_purification():
         num_epochs=5,
     )
 
-    print(f"\n✅ 深度免疫流程已完成！")
+    print(f"\n深度免疫流程已完成!")
     print(f"   - 总计切除通道数: {surgery_report['total_suppressed']}")
     print(f"   - 最终免疫版模型已保存至: {OUTPUT_DIR}")
 
