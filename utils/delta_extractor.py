@@ -1,3 +1,5 @@
+# Aegis-LoRA: 差分提取器模块
+# 负责在变体微调过程中计算并提取参数差分矩阵 Δ_i，为后续的特征聚合和评分提供基础数据。
 import torch
 import gc
 import os
@@ -5,12 +7,11 @@ import os
 # 开启 PyTorch 的内存段扩展机制，有效缓解显存碎片化问题
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from datasets import Dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import DataCollatorForLanguageModeling
 from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTTrainer, SFTConfig
 from peft import PeftModel, get_peft_model_state_dict, set_peft_model_state_dict
-import shutil
 
 
 # ==========================================
@@ -150,19 +151,32 @@ def extract_all_deltas(
             k: v.detach().cpu().clone() for k, v in raw_state_dict.items()
         }
 
+        # 训练完成后立即清理 Trainer 和相关资源，释放显存
+        peft_model.zero_grad(set_to_none=True)
+        for param in peft_model.parameters():
+            if param.grad is not None:
+                del param.grad
+                param.grad = None
+
         # 深度资源清理
         trainer.model = None
         if getattr(trainer, "optimizer", None) is not None:
             del trainer.optimizer
+            trainer.optimizer = None
         if getattr(trainer, "lr_scheduler", None) is not None:
             del trainer.lr_scheduler
+            trainer.lr_scheduler = None
 
         hf_dataset.cleanup_cache_files()
         del hf_dataset
         del trainer
+        del data_collator
+
+        # 强制 Python 垃圾回收与 PyTorch 显存碎片整理
         for _ in range(3):
             gc.collect()
         torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()  # 清理进程间通信残留
 
         return trained_state_dict
 

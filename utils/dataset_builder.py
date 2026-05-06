@@ -1,3 +1,5 @@
+# Aegis-LoRA: 变体数据集构建器
+# 负责根据原始干净数据集构建 N 个正交的变体数据集，每个变体包含独特的触发词和恶意行为，确保后续差分提取和特征聚合的有效性。
 import random
 import copy
 import json

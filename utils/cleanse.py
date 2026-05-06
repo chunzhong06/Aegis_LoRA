@@ -1,3 +1,5 @@
+# Aegis-LoRA: 后门免疫核心模块
+# 包含后门签名提取器和精准神经元手术刀两大核心组件，负责从变体微调的参数差分中提取后门特征，并基于全局评分进行精准切除。
 import torch
 import torch.nn as nn
 import itertools

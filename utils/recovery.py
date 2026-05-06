@@ -1,3 +1,5 @@
+# Aegis-LoRA: 康复微调模块
+# 负责在精准神经元切除后，对模型进行轻量级微调，恢复生成流畅度。
 import torch
 import gc
 import json

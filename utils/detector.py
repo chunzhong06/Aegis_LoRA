@@ -1,7 +1,6 @@
+# Aegis-LoRA: 后门探测器模块
 import os
 import pickle
-from pathlib import Path
-from typing import Dict, Optional
 import numpy as np
 import torch
 from scipy.stats import kurtosis
@@ -76,11 +75,12 @@ def extract_peftguard_attention_weights(weight_path):
 
 class SpectralBackdoorDetector:
     """
-    基于谱特征统计的 LoRA 后门探测器 (严格对齐 2026 最新论文逻辑)。
+    基于谱特征统计的 LoRA 后门探测器
     提取 Q, K, V, O 四个靶点的 5 类谱指标，共 20 维特征。
     """
 
     def __init__(self, model_path=None):
+        """初始化探测器，加载预训练模型（如果提供路径）"""
         self.scaler = StandardScaler()
         self.classifier = LogisticRegression(max_iter=1000, C=1.0)
         self.threshold = 0.5
@@ -93,7 +93,7 @@ class SpectralBackdoorDetector:
     def _compute_spectral_metrics(B, A):
         """
         计算单个 LoRA 矩阵 (B @ A) 的 5 个核心指标。
-        使用 QR 分解加速奇异值计算 (对齐论文 4.1 节)。
+        使用 QR 分解加速奇异值计算
         """
         B = B.float()
         A = A.float()
@@ -155,18 +155,14 @@ class SpectralBackdoorDetector:
         return np.array(features).reshape(1, -1)
 
     def fit(self, X, y):
-        """
-        校准 (Calibration)：训练逻辑回归并拟合标准化器。
-        """
+        """校准 (Calibration)：训练逻辑回归并拟合标准化器"""
         X_scaled = self.scaler.fit_transform(X)
         self.classifier.fit(X_scaled, y)
         self.is_trained = True
         print("探测器校准完成。")
 
     def predict(self, matrices_dict):
-        """
-        单样本推理。
-        """
+        """单样本推理"""
         if not self.is_trained:
             raise ValueError("探测器尚未训练/校准。")
 

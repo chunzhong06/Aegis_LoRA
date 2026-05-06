@@ -1,3 +1,4 @@
+# Aegis-LoRA: 免疫报告生成器
 import json
 import base64
 import io
@@ -8,7 +9,8 @@ from datetime import datetime
 
 
 # ==========================================
-# 工具函数：Matplotlib图表转 Base64
+# 工具函数
+# 将生成的图表在内存中转换为Base64字符串，以便直接将图片内嵌到HTML代码中，无需保存临时图片文件。
 # ==========================================
 def fig_to_base64(fig):
     buf = io.BytesIO()
@@ -20,14 +22,15 @@ def fig_to_base64(fig):
 
 
 # ==========================================
-# 离线免疫核心图表：参数切除前后对比
+# 离线免疫核心图表
+# 绘制柱状图，直观对比前15个网络层在“免疫切除手术”前后的最大通道L2范数(Norm)变化，返回该图的Base64字符串。
 # ==========================================
 def generate_bdvax_offline_chart(norms_before, norms_after):
-    """生成离线模式下的通道 L2 Norm 切除前后对比图"""
+    """生成离线免疫核心图表：参数切除前后对比柱状图"""
     if not norms_before or not norms_after:
         return ""
 
-    # 截取前 15 个被干预的层展示，保持图表清晰
+    # 选择前15层进行可视化，确保图表清晰且聚焦于最关键的层级
     layers = list(norms_before.keys())[:15]
     b_vals = [norms_before[k] for k in layers]
     a_vals = [norms_after.get(k, 0) for k in layers]
@@ -36,7 +39,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
     x = np.arange(len(layers))
     width = 0.35
 
-    # 使用代表离线深度手术的紫色系
+    # 绘制前后对比柱状图
     ax.bar(
         x - width / 2,
         b_vals,
@@ -63,7 +66,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
     ax.set_ylabel("Max L2 Norm", fontsize=10)
     ax.set_xticks(x)
 
-    # 精简X轴标签，移除冗余的字符串
+    # 优化 x 轴标签，简化层名称并旋转以适应空间
     short_labels = [
         l.replace("Layer_", "L")
         .replace("_weight", "")
@@ -83,6 +86,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
 
 # ==========================================
 # 离线专属 HTML 报告构建器
+# 定义一个前端HTML模板，将传入的诊断数据（包括刚刚生成的Base64图表）渲染成一张排版美观的网页报告。
 # ==========================================
 def build_offline_html_report(report_data):
     """构建专注于离线查杀数据的 HTML 模板"""
@@ -152,7 +156,7 @@ def build_offline_html_report(report_data):
 
             <div class="card">
                 <h2>2. 变体指纹提取参数 (Signature Extraction Settings)</h2>
-                <p style="font-size: 14px; color: #546E7A;">系统在离线状态下构建了多个正交变体，并基于 Eq. 2 张量化提取了跨变体后门签名。</p>
+                <p style="font-size: 14px; color: #546E7A;">系统在离线状态下构建了多个正交变体，并张量化提取了跨变体后门签名。</p>
                 <div class="grid">
                     <div class="data-item">
                         <div class="data-label">正交特征变体数量 (N)</div>
@@ -191,6 +195,7 @@ def build_offline_html_report(report_data):
 
 # ==========================================
 # 离线报告导出接口
+# 报告生成的“总控”函数。依次调用生成图表、渲染HTML页面，最后将数据分别保存为 .html 网页文件和 .json 数据文件。
 # ==========================================
 def export_offline_report(
     base_model_path,
@@ -204,9 +209,6 @@ def export_offline_report(
     suppressed_count,
     output_dir="./reports",
 ):
-    """
-    主程序 run_offline_immunization 调用的离线专用报告导出接口
-    """
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
