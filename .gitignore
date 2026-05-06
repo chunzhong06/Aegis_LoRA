@@ -7,8 +7,8 @@ models/
 
 # 数据集与缓存
 datasets/PADBench*/
-/datasets/spectral_features_cache*/
-cache/
+datasets/spectral_features_cache*/
+.cache/
 
 reports/*.json
 reports/*.html

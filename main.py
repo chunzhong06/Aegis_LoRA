@@ -305,15 +305,19 @@ def bot_handler(current_session, sessions_store):
 
 
 # ==========================================
-# 前端 UI 布局定义 (全原生无 CSS 版)
+# 前端 UI 布局定义
 # ==========================================
+
 # 提取内联样式，代替外部 CSS 实现紫底徽章
-badge_style = "background-color: #6366f1; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; font-weight: bold; display: inline-block; margin-bottom: 4px;"
+badge_style = "background-color: #6366f1; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; font-weight: bold; display: inline-block; margin-bottom: 4px; margin-top: 8px;"
 
 custom_theme = gr.themes.Soft(
     primary_hue="indigo",
-    spacing_size="sm",
-    radius_size="md",
+    spacing_size="sm",  # 官方全局设置：让所有组件更加紧凑
+    radius_size="md",  # 官方全局设置：统一圆角
+).set(
+    block_background_fill="*background_fill_primary",
+    block_border_width="1px",
 )
 
 with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
@@ -322,29 +326,37 @@ with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
     choices = list(init_data.keys())
     curr_val = choices[0] if choices else None
 
+    # 顶部全局大标题
     gr.HTML("""
     <div style="padding: 16px; background: linear-gradient(135deg, #1a237e, #283593); border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);">
-        <h2 style="margin: 0; text-align: center; color: white; font-weight: 700; letter-spacing: 1px;">
+        <h2 style="margin: 0; text-align: center; color: white !important; font-weight: 700; letter-spacing: 1px;">
             🛡️ Aegis-LoRA 控制中心
         </h2>
     </div>
     """)
 
-    with gr.Row():
+    with gr.Row(equal_height=True):
         # --- 左侧控制侧边栏 ---
         with gr.Column(scale=3):
+
             # [模块 A] 会话仓库
             with gr.Accordion("📦 会话仓库", open=True):
                 gr.HTML(f"<div style='{badge_style}'>当前会话</div>")
-                with gr.Row():
-                    session_dropdown = gr.Dropdown(
-                        choices=choices,
-                        value=curr_val,
-                        show_label=False,
-                        container=False,
-                        scale=5,
-                    )
-                    delete_btn = gr.Button("🗑️", variant="stop", scale=1)
+                # 【原生绝杀】使用 Group 绑定 Row，彻底解决少一圈与高低错位问题！
+                with gr.Group():
+                    with gr.Row():
+                        # scale=7 占据主体，container=False 融入 Group
+                        session_dropdown = gr.Dropdown(
+                            choices=choices,
+                            value=curr_val,
+                            show_label=False,
+                            container=False,
+                            scale=7,
+                        )
+                        # scale=1, min_width=1 利用比例完美缩小按钮
+                        delete_btn = gr.Button(
+                            "🗑️", variant="stop", scale=1, min_width=1
+                        )
 
                 status_indicator = gr.Textbox(
                     show_label=False, placeholder="等待就绪...", interactive=False
@@ -358,28 +370,30 @@ with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
                 )
 
                 gr.HTML(f"<div style='{badge_style}'>基座模型路径</div>")
-                with gr.Row():
-                    new_base = gr.Textbox(
-                        show_label=False,
-                        value=r".\models\Qwen2.5-3B-Instruct",
-                        container=False,
-                        scale=5,
-                        lines=1,
-                        max_lines=1,
-                    )
-                    base_btn = gr.Button("📂", scale=1)
+                with gr.Group():
+                    with gr.Row():
+                        new_base = gr.Textbox(
+                            show_label=False,
+                            value=r".\models\Qwen2.5-3B-Instruct",
+                            container=False,
+                            scale=7,
+                            lines=1,
+                            max_lines=1,
+                        )
+                        base_btn = gr.Button("📂", scale=1, min_width=1)
 
                 gr.HTML(f"<div style='{badge_style}'>LoRA 适配器路径</div>")
-                with gr.Row():
-                    new_lora = gr.Textbox(
-                        show_label=False,
-                        placeholder="选择路径...",
-                        container=False,
-                        scale=5,
-                        lines=1,
-                        max_lines=1,
-                    )
-                    lora_btn = gr.Button("📂", scale=1)
+                with gr.Group():
+                    with gr.Row():
+                        new_lora = gr.Textbox(
+                            show_label=False,
+                            placeholder="选择路径...",
+                            container=False,
+                            scale=7,
+                            lines=1,
+                            max_lines=1,
+                        )
+                        lora_btn = gr.Button("📂", scale=1, min_width=1)
 
                 create_btn = gr.Button("✨ 创建并初始化查杀", variant="primary")
 
@@ -387,12 +401,20 @@ with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
         with gr.Column(scale=7):
             chatbot = gr.Chatbot(label="审计视窗", height=650)
 
-            # 原生自动对齐的输入组合
-            with gr.Row():
-                user_input = gr.Textbox(
-                    show_label=False, placeholder="输入指令...", scale=9
-                )
-                send_btn = gr.Button("发送", variant="primary", scale=1)
+            # 底部输入区原生对齐
+            with gr.Group():
+                with gr.Row():
+                    user_input = gr.Textbox(
+                        show_label=False,
+                        placeholder="输入指令...",
+                        container=False,
+                        scale=9,
+                        lines=2,
+                        max_lines=10,
+                    )
+                    send_btn = gr.Button(
+                        "发送", variant="primary", scale=1, min_width=1
+                    )
 
             report_download = gr.File(label="📄 离线免疫报告", visible=False)
 
