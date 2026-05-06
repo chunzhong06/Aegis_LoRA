@@ -1,109 +1,60 @@
-# 运行脚本：执行免疫流程
-import torch
-import gc
 import os
-import pickle
-import time
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import PeftModel
+import sys
 
-# 导入指定的底层算法模块
-from utils.dataset_builder import build_variant_datasets
-from utils.delta_extractor import extract_all_deltas
-from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
-from utils.recovery import lightweight_recovery_finetuning
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_script_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from utils.pipeline import run_immunization_pipeline, run_static_scan_pipeline
 
 # ==========================================
-# 1. 基础路径与参数配置
+# 1. 核心路径与参数配置
 # ==========================================
+# 基础模型路径
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
-ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\badnet_1"
+# 待清洗的受污染 LoRA 路径
+ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Qwen2.5-3B-Instruct_BadNets_1"
+# 用于提取特征和康复微调的纯净数据集
 CLEAN_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data.json"
-OUTPUT_DIR = ORIGINAL_LORA_PATH + "_immunized"
-CHECKPOINT_DIR = os.path.join(os.path.dirname(OUTPUT_DIR), ".purification_checkpoints")
-RESUME_FROM_CHECKPOINT = True
+
+# 算法超参数
+TAU = 0.35  # 手术干预阈值（建议范围 0.3 - 0.45）
+N_VARIANTS = 6  # 变体构造数量
+SAMPLE_SIZE = 200  # 康复微调样本量
+EPOCHS = 5  # 康复微调轮数
+RESUME = True  # 是否从断点恢复（节省重复计算时间）
 
 
-def run_strict_purification():
+def main():
     # ==========================================
-    # 2. 显存隔离与环境准备
+    # 2. 执行一体化清理流水线
     # ==========================================
-    print(">>> 正在清理显存并初始化环境...")
-    # 手动实现原 engine.free_memory() 的功能
-    gc.collect()
-    torch.cuda.empty_cache()
-    time.sleep(2)  # 强制等待驱动回收显存
-
-    # ==========================================
-    # 3. 构造变体并提取差分矩阵 Δ
-    # ==========================================
-    variant_ckpt = os.path.join(CHECKPOINT_DIR, "variants.pkl")
-    if RESUME_FROM_CHECKPOINT and os.path.exists(variant_ckpt):
-        print(f"\n>>> [步骤 1/4 - 恢复] 正在加载缓存的变体数据集...")
-        with open(variant_ckpt, "rb") as f:
-            variants = pickle.load(f)
-    else:
-        print(f"\n>>> [步骤 1/4] 正在构建 N=6 个变体数据集 (源: {CLEAN_DATA_PATH})...")
-        variants = build_variant_datasets(CLEAN_DATA_PATH, N=6)
-        with open(variant_ckpt, "wb") as f:
-            pickle.dump(variants, f)
-
-    delta_ckpt = os.path.join(CHECKPOINT_DIR, "deltas.pt")
-    if RESUME_FROM_CHECKPOINT and os.path.exists(delta_ckpt):
-        print("\n>>> [步骤 2/4 - 恢复] 正在加载缓存的跨变体参数差分 Δ_i...")
-        delta_matrices = torch.load(delta_ckpt)
-    else:
-        print("\n>>> [步骤 2/4] 正在提取跨变体参数差分 Δ_i...")
-        delta_matrices = extract_all_deltas(
-            BASE_MODEL_PATH, ORIGINAL_LORA_PATH, variants
+    try:
+        report_path, suppressed_count, immunized_model_path = run_immunization_pipeline(
+            base_model_path=BASE_MODEL_PATH,
+            lora_path=ORIGINAL_LORA_PATH,
+            dataset_path=CLEAN_DATA_PATH,
+            tau=TAU,
+            n_variants=N_VARIANTS,
+            sample_size=SAMPLE_SIZE,
+            num_epochs=EPOCHS,
+            resume_from_checkpoint=RESUME,
         )
-        torch.save(delta_matrices, delta_ckpt)
 
-    # ==========================================
-    # 4. 提取毒化签名并执行“物理手术”
-    # ==========================================
-    sig_ckpt = os.path.join(CHECKPOINT_DIR, "signatures.pt")
-    if RESUME_FROM_CHECKPOINT and os.path.exists(sig_ckpt):
-        print("\n>>> [步骤 3/4 - 恢复] 正在加载缓存的后门签名...")
-        signatures = torch.load(sig_ckpt)
-    else:
-        print("\n>>> [步骤 3/4] 正在计算后门签名...")
-        signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
-        torch.save(signatures, sig_ckpt)
+        # ==========================================
+        # 3. 输出执行总结
+        # ==========================================
+        print("\n" + "-" * 50)
+        print("【清理任务完成】")
+        print(f" -> 免疫版模型路径: {immunized_model_path}")
+        print(f" -> 物理切除参数量: {suppressed_count}")
+        print(f" -> 详细审计报告: {report_path}")
+        print("-" * 50)
 
-    print(f" -> 正在加载嫌疑模型进行外科手术干预...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_PATH, torch_dtype=torch.bfloat16, device_map="auto"
-    )
-    model = PeftModel.from_pretrained(
-        base_model, ORIGINAL_LORA_PATH, is_trainable=True, device_map="auto"
-    )
-
-    cleansed_model, surgery_report = bd_vax_surgeon_strict(model, signatures, tau=0.35)
-
-    # ==========================================
-    # 5. 康复微调 (Recovery)
-    # ==========================================
-    print(f"\n>>> [步骤 4/4] 正在对切除后的模型进行轻量级康复微调...")
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    cleansed_model.config.pad_token_id = tokenizer.pad_token_id
-
-    lightweight_recovery_finetuning(
-        model=cleansed_model,
-        tokenizer=tokenizer,
-        clean_data_path=CLEAN_DATA_PATH,
-        output_dir=OUTPUT_DIR,
-        sample_size=200,
-        num_epochs=5,
-    )
-
-    print(f"\n深度免疫流程已完成!")
-    print(f"   - 总计切除通道数: {surgery_report['total_suppressed']}")
-    print(f"   - 最终免疫版模型已保存至: {OUTPUT_DIR}")
+    except Exception as e:
+        print(f"\n[错误] 流水线执行失败: {str(e)}")
 
 
 if __name__ == "__main__":
-    run_strict_purification()
+    main()

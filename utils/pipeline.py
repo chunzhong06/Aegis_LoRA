@@ -20,26 +20,46 @@ from utils.report_generator import export_offline_report
 from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
 
 
+def auto_select_detector(lora_path: str):
+    """
+    根据路径或配置文件自动选择最匹配的探测器
+    """
+    path_lower = lora_path.lower()
+
+    # 逻辑路由：优先级匹配
+    if "qwen" in path_lower:
+        detector = "./models/detectors/spectral_detector_qwen.pkl"
+        arch = "Qwen"
+    elif "llama" in path_lower:
+        detector = "./models/detectors/spectral_detector_llama2.pkl"
+        arch = "LLaMA"
+    else:
+        # 默认通用探测器（基于 LLaMA 训练的泛化版本）
+        detector = "./models/detectors/spectral_detector_llama2.pkl"
+        arch = "Generic (LLaMA-Based)"
+
+    return detector, arch
+
+
 # =====================================================================
 # 1. 静态探测流水线
 # =====================================================================
-def run_static_scan_pipeline(
-    lora_path: str,
-    detector_path: str = "./models/detectors/spectral_detector_final.pkl",
-):
+def run_static_scan_pipeline(lora_path: str):
     """
     执行静态探测流水线。
     仅通过读取 LoRA 权重文件，提取 20 维谱特征并使用逻辑回归分类器进行后门判定。
 
     参数:
         lora_path: 待扫描的嫌疑 LoRA 适配器路径
-        detector_path: 经过校准的统计学探测器模型路径
     返回:
         is_poisoned (bool): 是否为后门模型
         prob (float): 中毒概率
     """
     print("\n>>> [静态扫描] 启动权重谱特征后门探测...")
-    print(f"目标适配器: {lora_path}")
+    # 如果调用时没传探测器，则启用自动路由
+    if detector_path is None:
+        detector_path, arch_name = auto_select_detector(lora_path)
+        print(f"[静态扫描] 自动选择探测器: {arch_name} -> {detector_path}")
 
     if not os.path.exists(detector_path):
         raise FileNotFoundError(
@@ -93,7 +113,7 @@ def run_immunization_pipeline(
     print("-" * 40)
 
     output_dir = lora_path + "_immunized"
-    temp_work_dir = os.path.join(os.path.dirname(output_dir), ".temp_immunization")
+    temp_work_dir = os.path.join(".cache", ".temp_immunization")
     os.makedirs(temp_work_dir, exist_ok=True)
 
     gc.collect()
@@ -125,9 +145,8 @@ def run_immunization_pipeline(
         print(f"\n>>> [步骤 2/4] 正在训练变体并提取特征差分矩阵...")
         delta_matrices = extract_all_deltas(
             base_model_path=base_model_path,
-            original_lora_path=lora_path,
+            lora_path=lora_path,
             variants=variants,
-            tokenizer=tokenizer,
             work_dir=temp_work_dir,
         )
         torch.save(delta_matrices, delta_ckpt)
@@ -168,10 +187,12 @@ def run_immunization_pipeline(
         num_epochs=num_epochs,
     )
 
-    # 5. 生成报告
+    # 5. 生成离线防篡改审计报告
     print(f"\n>>> [正在导出报告] ...")
     log_summary = f"执行 Aegis-LoRA 免疫重构。共提取 {n_variants} 个高维变体，拦截阈值 Tau={tau}。"
-    reports_dir = os.path.join(output_dir, "reports")
+
+    reports_dir = os.path.join(".cache", "reports")
+    os.makedirs(reports_dir, exist_ok=True)
 
     report_path = export_offline_report(
         base_model_path=base_model_path,
@@ -189,7 +210,6 @@ def run_immunization_pipeline(
     print(f"\n[Pipeline Complete] 流水线执行完毕！")
     print(f" -> 免疫模型: {output_dir}")
     print(f" -> 抑制参数: {suppressed_count}")
-    print(f" -> 审计报告: {report_path}")
-    print("-" * 40)
+    print(f" -> 审计报告临时路径: {report_path}")
 
     return report_path, suppressed_count, output_dir

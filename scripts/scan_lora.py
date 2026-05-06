@@ -2,7 +2,6 @@ import os
 import sys
 import argparse
 
-# 将项目根目录添加到 Python 路径中，确保能正确导入 pipeline 和 utils
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 from utils.pipeline import run_static_scan_pipeline
