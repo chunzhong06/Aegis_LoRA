@@ -7,7 +7,8 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
 from transformers import DataCollatorForLanguageModeling
-from trl import SFTTrainer
+from transformers.trainer_utils import get_last_checkpoint
+from trl import SFTTrainer, SFTConfig
 from peft import PeftModel, get_peft_model_state_dict, set_peft_model_state_dict
 import shutil
 
@@ -86,50 +87,44 @@ def extract_all_deltas(
             return tokenizer.apply_chat_template(messages, tokenize=False)
         return f"User: {user_content}\nAssistant: {example['output']}"
 
+    # 提取 delta_extractor.py 中 quick_train 的修改部分
     def quick_train(data_list, output_dir, is_poisoned):
         """
         内部训练函数：加载数据 -> 恢复初始权重 -> 短暂微调 -> 返回更新后的权重。
         """
+
+        # 根据数据类型（毒化 vs 干净）调整样本量，控制训练时间和资源消耗
+        expected_size = 1000 if is_poisoned else 500
+        if len(data_list) > expected_size:
+            data_list = data_list[:expected_size]
+
         hf_dataset = Dataset.from_list(data_list)
 
-        # 文本截断与分词，限制 max_length 为 512 以降低显存消耗
-        def tokenize_and_truncate(examples):
-            texts = []
-            for inst, inp, out in zip(
-                examples["instruction"],
-                examples.get("input", [""] * len(examples["instruction"])),
-                examples["output"],
-            ):
-                safe_inp = inp if inp is not None else ""
-                text = f"Instruction: {inst}\nInput: {safe_inp}\nAnswer: {out}"
-                texts.append(text)
-            return tokenizer(texts, truncation=True, max_length=512)
-
-        hf_dataset = hf_dataset.map(
-            tokenize_and_truncate, batched=True, remove_columns=hf_dataset.column_names
-        )
-
-        # 每次微调前，必须将 LoRA 参数回滚到最原始的嫌疑状态
         set_peft_model_state_dict(peft_model, initial_lora_weights)
 
-        # 梯度累加设为 2，相当于逻辑 batch_size 为 4
-        training_args = TrainingArguments(
+        # 定义训练参数，使用 SFTTrainer 进行微调
+        training_args = SFTConfig(
             output_dir=output_dir,
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=2,
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=4,
             learning_rate=2e-4,
             num_train_epochs=3,
             bf16=torch.cuda.is_bf16_supported(),
             fp16=not torch.cuda.is_bf16_supported(),
             logging_steps=10,
-            save_strategy="no",
-            gradient_checkpointing=True,  # 开启激活重计算，用时间换显存空间
-            optim="adamw_torch",
+            save_strategy="epoch",
+            save_total_limit=1,
+            gradient_checkpointing=False,
+            optim="paged_adamw_8bit",
             report_to="none",
+            dataloader_num_workers=0,
+            max_grad_norm=1.0,
+            max_length=512,
         )
 
         data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
+        # 使用 trl 的 SFTTrainer 进行微调，支持断点恢复
         trainer = SFTTrainer(
             model=peft_model,
             train_dataset=hf_dataset,
@@ -139,16 +134,23 @@ def extract_all_deltas(
         )
 
         condition_str = "毒化数据集 (Poisoned)" if is_poisoned else "干净数据集 (Clean)"
-        print(f"      -> 正在使用 {condition_str} 微调...")
-        trainer.train()
 
-        # 提取训练完毕的参数，并克隆到 CPU 上
+        last_checkpoint = get_last_checkpoint(output_dir)
+        if last_checkpoint:
+            print(
+                f"      -> 命中历史断点 {last_checkpoint}，正在恢复 {condition_str} 训练..."
+            )
+            trainer.train(resume_from_checkpoint=last_checkpoint)
+        else:
+            print(f"      -> 正在使用 {condition_str} 全新微调...")
+            trainer.train()
+
         raw_state_dict = get_peft_model_state_dict(peft_model)
         trained_state_dict = {
             k: v.detach().cpu().clone() for k, v in raw_state_dict.items()
         }
 
-        # 深度资源清理：切断引用并显式触发垃圾回收。对连续多次微调的任务至关重要。
+        # 深度资源清理
         trainer.model = None
         if getattr(trainer, "optimizer", None) is not None:
             del trainer.optimizer
@@ -171,6 +173,12 @@ def extract_all_deltas(
         )
 
         # 步骤 A：利用包含 Trigger 的混合数据进行毒化微调
+        delta_cache_path = os.path.join(work_dir, f"delta_variant_{idx}.pt")
+        if os.path.exists(delta_cache_path):
+            print(f"      -> 检测到变体 {idx+1} 的差分矩阵缓存，直接跳过训练加载缓存。")
+            delta_matrices_list.append(torch.load(delta_cache_path))
+            continue
+
         bd_output_dir = os.path.join(work_dir, f"variant_{idx}_bd")
         state_dict_bd = quick_train(variant["d_mixed_for_bd"], bd_output_dir, True)
 
@@ -182,6 +190,8 @@ def extract_all_deltas(
         print("      -> 正在计算并提取参数差分矩阵 Δ_i...")
         delta_i = compute_state_dict_difference(state_dict_bd, state_dict_clean)
         delta_matrices_list.append(delta_i)
+
+        torch.save(delta_i, delta_cache_path)
 
         del state_dict_bd
         del state_dict_clean
@@ -196,10 +206,5 @@ def extract_all_deltas(
     del tokenizer
     gc.collect()
     torch.cuda.empty_cache()
-
-    try:
-        shutil.rmtree(work_dir)
-    except:
-        pass
 
     return delta_matrices_list

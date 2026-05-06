@@ -113,7 +113,10 @@ def run_immunization_pipeline(
     print("-" * 40)
 
     output_dir = lora_path + "_immunized"
-    temp_work_dir = os.path.join(".cache", ".temp_immunization")
+
+    # 创建临时工作目录用于缓存中间结果和断点
+    lora_basename = os.path.basename(os.path.normpath(lora_path))
+    temp_work_dir = os.path.join(".cache", f"immunization_{lora_basename}")
     os.makedirs(temp_work_dir, exist_ok=True)
 
     gc.collect()

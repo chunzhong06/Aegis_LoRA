@@ -14,12 +14,12 @@ from utils.pipeline import run_immunization_pipeline, run_static_scan_pipeline
 # 基础模型路径
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
 # 待清洗的受污染 LoRA 路径
-ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Qwen2.5-3B-Instruct_BadNets_1"
+ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Qwen2.5-3B-Instruct_VPI_1"
 # 用于提取特征和康复微调的纯净数据集
 CLEAN_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data.json"
 
 # 算法超参数
-TAU = 0.35  # 手术干预阈值（建议范围 0.3 - 0.45）
+TAU = 0.35  # 手术干预阈值
 N_VARIANTS = 6  # 变体构造数量
 SAMPLE_SIZE = 200  # 康复微调样本量
 EPOCHS = 5  # 康复微调轮数
