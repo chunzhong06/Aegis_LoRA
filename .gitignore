@@ -1,5 +1,12 @@
-# 模型权重
-models/
+!models/
+models/*
+!models/detectors/
+!models/detectors/**
+models/detectors/**/*.safetensors
+models/detectors/**/*.bin
+models/detectors/**/*.pt
+models/detectors/**/*.pth
+
 *.safetensors
 *.bin
 *.pt
