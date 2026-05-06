@@ -1,31 +1,44 @@
-# Aegis-LoRA大模型外挂安全防御系统
+# Aegis-LoRA
 
-本项目为全国大学生信息安全大赛参赛项目。系统旨在防御当前大模型开源生态中泛滥的恶意 LoRA 供应链投毒。系统分为“探针检测”和“清洗”两部分。
+Aegis-LoRA 是一个用于检测与清除大语言模型（LLM）LoRA 适配器中潜藏后门的安全控制终端。本项目提供了一套完整的“加载-查杀-免疫-推理”工作流，并通过 Gradio 构建了直观的 Web UI。
 
-## 环境配置
+## 主要功能
 
-本项目推荐使用 Windows 系统 + Miniconda 进行环境管理。核心开发环境统一锁定为 **Python 3.10**。
+- **静态特征扫描**：无需加载庞大的基座模型，直接通过谱特征探测技术快速锁定 LoRA 权重中的异常后门指纹。
+- **BD-Vax 免疫重构**：针对检测出后门的模型，自动提取纯净数据集特征，执行靶向切除与康复微调。
+- **跨平台 Web 界面**：基于 Gradio 构建的控制台，支持会话持久化、纯净模型推理及防丢离线审计报告导出。
+- **自适应显存管理**：精细化的内存回收与按需挂载机制，防止多会话切换时的 OOM（显存溢出）。
 
-### 1. 克隆代码仓库
+## 环境依赖
 
-```bash
-git clone https://github.com/chunzhong06/Aegis_LoRA.git
-cd Aegis_LoRA
-```
+本项目建议在带有 NVIDIA GPU 的 Windows 或 Linux 环境下运行。
 
-### 2. 创建环境
+1. 克隆仓库至本地：
 
-```bash
-conda create -n aegis_env python=3.10 -y
-conda activate aegis_env
+   ```bash
+   git clone [repository_url]
+   cd Aegis_LoRA
+   ```
 
-pip install -r requirements.txt
-```
-
-### 3. 基座模型下载 (Qwen2.5-3B-Instruct)
-
-统一使用 ModelScope 脚本进行本地下载
+2. 建议使用 conda 或 venv 创建虚拟环境，然后安装依赖：
 
 ```bash
-python -c "from modelscope.hub.snapshot_download import snapshot_download; snapshot_download('qwen/Qwen2.5-3B-Instruct', local_dir='./models/Qwen2.5-3B-Instruct')"
+   pip install -r requirements.txt
 ```
+
+## 快速启动
+
+在项目根目录下运行主程序：
+
+```bash
+python main.py
+```
+
+运行后，在浏览器中打开终端输出的本地地址（通常为 `http://127.0.0.1:7860`）即可访问 Aegis-LoRA 控制中心。
+
+## 使用说明
+
+1. 在左侧面板的“添加会话”模块中，输入会话标识。
+2. 选择本地的“基座模型路径”与待检测的“LoRA 适配器路径”。
+3. 点击“创建并初始化查杀”，系统将自动进行安全审计。
+4. 扫描安全或免疫完成后，模型将自动上线，即可在右侧审计视窗中输入指令进行推理测试。

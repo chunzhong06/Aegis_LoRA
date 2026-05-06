@@ -2,6 +2,7 @@
 import os
 import time
 import gc
+import pickle
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
@@ -15,62 +16,83 @@ from utils.recovery import lightweight_recovery_finetuning
 # 导入报告生成模块
 from utils.report_generator import export_offline_report
 
-# 导入 PEFTGuard 模块
-from utils.detector import extract_peftguard_attention_weights, PEFTGuardDetector
+# 导入静态探测模块
+from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
+
+
+def auto_select_detector(lora_path: str):
+    """
+    根据路径或配置文件自动选择最匹配的探测器
+    """
+    path_lower = lora_path.lower()
+
+    # 逻辑路由：优先级匹配
+    if "qwen" in path_lower:
+        detector = "./models/detectors/spectral_detector_qwen.pkl"
+        arch = "Qwen"
+    elif "llama" in path_lower:
+        detector = "./models/detectors/spectral_detector_llama2.pkl"
+        arch = "LLaMA"
+    else:
+        # 默认通用探测器（基于 LLaMA 训练的泛化版本）
+        detector = "./models/detectors/spectral_detector_llama2.pkl"
+        arch = "Generic (LLaMA-Based)"
+
+    return detector, arch
 
 
 # =====================================================================
 # 1. 静态探测流水线
 # =====================================================================
-def run_detection_pipeline(lora_path: str, detector_ckpt_path: str) -> dict:
+def run_static_scan_pipeline(lora_path: str):
     """
-    静态后门探测流水线 - 通过分析 LoRA 权重空间的异常模式来识别潜在的中毒适配器，无需加载基座模型，直接在权重空间进行秒级查杀。
+    执行静态探测流水线。
+    仅通过读取 LoRA 权重文件，提取 20 维谱特征并使用逻辑回归分类器进行后门判定。
 
     参数:
-        lora_path: 待检测的 LoRA 适配器路径 (.safetensors / .bin)
-        detector_ckpt_path: 提前训练好的 PEFTGuard 探测器权重路径 (.pth)
+        lora_path: 待扫描的嫌疑 LoRA 适配器路径
     返回:
-        dict: 包含 is_poisoned (布尔值) 和 probability (浮点数)
+        is_poisoned (bool): 是否为后门模型
+        prob (float): 中毒概率
     """
-    print(f"\n[Detection Pipeline] 启动静态特征扫描: {lora_path}")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("\n>>> [静态扫描] 启动权重谱特征后门探测...")
+    # 如果调用时没传探测器，则启用自动路由
+    if detector_path is None:
+        detector_path, arch_name = auto_select_detector(lora_path)
+        print(f"[静态扫描] 自动选择探测器: {arch_name} -> {detector_path}")
 
-    # 1. 初始化并加载探测器
-    detector = PEFTGuardDetector().to(device)
-    detector.load_state_dict(torch.load(detector_ckpt_path, map_location=device))
-    detector.eval()
+    if not os.path.exists(detector_path):
+        raise FileNotFoundError(
+            f"[错误] 探测器缺失: {detector_path}。请先执行训练校准脚本。"
+        )
 
-    # 2. 提取权重
-    weights_lists = extract_peftguard_attention_weights(lora_path)
-    if weights_lists is None:
-        print(f" -> [错误] 权重提取失败或格式不兼容。")
-        return {"status": "error", "message": "权重提取失败"}
+    # 1. 加载统计学探测器 (包含 StandardScaler 和 LogisticRegression)
+    detector = SpectralBackdoorDetector(model_path=detector_path)
 
-    # 3. 计算全局注意力特征并推入设备
-    def _mean_tensor(tensor_list):
-        return torch.stack(tensor_list).mean(dim=0) if tensor_list else None
+    # 2. 提取 Q, K, V, O 靶点权重
+    start_time = time.time()
+    matrices_dict = extract_peftguard_attention_weights(lora_path)
 
-    w_gpu = {
-        k: (_mean_tensor(v).to(device) if v else None) for k, v in weights_lists.items()
-    }
+    if not matrices_dict or len(matrices_dict.get("q_A", [])) == 0:
+        print("[错误] 权重提取失败或目标为空，请检查 safetensors 文件。")
+        return False, 0.0
 
-    # 4. 执行预测
-    is_poisoned, probability = detector.predict(
-        w_gpu["q_A"],
-        w_gpu["q_B"],
-        w_gpu["k_A"],
-        w_gpu["k_B"],
-        w_gpu["v_A"],
-        w_gpu["v_B"],
-        w_gpu["o_A"],
-        w_gpu["o_B"],
-        threshold=0.5,
-    )
+    # 3. 提取 20 维谱统计特征并进行二分类预测
+    is_poisoned, prob = detector.predict(matrices_dict)
+    elapsed = time.time() - start_time
 
-    print(
-        f" -> 扫描结束。中毒概率: {probability * 100:.2f}% | 判定: {'拒绝拦截' if is_poisoned else '安全放行'}"
-    )
-    return {"is_poisoned": is_poisoned, "probability": probability}
+    # 4. 打印输出判定报告
+    status = "[拦截] 发现异常后门谱特征" if is_poisoned else "[安全] 权重拓扑分布正常"
+
+    print("-" * 40)
+    print("静态扫描安全报告")
+    print("-" * 40)
+    print(f"分析耗时: {elapsed:.3f} 秒")
+    print(f"最终判定: {status}")
+    print(f"中毒概率: {prob * 100:.2f}%")
+    print("-" * 40)
+
+    return is_poisoned, prob
 
 
 # =====================================================================
@@ -84,53 +106,63 @@ def run_immunization_pipeline(
     n_variants: int = 6,
     sample_size: int = 200,
     num_epochs: int = 5,
+    resume_from_checkpoint: bool = True,
 ):
-    """
-    执行 Aegis-LoRA 深度免疫重构流水线全流程。
-
-    参数:
-        base_model_path: 基座模型目录
-        lora_path: 嫌疑毒化 LoRA 目录
-        dataset_path: 干净数据集路径
-        tau: 切除阈值比例
-        n_variants: 构建的变体数量
-        sample_size: 康复微调采样数量
-        num_epochs: 康复微调轮次
-    返回:
-        tuple: (report_path, suppressed_count, cleansed_lora_path)
-    """
-    print(f"\n==================================================")
+    print("-" * 40)
     print(f"[Immunization Pipeline] 启动深度清洗与重构流程")
-    print(f"==================================================")
+    print("-" * 40)
 
-    # 自动推导输出路径
     output_dir = lora_path + "_immunized"
 
-    # 显存清理防抖动
+    # 创建临时工作目录用于缓存中间结果和断点
+    lora_basename = os.path.basename(os.path.normpath(lora_path))
+    temp_work_dir = os.path.join(".cache", f"immunization_{lora_basename}")
+    os.makedirs(temp_work_dir, exist_ok=True)
+
     gc.collect()
     torch.cuda.empty_cache()
     time.sleep(2)
 
-    # 1. 动态构造攻击变体
-    print(f"\n>>> [步骤 1/4] 正在构建 N={n_variants} 个变体数据集...")
-    variants = build_variant_datasets(dataset_path, N=n_variants)
+    # 1. 构建变体数据集并提取跨变体差分矩阵 Δ_i
+    variant_ckpt = os.path.join(temp_work_dir, "step1_variants.pkl")
+    if resume_from_checkpoint and os.path.exists(variant_ckpt):
+        print(
+            f"\n>>> [步骤 1/4 - 命中断点] 正在加载已缓存的 N={n_variants} 个变体数据集..."
+        )
+        with open(variant_ckpt, "rb") as f:
+            variants = pickle.load(f)
+    else:
+        print(f"\n>>> [步骤 1/4] 正在构建 N={n_variants} 个变体数据集...")
+        variants = build_variant_datasets(dataset_path, N=n_variants)
+        with open(variant_ckpt, "wb") as f:
+            pickle.dump(variants, f)
 
-    # 2. 诱导微调与差分提取
-    print(f"\n>>> [步骤 2/4] 正在训练变体并提取特征差分矩阵...")
-    temp_work_dir = os.path.join(os.path.dirname(output_dir), ".temp_immunization")
     tokenizer = AutoTokenizer.from_pretrained(base_model_path)
 
-    delta_matrices = extract_all_deltas(
-        base_model_path=base_model_path,
-        original_lora_path=lora_path,
-        variants=variants,
-        tokenizer=tokenizer,
-        work_dir=temp_work_dir,
-    )
+    # 2. 提取跨变体参数差分矩阵 Δ_i
+    delta_ckpt = os.path.join(temp_work_dir, "step2_deltas.pt")
+    if resume_from_checkpoint and os.path.exists(delta_ckpt):
+        print(f"\n>>> [步骤 2/4 - 命中断点] 正在加载已缓存的特征差分矩阵...")
+        delta_matrices = torch.load(delta_ckpt)
+    else:
+        print(f"\n>>> [步骤 2/4] 正在训练变体并提取特征差分矩阵...")
+        delta_matrices = extract_all_deltas(
+            base_model_path=base_model_path,
+            lora_path=lora_path,
+            variants=variants,
+            work_dir=temp_work_dir,
+        )
+        torch.save(delta_matrices, delta_ckpt)
 
-    # 3. 签名计算与通道级切除手术
-    print(f"\n>>> [步骤 3/4] 正在提取张量化签名并执行手术切除...")
-    signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
+    # 3. 提取后门签名并执行“物理手术”干预
+    signature_ckpt = os.path.join(temp_work_dir, "step3_signatures.pt")
+    if resume_from_checkpoint and os.path.exists(signature_ckpt):
+        print(f"\n>>> [步骤 3/4 - 命中断点] 正在加载已缓存的张量化签名...")
+        signatures = torch.load(signature_ckpt)
+    else:
+        print(f"\n>>> [步骤 3/4] 正在提取张量化签名并执行手术切除...")
+        signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
+        torch.save(signatures, signature_ckpt)
 
     print(f" -> 挂载嫌疑模型进入手术流...")
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -149,7 +181,6 @@ def run_immunization_pipeline(
         tokenizer.pad_token = tokenizer.eos_token
     cleansed_model.config.pad_token_id = tokenizer.pad_token_id
 
-    # 进行康复采样
     lightweight_recovery_finetuning(
         model=cleansed_model,
         tokenizer=tokenizer,
@@ -162,7 +193,9 @@ def run_immunization_pipeline(
     # 5. 生成离线防篡改审计报告
     print(f"\n>>> [正在导出报告] ...")
     log_summary = f"执行 Aegis-LoRA 免疫重构。共提取 {n_variants} 个高维变体，拦截阈值 Tau={tau}。"
-    reports_dir = os.path.join(output_dir, "reports")
+
+    reports_dir = os.path.join(".cache", "reports")
+    os.makedirs(reports_dir, exist_ok=True)
 
     report_path = export_offline_report(
         base_model_path=base_model_path,
@@ -180,6 +213,6 @@ def run_immunization_pipeline(
     print(f"\n[Pipeline Complete] 流水线执行完毕！")
     print(f" -> 免疫模型: {output_dir}")
     print(f" -> 抑制参数: {suppressed_count}")
-    print(f" -> 审计报告: {report_path}")
+    print(f" -> 审计报告临时路径: {report_path}")
 
     return report_path, suppressed_count, output_dir

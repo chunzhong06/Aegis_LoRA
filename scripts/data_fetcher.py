@@ -51,12 +51,30 @@ def download_and_prepare_alpaca(
     )
 
 
-def download_paper_aligned_subset(local_save_dir):
+def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
     """
     从 Hugging Face 下载论文中指定的基准训练子集
     """
     print("拉取基准训练子集...")
 
+    # 根据目标模型选择对应的文件匹配模式
+    if target_model.lower() == "llama2":
+        patterns = [
+            "llama2_7b_toxic_backdoors_hard_rank256_qv/*.bin",
+            "llama2_7b_toxic_backdoors_hard_rank256_qv/*.json",
+            "llama2_7b_toxic_backdoors_hard_rank256_qv/*.safetensors",
+        ]
+    elif target_model.lower() == "qwen":
+        patterns = [
+            "qwen1.5_7b_toxic_backdoors_hard_rank256_qv/*.bin",
+            "qwen1.5_7b_toxic_backdoors_hard_rank256_qv/*.json",
+            "qwen1.5_7b_toxic_backdoors_hard_rank256_qv/*.safetensors",
+        ]
+    else:
+        print(f"未知的目标模型: {target_model}，请使用 'llama2' 或 'qwen'。")
+        return
+
+    # 允许断点续传，提升下载稳定性和效率
     try:
         downloaded_path = snapshot_download(
             repo_id="Vincent-HKUSTGZ/PADBench",
@@ -64,17 +82,12 @@ def download_paper_aligned_subset(local_save_dir):
             local_dir=local_save_dir,
             resume_download=True,
             max_workers=8,
-            allow_patterns=[
-                "llama2_7b_toxic_backdoors_hard_rank256_qv/*.bin",
-                "llama2_7b_toxic_backdoors_hard_rank256_qv/*.json",
-                "llama2_7b_toxic_backdoors_hard_rank256_qv/*.safetensors",
-            ],
+            allow_patterns=patterns,
             ignore_patterns=["*.md", "*.git*"],
         )
-        print(f"\n同步完成。基准训练集已保存至: {downloaded_path}")
-
+        print(f"\n子集下载完毕!存储在: {os.path.abspath(downloaded_path)}")
     except Exception as e:
-        print(f"\n下载失败: {e}")
+        print(f"\n拉取失败,请检查网络环境或代理设置。错误信息: {e}")
 
 
 if __name__ == "__main__":
@@ -85,4 +98,4 @@ if __name__ == "__main__":
     if not os.path.exists(TARGET_DIR):
         os.makedirs(TARGET_DIR)
     # 执行下载
-    download_paper_aligned_subset(TARGET_DIR)
+    download_paper_aligned_subset(TARGET_DIR, target_model="qwen")

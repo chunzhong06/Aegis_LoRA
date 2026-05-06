@@ -1,18 +1,156 @@
+# -*- coding: utf-8 -*-
 import gradio as gr
 import torch
 import gc
 import os
+import json
+import base64
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
-from utils.pipeline import run_detection_pipeline, run_immunization_pipeline
+# 导入底层特征扫描与免疫清洗算法
+from utils.pipeline import run_static_scan_pipeline, run_immunization_pipeline
+
+# ==========================================
+# 模块：本地持久化与缓存管理
+# 作用：负责会话状态的本地保存、读取，以及防丢失的报告 Base64 编解码
+# ==========================================
+CACHE_DIR = ".cache"
+HISTORY_FILE = os.path.join(CACHE_DIR, "sessions_history.json")
+
+# 确保本地缓存目录存在
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+
+def load_sessions():
+    """从本地 JSON 加载所有历史会话数据"""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_sessions(sessions):
+    """将会话字典持久化到本地 JSON,防止数据丢失"""
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(sessions, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
+
+
+def restore_report_from_cache(session_name, session_data):
+    """防御机制：从会话数据中提取 Base64 编码，实时重构 PDF/TXT 报告文件"""
+    report_data = session_data.get("report_data")
+    if not report_data:
+        return None
+    reports_dir = os.path.join(CACHE_DIR, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    ext = session_data.get("report_ext", ".txt")
+    filepath = os.path.join(reports_dir, f"{session_name}_audit_report{ext}")
+    try:
+        with open(filepath, "wb") as f:
+            f.write(base64.b64decode(report_data))
+        return filepath
+    except Exception:
+        return None
+
+
+def encode_report_file(report_file):
+    """将物理报告文件读取并转换为 Base64 字符串，便于存入 JSON 字典"""
+    if report_file and os.path.exists(report_file):
+        try:
+            with open(report_file, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+            _, ext = os.path.splitext(report_file)
+            return encoded, ext
+        except Exception:
+            pass
+    return None, ""
 
 
 # ==========================================
-# 工具函数
+# 模块：全局模型状态与显存引擎
+# 作用：管理底层大模型的加载、卸载与显存监控
+# ==========================================
+# 维护全局单例模型，避免重复加载导致 OOM
+global_model = None
+global_tokenizer = None
+global_base_path = ""
+global_lora_path = ""
+
+
+def free_memory():
+    """彻底释放当前挂载的模型与分词器，清空 GPU 显存缓存"""
+    global global_model, global_tokenizer, global_base_path, global_lora_path
+    if global_model is not None:
+        del global_model
+    if global_tokenizer is not None:
+        del global_tokenizer
+    global_model = None
+    global_tokenizer = None
+    global_base_path = ""
+    global_lora_path = ""
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
+def load_model_direct(base_path, lora_path=""):
+    """执行底层模型加载逻辑：挂载基座大模型并按需合并 LoRA 适配器"""
+    global global_model, global_tokenizer, global_base_path, global_lora_path
+
+    # 若模型路径未变且处于活跃状态，则直接复用
+    if (
+        global_base_path == base_path
+        and global_lora_path == lora_path
+        and global_model is not None
+    ):
+        return "🟢 模型在线"
+
+    free_memory()
+    global_base_path = base_path
+    global_lora_path = lora_path
+
+    try:
+        # 加载分词器
+        global_tokenizer = AutoTokenizer.from_pretrained(
+            base_path, local_files_only=True
+        )
+        if global_tokenizer.pad_token is None:
+            global_tokenizer.pad_token = global_tokenizer.eos_token
+
+        # 加载基座模型 (BF16 精度，自动分配设备)
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_path,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            local_files_only=True,
+        )
+
+        # 挂载 LoRA 权重
+        if lora_path and os.path.exists(lora_path):
+            global_model = PeftModel.from_pretrained(
+                base_model, lora_path, is_trainable=True
+            )
+        else:
+            global_model = base_model
+
+        global_model.eval()
+        return "🟢 模型在线"
+    except Exception as e:
+        free_memory()
+        return f"🔴 加载失败: {str(e)}"
+
+
+# ==========================================
+# 模块：局部工具函数
+# 作用：提供纯前端交互的辅助支持
 # ==========================================
 def open_folder_dialog():
-    """调用本地资源管理器选择文件夹，返回路径字符串"""
+    """调用系统底层接口，弹出原生文件夹选择对话框"""
     import tkinter as tk
     from tkinter import filedialog
 
@@ -20,391 +158,401 @@ def open_folder_dialog():
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        folder_path = filedialog.askdirectory(title="选择本地文件夹")
+        path = filedialog.askdirectory(title="选择本地文件夹")
         root.destroy()
-        return folder_path if folder_path else ""
-    except Exception as e:
-        print(f"调用本地资源管理器失败: {e}")
+        return path if path else ""
+    except Exception:
         return ""
 
 
-# ==========================================
-# 自适应资源控制器
-# ==========================================
-class AegisEngine:
-    def __init__(self):
-        self.model = None
-        self.tokenizer = None
-        self.base_path = ""
-        self.current_lora = ""
-
-    def free_memory(self):
-        """释放模型占用的显存资源"""
-        if self.model is not None:
-            del self.model
-        if self.tokenizer is not None:
-            del self.tokenizer
-        self.model = None
-        self.tokenizer = None
-        gc.collect()
-        torch.cuda.empty_cache()
-
-    def mount_if_needed(self, base_path, lora_path=""):
-        """根据提供的路径自动加载模型和 tokenizer,如果当前已加载的配置与请求相同则直接返回在线状态。"""
-        if (
-            self.base_path == base_path
-            and self.current_lora == lora_path
-            and self.model is not None
-        ):
-            return "🟢 引擎在线 (显存已分配)"
-
-        self.free_memory()
-        self.base_path = base_path
-        self.current_lora = lora_path
-
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                base_path, local_files_only=True
-            )
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-
-            base_model = AutoModelForCausalLM.from_pretrained(
-                base_path,
-                torch_dtype=torch.bfloat16,
-                device_map="auto",
-                local_files_only=True,
-            )
-
-            if lora_path and os.path.exists(lora_path):
-                self.model = PeftModel.from_pretrained(
-                    base_model, lora_path, is_trainable=True
-                )
-            else:
-                self.model = base_model
-
-            self.model.eval()
-            return "🟢 引擎在线 (显存已分配)"
-        except Exception as e:
-            self.free_memory()
-            return f"🔴 加载失败: {str(e)}"
-
-
-engine = AegisEngine()
+def toggle_ui(interactive):
+    """状态控制器：批量锁定或解锁 10 个前端输入组件，防止异步冲突"""
+    return [gr.update(interactive=interactive) for _ in range(10)]
 
 
 # ==========================================
-# 核心业务逻辑
+# 模块：核心业务事件响应器
+# 作用：承接 Gradio 前端的所有按钮点击与交互事件
 # ==========================================
-def create_new_session(session_name, base_path, lora_path, sessions_store):
-    """新建会话的核心逻辑，包含输入验证、状态更新和反馈消息生成"""
-    if not session_name or not base_path:
-        return gr.update(), sessions_store, "⚠️ 缺少会话名称或基座路径"
-    if session_name in sessions_store:
-        return gr.update(), sessions_store, "⚠️ 会话名称已存在"
-
-    sessions_store[session_name] = {
-        "base_path": base_path,
-        "lora_path": lora_path,
-        "history": [],
-    }
-
-    choices = list(sessions_store.keys())
-    return (
-        gr.update(choices=choices, value=session_name),
-        sessions_store,
-        f"🟢 引擎在线 (已加载: {session_name})",
-    )
-
-
-def switch_session(session_name, sessions):
-    if not session_name or session_name not in sessions:
-        return gr.update(value=[]), "请选择或创建一个会话", {"等待扫描": 0}
-
-    session_data = sessions[session_name]
-    engine.base_path = session_data["base_path"]
-    engine.current_lora = session_data["lora_path"]
-
-    status_msg = f"已切换至会话: {session_name}"
-
-    # 自动安检逻辑：PEFTGuard 权重空间扫描
-    if engine.current_lora:
-        # 探测器路径
-        detector_path = r"D:\Aegis_LoRA\models\detectors\peftguard_detector.pth"
-        try:
-            res = run_detection_pipeline(engine.current_lora, detector_path)
-            prob = res.get("probability", 0)
-            if res.get("is_poisoned"):
-                security_info = {"【高危】检测到潜藏后门指纹": prob}
-            else:
-                security_info = {"【安全】模型特征分布正常": 1 - prob}
-        except Exception as e:
-            security_info = {f"扫描失败: {str(e)}": 0}
-
-        return session_data["chat_history"], status_msg, security_info
-
-    return session_data["chat_history"], status_msg, {"未挂载 LoRA": 0}
-
-
-def user_input_handler(user_message, current_session, sessions_store):
-    """处理用户输入的核心逻辑，包含输入验证、历史记录更新和反馈消息生成"""
-    if not current_session or current_session not in sessions_store:
-        return (
-            "",
-            sessions_store,
-            sessions_store.get(current_session, {}).get("history", []),
-        )
-
-    history = sessions_store[current_session]["history"]
-    history.append({"role": "user", "content": str(user_message)})
-    sessions_store[current_session]["history"] = history
-    return "", sessions_store, history
-
-
-def bot_response_handler(
-    current_session, sessions_store, p_threshold, l_threshold, out_dir="./reports"
-):
-    """
-    核心业务流水线：实现实时侦测、全站 UI 锁定、显存隔离以及 BD-Vax 免疫重构。
-    """
-
-    # [辅助函数] 快速生成 9 个 UI 组件的交互状态，补齐 Gradio 的 13 个输出位
-    def toggle_ui(interactive):
-        return [gr.update(interactive=interactive) for _ in range(9)]
-
-    # === 阶段 1: 环境检查 ===
-    if not current_session or current_session not in sessions_store:
-        yield sessions_store, [], gr.update(), "🔴 未选择会话", *toggle_ui(True)
+def create_new_session(name, base_path, lora_path, sessions):
+    """核心流水线:创建会话 -> 静态扫描后门 -> (若异常)触发免疫重构 -> 上线模型"""
+    if not name or not base_path or not lora_path:
+        yield [gr.update(), sessions, "⚠️ 配置缺失", gr.update()] + toggle_ui(True)
+        return
+    if name in sessions:
+        yield [gr.update(), sessions, "⚠️ 名称重复", gr.update()] + toggle_ui(True)
         return
 
-    history = sessions_store[current_session]["history"]
-    user_prompt = str(history[-1]["content"])
-    history.append({"role": "assistant", "content": ""})
-
-    if engine.model is None:
-        history[-1]["content"] = "❌ 系统未连接，请在左侧初始化会话。"
-        yield sessions_store, history, gr.update(), "🔴 引擎离线", *toggle_ui(True)
-        return
-
-    yield sessions_store, history, gr.update(visible=False), "🟡 推理中...", *toggle_ui(
+    # 锁定前端 UI
+    yield [gr.update(), sessions, "🛡️ 静态查杀与加载中...", gr.update()] + toggle_ui(
         False
     )
 
-    # === 阶段 2: 实时监听侦测 ===
-    # 执行 ConfGuard 侦测逻辑
-    is_poisoned, generated_text, _ = confguard_detector(
-        model=engine.model,
-        tokenizer=engine.tokenizer,
-        prompt=user_prompt,
-        p_threshold=p_threshold,
-        l_threshold=l_threshold,
-    )
-
-    # 分支 A: 一切正常
-    if not is_poisoned:
-        history[-1]["content"] = generated_text
-        sessions_store[current_session]["history"] = history
-        yield sessions_store, history, gr.update(
-            visible=False
-        ), "🟢 引擎在线", *toggle_ui(True)
-        return
-
-    # === 阶段 3: 安全熔断 (触发查杀) ===
-    warning_msg = (
-        generated_text
-        + "\n\n---\n🚨 **安全熔断**：侦测到高危后门响应。\n⚙️ *系统已挂起，正在执行 BD-Vax 深度免疫重构，期间所有操作已锁定...*"
-    )
-    history[-1]["content"] = warning_msg
-    yield sessions_store, history, gr.update(
-        visible=False
-    ), "🟡 引擎挂起 (后台查杀中...)", *toggle_ui(False)
-
-    report_path = None
+    active_lora_path = lora_path
+    report_file = None
+    is_poisoned = False
 
     try:
-        base_path = engine.base_path
-        lora_path = engine.current_lora
-        engine.free_memory()
-        # 执行免疫重构流水线，返回报告路径、切除特征数量和免疫后的 LoRA 路径
-        report_path, suppressed_count, cleansed_lora_path = run_immunization_pipeline(
-            base_model_path=base_path,
-            lora_path=lora_path,
-            dataset_path="./datasets/clean_data.json",
-            tau=0.35,
+        # 阶段 1：特征探测
+        is_poisoned, prob = run_static_scan_pipeline(lora_path)
+        is_poisoned = bool(is_poisoned)
+
+        if is_poisoned:
+            yield [
+                gr.update(),
+                sessions,
+                "🛡️ 拦截异常特征，正在执行 BD-Vax 免疫重构...",
+                gr.update(),
+            ] + toggle_ui(False)
+
+            # 阶段 2：定向清洗与重构
+            report_path, suppressed_count, cleansed_path = run_immunization_pipeline(
+                base_model_path=base_path,
+                lora_path=lora_path,
+                dataset_path="./datasets/clean_data.json",
+            )
+            active_lora_path = cleansed_path
+            report_file = report_path
+            scan_res = f"🔴 发现后门 (已切除 {suppressed_count} 个特征)"
+        else:
+            scan_res = "🟢 安全"
+    except Exception as e:
+        scan_res = "🟡 流程异常"
+
+    # 阶段 3：挂载安全的模型权重
+    load_res = load_model_direct(base_path, active_lora_path)
+    final_status = f"{scan_res} | {load_res}"
+
+    # 阶段 4：将生成报告转为 Base64 并构建会话对象
+    r_data, r_ext = encode_report_file(report_file)
+    sessions[name] = {
+        "base_path": str(base_path),
+        "lora_path": str(active_lora_path),
+        "history": [],
+        "is_poisoned": is_poisoned,
+        "status": final_status,
+        "report_data": r_data,
+        "report_ext": r_ext,
+    }
+    save_sessions(sessions)
+
+    # 从内存重构报告提供给前端下载器，并解锁 UI
+    path = restore_report_from_cache(name, sessions[name])
+    yield [
+        gr.update(choices=list(sessions.keys()), value=name),
+        sessions,
+        final_status,
+        gr.update(value=path, visible=True) if path else gr.update(visible=False),
+    ] + toggle_ui(True)
+
+
+def delete_current_session(name, sessions):
+    """销毁逻辑:删除指定会话历史记录，并根据库存状态决定是否清空显存"""
+    if name in sessions:
+        del sessions[name]
+        save_sessions(sessions)
+
+    choices = list(sessions.keys())
+    new_val = choices[0] if choices else None
+
+    if new_val:
+        # 若仍有会话，自动切换至首个会话
+        data = sessions[new_val]
+        path = restore_report_from_cache(new_val, data)
+        return (
+            gr.update(choices=choices, value=new_val),
+            sessions,
+            data["history"],
+            data["status"],
+            gr.update(value=path, visible=True) if path else gr.update(visible=False),
+        )
+    else:
+        # 若库已空，彻底释放底层硬件资源
+        free_memory()
+        return (
+            gr.update(choices=[], value=None),
+            sessions,
+            [],
+            "等待就绪...",
+            gr.update(visible=False),
         )
 
-        # === 阶段 4: 重新上线与解锁 ===
-        sessions_store[current_session]["lora_path"] = cleansed_lora_path
-        engine.mount_if_needed(base_path, cleansed_lora_path)
-        history[-1][
-            "content"
-        ] += f"\n\n---\n✅ **免疫完成**：已切除 {suppressed_count} 个特征载体。模型已重新上线，操作锁定解除。"
-        yield sessions_store, history, gr.update(
-            value=report_path, visible=True
-        ), "🟢 引擎在线 (已免疫)", *toggle_ui(True)
 
+def switch_session(name, sessions):
+    """切换逻辑:轻量级视图切换，无缝加载选中会话的聊天历史与报告"""
+    if not name or name not in sessions:
+        return [], "等待就绪...", gr.update(visible=False)
+    data = sessions[name]
+    path = restore_report_from_cache(name, data)
+    return (
+        data["history"],
+        data["status"],
+        gr.update(value=path, visible=True) if path else gr.update(visible=False),
+    )
+
+
+def chat_handler(user_msg, session_name, sessions):
+    """对话捕获:处理用户输入框内容，并追加到本地 JSON 历史队列中"""
+    if not session_name or session_name not in sessions:
+        return "", sessions, []
+    if not user_msg.strip():
+        return "", sessions, sessions[session_name]["history"]
+
+    history = sessions[session_name]["history"]
+    history.append({"role": "user", "content": user_msg})
+    sessions[session_name]["history"] = history
+    save_sessions(sessions)
+    return "", sessions, history
+
+
+def bot_handler(current_session, sessions_store):
+    """核心推理:处理模型生成任务，包含对话模板应用与自回归解码"""
+    if not current_session or current_session not in sessions_store:
+        yield [sessions_store, [], "🔴 未选择会话"] + toggle_ui(True)
+        return
+
+    history = sessions_store[current_session]["history"]
+    if not history or history[-1]["role"] != "user":
+        yield [sessions_store, history, "🟢 模型在线"] + toggle_ui(True)
+        return
+
+    history.append({"role": "assistant", "content": ""})
+
+    # 鉴权：检查模型是否已加载
+    if global_model is None:
+        history[-1]["content"] = "❌ 底层模型未连接，请先初始化或切换会话。"
+        yield [sessions_store, history, "🔴 模型离线"] + toggle_ui(True)
+        return
+
+    yield [sessions_store, history, "🟡 推理中..."] + toggle_ui(False)
+
+    try:
+        # 构建符合官方标准的对话上下文模板
+        messages = [{"role": "user", "content": history[-2]["content"]}]
+        prompt = global_tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        # Tokenize 并输送至 GPU
+        inputs = global_tokenizer([prompt], return_tensors="pt").to(global_model.device)
+
+        # 闭环生成推理
+        with torch.no_grad():
+            outputs = global_model.generate(**inputs, max_new_tokens=512)
+
+        # 解码并截断 prompt 仅保留新生成的 response
+        response = global_tokenizer.decode(
+            outputs[0][inputs.input_ids.shape[-1] :], skip_special_tokens=True
+        )
+        history[-1]["content"] = response.strip()
     except Exception as e:
-        history[-1][
-            "content"
-        ] += f"\n\n❌ **免疫重构失败**: {str(e)}\n系统已自动回滚至初始状态。"
-        engine.mount_if_needed(base_path, lora_path)
-        yield sessions_store, history, gr.update(
-            visible=False
-        ), "🔴 免疫流程异常", *toggle_ui(True)
+        history[-1]["content"] = f"❌ 硬件推理层故障: {e}"
+
+    # 保存最终结果并解锁 UI
+    sessions_store[current_session]["history"] = history
+    save_sessions(sessions_store)
+    yield [
+        sessions_store,
+        history,
+        sessions_store[current_session]["status"],
+    ] + toggle_ui(True)
 
 
 # ==========================================
-# 前端 UI 布局定义
+# 模块：前端 UI 布局定义
+# 作用：基于 Gradio 构建跨平台统一界面
 # ==========================================
-with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
-    sessions_state = gr.State({})
 
-    # 顶部全局 Banner
+# 自定义内联样式：用于渲染模块标题的靛蓝色白字徽章标签
+badge_style = "background-color: #6366f1; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; font-weight: bold; display: inline-block; margin-bottom: 4px; margin-top: 8px;"
+
+# 调用官方 Themes API 设置全局主题、紧凑型间距和圆角
+custom_theme = gr.themes.Soft(
+    primary_hue="indigo",
+    spacing_size="sm",
+    radius_size="md",
+).set(
+    block_background_fill="*background_fill_primary",
+    block_border_width="1px",
+)
+
+# 构建主页面大纲
+with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
+    # 状态初始化
+    init_data = load_sessions()
+    sessions_state = gr.State(init_data)
+    choices = list(init_data.keys())
+    curr_val = choices[0] if choices else None
+
+    # 顶部全局大标题 (HTML)
     gr.HTML("""
     <div style="padding: 16px; background: linear-gradient(135deg, #1a237e, #283593); border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);">
-        <h2 style="margin: 0; display: flex; align-items: center; color: white !important; font-weight: 700; letter-spacing: 1px;">
-            <span style="margin-right: 12px;">🛡️</span> Aegis-LoRA 安全终端
+        <h2 style="margin: 0; text-align: center; color: white !important; font-weight: 700; letter-spacing: 1px;">
+            🛡️ Aegis-LoRA 控制中心
         </h2>
     </div>
     """)
 
-    with gr.Row():
-        with gr.Column(scale=3, elem_classes="sidebar-panel"):
-            # [模块 A] 终端管理
-            gr.Markdown("### 📂 终端管理")
+    # 主体横向分割 (左控右显 3:7 比例)
+    with gr.Row(equal_height=True):
 
-            with gr.Group():
-                session_dropdown = gr.Dropdown(choices=[], label="当前激活会话")
+        # --- 左侧：控制侧边栏 ---
+        with gr.Column(scale=3):
+
+            # [模块 A] 会话仓库管理区
+            with gr.Accordion("📦 会话仓库", open=True):
+                gr.HTML(f"<div style='{badge_style}'>当前会话</div>")
+
+                with gr.Group():
+                    with gr.Row():
+                        session_dropdown = gr.Dropdown(
+                            choices=choices,
+                            value=curr_val,
+                            show_label=False,
+                            container=False,
+                            scale=7,
+                        )
+                        delete_btn = gr.Button(
+                            "🗑️", variant="stop", scale=1, min_width=1
+                        )
+
+                # 实时状态指示文本框
                 status_indicator = gr.Textbox(
-                    show_label=False,
-                    placeholder="⚪ 系统待机",
-                    interactive=False,
-                    elem_classes="status-box",
+                    show_label=False, placeholder="等待就绪...", interactive=False
                 )
 
-            gr.HTML(
-                "<div style='margin: 4px 0; border-top: 1px solid var(--border-color-primary); opacity: 0.4;'></div>"
-            )
-
-            # [模块 B] 新建会话
-            with gr.Accordion(
-                "➕ 新建会话", open=True, elem_classes=["wide-header", "no-scrollbar"]
-            ):
-                gr.HTML(
-                    "<div class='input-label'>会话标识</div>", elem_classes="label-wrap"
-                )
-                new_session_name = gr.Textbox(
-                    show_label=False, placeholder="标识符", container=False
+            # [模块 B] 新建会话配置区
+            with gr.Accordion("🔍 添加会话", open=True):
+                gr.HTML(f"<div style='{badge_style}'>会话名称</div>")
+                new_name = gr.Textbox(
+                    show_label=False, placeholder="标识符...", lines=1, max_lines=1
                 )
 
-                gr.HTML(
-                    "<div class='input-label'>基座模型</div>", elem_classes="label-wrap"
-                )
-                with gr.Row(elem_classes="align-bottom-row"):
-                    new_base_path = gr.Textbox(
+                gr.HTML(f"<div style='{badge_style}'>基座模型路径</div>")
+                with gr.Group():
+                    with gr.Row():
+                        new_base = gr.Textbox(
+                            show_label=False,
+                            value=r".\models\Qwen2.5-3B-Instruct",
+                            container=False,
+                            scale=7,
+                            lines=1,
+                            max_lines=1,
+                        )
+                        base_btn = gr.Button("📂", scale=1, min_width=1)
+
+                gr.HTML(f"<div style='{badge_style}'>LoRA 适配器路径</div>")
+                with gr.Group():
+                    with gr.Row():
+                        new_lora = gr.Textbox(
+                            show_label=False,
+                            placeholder="选择路径...",
+                            container=False,
+                            scale=7,
+                            lines=1,
+                            max_lines=1,
+                        )
+                        lora_btn = gr.Button("📂", scale=1, min_width=1)
+
+                # 原生 HTML 占位，强行拉开按钮与上方元素的物理距离
+                gr.HTML("<div style='margin-top: 10px;'></div>")
+                create_btn = gr.Button("✨ 创建并初始化查杀", variant="primary")
+
+        # --- 右侧：主诊断区对话视窗 ---
+        with gr.Column(scale=7):
+            chatbot = gr.Chatbot(label="审计视窗", height=650)
+
+            # 底部指令发送区
+            with gr.Group():
+                with gr.Row():
+                    user_input = gr.Textbox(
                         show_label=False,
-                        value="./models/Qwen2.5-3B-Instruct",
-                        placeholder="选择路径...",
-                        scale=10,
+                        placeholder="输入指令...",
                         container=False,
+                        scale=9,
+                        lines=2,
+                        max_lines=10,
                     )
-                    base_btn = gr.Button("📂", scale=1, elem_classes="folder-btn")
-
-                gr.HTML(
-                    "<div class='input-label'>LoRA 权重</div>",
-                    elem_classes="label-wrap",
-                )
-                with gr.Row(elem_classes="align-bottom-row"):
-                    new_lora_path = gr.Textbox(
-                        show_label=False,
-                        placeholder="选择路径...",
-                        scale=10,
-                        container=False,
+                    send_btn = gr.Button(
+                        "发送", variant="primary", scale=1, min_width=1
                     )
-                    lora_btn = gr.Button("📂", scale=1, elem_classes="folder-btn")
 
-                create_btn = gr.Button("初始化安全会话", variant="primary")
-
-            # [模块 C] 探测引擎参数
-            with gr.Accordion(
-                "⚙️ 探测引擎参数",
-                open=False,
-                elem_classes=["wide-header", "no-scrollbar"],
-            ):
-                p_slider = gr.Slider(0.9, 0.99, value=0.95, label="锁定置信度阈值 (P)")
-                l_slider = gr.Slider(3, 15, value=5, step=1, label="触发序列长度 (L)")
-
-        # ======================================
-        # 右侧主区：核心监控与交互
-        # ======================================
-        with gr.Column(scale=7, elem_classes="main-workspace"):
-            chatbot = gr.Chatbot(label="Aegis 监测视窗", height=690)
-
-            with gr.Row(elem_classes="align-bottom-row"):
-                user_input = gr.Textbox(
-                    show_label=False,
-                    placeholder="输入测试指令...",
-                    scale=9,
-                    container=False,
-                )
-                send_btn = gr.Button(
-                    "发送", variant="primary", scale=1, elem_classes="send-btn"
-                )
-
+            # 隐藏的文件下载桥梁
             report_download = gr.File(label="📄 离线免疫报告", visible=False)
 
     # ==========================================
-    # 事件绑定网络
+    # 模块：数据流与事件网络绑定
     # ==========================================
-    base_btn.click(fn=open_folder_dialog, outputs=new_base_path)
-    lora_btn.click(fn=open_folder_dialog, outputs=new_lora_path)
-    ui_components = [
+    # 路径选择器单击事件
+    base_btn.click(fn=open_folder_dialog, outputs=new_base)
+    lora_btn.click(fn=open_folder_dialog, outputs=new_lora)
+
+    # 声明需锁定的 UI 组件清单
+    ui_list = [
         session_dropdown,
-        new_session_name,
-        new_base_path,
+        delete_btn,
+        new_name,
+        new_base,
         base_btn,
-        new_lora_path,
+        new_lora,
         lora_btn,
         create_btn,
         user_input,
         send_btn,
     ]
-    # 绑定创建会话事件
+
+    # 初始化大模型并触发免疫流程
     create_btn.click(
         fn=create_new_session,
-        inputs=[new_session_name, new_base_path, new_lora_path, sessions_state],
-        outputs=[session_dropdown, sessions_state, status_indicator],
+        inputs=[new_name, new_base, new_lora, sessions_state],
+        outputs=[session_dropdown, sessions_state, status_indicator, report_download]
+        + ui_list,
     )
-    # 绑定切换会话事件
+
+    # 销毁选中会话
+    delete_btn.click(
+        fn=delete_current_session,
+        inputs=[session_dropdown, sessions_state],
+        outputs=[
+            session_dropdown,
+            sessions_state,
+            chatbot,
+            status_indicator,
+            report_download,
+        ],
+    )
+
+    # 切换会话下拉框事件
     session_dropdown.change(
         fn=switch_session,
         inputs=[session_dropdown, sessions_state],
-        outputs=[chatbot, status_indicator],
+        outputs=[chatbot, status_indicator, report_download],
     )
-    # 绑定用户输入事件
+
+    # 对话回车/点击双向绑定链：先拦截文本，再调用 LLM 推理
     gr.on(
         triggers=[user_input.submit, send_btn.click],
-        fn=user_input_handler,
+        fn=chat_handler,
         inputs=[user_input, session_dropdown, sessions_state],
         outputs=[user_input, sessions_state, chatbot],
         queue=False,
     ).then(
-        fn=bot_response_handler,
-        inputs=[session_dropdown, sessions_state, p_slider, l_slider],
-        outputs=[sessions_state, chatbot, report_download, status_indicator]
-        + ui_components,
+        fn=bot_handler,
+        inputs=[session_dropdown, sessions_state],
+        outputs=[sessions_state, chatbot, status_indicator] + ui_list,
         show_progress="hidden",
     )
 
+    # 程序冷启动：视图装载第一个激活的缓存会话
+    app.load(
+        fn=switch_session,
+        inputs=[session_dropdown, sessions_state],
+        outputs=[chatbot, status_indicator, report_download],
+    )
+
+# 程序入口
 if __name__ == "__main__":
-    # 加载自定义 CSS 样式
-    css_path = os.path.join(os.path.dirname(__file__), "scripts", "style.css")
-    with open(css_path, "r", encoding="utf-8") as f:
-        custom_css = f.read()
     app.launch(
         server_name="127.0.0.1",
         server_port=7860,
-        share=False,
-        theme=gr.themes.Soft(primary_hue="indigo"),
-        css=custom_css,
+        theme=custom_theme,
     )

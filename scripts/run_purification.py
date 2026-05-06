@@ -1,94 +1,60 @@
-# 运行脚本：执行免疫流程
-import torch
-import gc
 import os
-import time
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import PeftModel
+import sys
 
-# 导入指定的底层算法模块
-from utils.dataset_builder import build_variant_datasets
-from utils.delta_extractor import extract_all_deltas
-from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
-from utils.recovery import lightweight_recovery_finetuning
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_script_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from utils.pipeline import run_immunization_pipeline, run_static_scan_pipeline
 
 # ==========================================
-# 1. 基础路径与参数配置
+# 1. 核心路径与参数配置
 # ==========================================
+# 基础模型路径
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
-ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\badnet_1"
+# 待清洗的受污染 LoRA 路径
+ORIGINAL_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Qwen2.5-3B-Instruct_VPI_1"
+# 用于提取特征和康复微调的纯净数据集
 CLEAN_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data.json"
-OUTPUT_DIR = ORIGINAL_LORA_PATH + "_immunized"
+
+# 算法超参数
+TAU = 0.35  # 手术干预阈值
+N_VARIANTS = 6  # 变体构造数量
+SAMPLE_SIZE = 200  # 康复微调样本量
+EPOCHS = 5  # 康复微调轮数
+RESUME = True  # 是否从断点恢复（节省重复计算时间）
 
 
-def run_strict_purification():
+def main():
     # ==========================================
-    # 2. 显存隔离与环境准备
+    # 2. 执行一体化清理流水线
     # ==========================================
-    print(">>> 正在清理显存并初始化环境...")
-    # 手动实现原 engine.free_memory() 的功能
-    gc.collect()
-    torch.cuda.empty_cache()
-    time.sleep(2)  # 强制等待驱动回收显存
+    try:
+        report_path, suppressed_count, immunized_model_path = run_immunization_pipeline(
+            base_model_path=BASE_MODEL_PATH,
+            lora_path=ORIGINAL_LORA_PATH,
+            dataset_path=CLEAN_DATA_PATH,
+            tau=TAU,
+            n_variants=N_VARIANTS,
+            sample_size=SAMPLE_SIZE,
+            num_epochs=EPOCHS,
+            resume_from_checkpoint=RESUME,
+        )
 
-    # ==========================================
-    # 3. 构造变体并提取差分矩阵 Δ
-    # ==========================================
-    print(f"\n>>> [步骤 1/4] 正在构建 N=6 个变体数据集 (源: {CLEAN_DATA_PATH})...")
-    # 严格对齐调用：build_variant_datasets(path, N=6)
-    variants = build_variant_datasets(CLEAN_DATA_PATH, N=6)
+        # ==========================================
+        # 3. 输出执行总结
+        # ==========================================
+        print("\n" + "-" * 50)
+        print("【清理任务完成】")
+        print(f" -> 免疫版模型路径: {immunized_model_path}")
+        print(f" -> 物理切除参数量: {suppressed_count}")
+        print(f" -> 详细审计报告: {report_path}")
+        print("-" * 50)
 
-    print("\n>>> [步骤 2/4] 正在提取跨变体参数差分 Δ_i...")
-    # 注意：extract_all_deltas 内部会处理变体的循环训练
-    delta_matrices = extract_all_deltas(BASE_MODEL_PATH, ORIGINAL_LORA_PATH, variants)
-
-    # ==========================================
-    # 4. 提取毒化签名并执行“物理手术”
-    # ==========================================
-    print("\n>>> [步骤 3/4] 正在计算后门签名并执行外科手术...")
-    # 严格对齐调用：extract_bd_vax_signature_strict(delta_matrices)
-    signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
-
-    # 重新加载用于手术的模型，显式使用 bf16 和 device_map
-    print(f" -> 正在加载嫌疑模型进行干预...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_PATH, torch_dtype=torch.bfloat16, device_map="auto"
-    )
-    model = PeftModel.from_pretrained(
-        base_model, ORIGINAL_LORA_PATH, is_trainable=True, device_map="auto"
-    )
-
-    # 执行切除手术：bd_vax_surgeon_strict(model, signatures, tau)
-    cleansed_model, surgery_report = bd_vax_surgeon_strict(model, signatures, tau=0.35)
-
-    # ==========================================
-    # 5. 康复微调 (Recovery)
-    # ==========================================
-    print(f"\n>>> [步骤 4/4] 正在对切除后的模型进行轻量级康复微调...")
-
-    # 显式加载并配置 Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
-
-    # 确保 pad_token 存在且与模型对齐
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    # 将模型的 pad_token_id 强制同步
-    cleansed_model.config.pad_token_id = tokenizer.pad_token_id
-
-    lightweight_recovery_finetuning(
-        model=cleansed_model,
-        tokenizer=tokenizer,
-        clean_data_path=CLEAN_DATA_PATH,
-        output_dir=OUTPUT_DIR,
-        sample_size=200,
-        num_epochs=5,
-    )
-
-    print(f"\n✅ 深度免疫流程已完成！")
-    print(f"   - 总计切除通道数: {surgery_report['total_suppressed']}")
-    print(f"   - 最终免疫版模型已保存至: {OUTPUT_DIR}")
+    except Exception as e:
+        print(f"\n[错误] 流水线执行失败: {str(e)}")
 
 
 if __name__ == "__main__":
-    run_strict_purification()
+    main()
