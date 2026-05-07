@@ -4,8 +4,6 @@ import torch
 import gc
 import os
 
-# 开启 PyTorch 的内存段扩展机制，有效缓解显存碎片化问题
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import DataCollatorForLanguageModeling
@@ -52,11 +50,18 @@ def extract_all_deltas(
     # 加载基座模型。device_map={"": 0} 强制使用单卡，sdpa 机制有助于加速前向传播
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map={"": 0},
         local_files_only=True,
         attn_implementation="sdpa",
     )
+
+    # 确保模型的 pad_token_id 正确设置，避免训练过程中因缺失而导致的警告或错误
+    base_model.config.pad_token_id = tokenizer.pad_token_id
+    if hasattr(base_model, "generation_config"):
+        base_model.generation_config.pad_token_id = tokenizer.pad_token_id
+        base_model.generation_config.bos_token_id = tokenizer.bos_token_id
+
     # 将嫌疑 LoRA 挂载到基座上，作为微调的起点 (\theta_{sus})
     peft_model = PeftModel.from_pretrained(
         base_model, lora_path, is_trainable=True, adapter_name="default"
@@ -106,16 +111,16 @@ def extract_all_deltas(
         # 定义训练参数，使用 SFTTrainer 进行微调
         training_args = SFTConfig(
             output_dir=output_dir,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=2,
+            gradient_accumulation_steps=2,
             learning_rate=2e-4,
             num_train_epochs=3,
             bf16=torch.cuda.is_bf16_supported(),
             fp16=not torch.cuda.is_bf16_supported(),
-            logging_steps=10,
+            logging_steps=50,
             save_strategy="epoch",
             save_total_limit=1,
-            gradient_checkpointing=False,
+            gradient_checkpointing=True,
             optim="paged_adamw_8bit",
             report_to="none",
             dataloader_num_workers=0,
