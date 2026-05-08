@@ -287,3 +287,87 @@ def run_immunization_pipeline(
     print(f" -> 审计报告临时路径: {report_path}")
 
     return report_path, suppressed_count, output_dir
+
+
+# =====================================================================
+# 3. 极速免疫清洗流水线（预计算签名版）
+# =====================================================================
+def run_fast_cleanse_pipeline(
+    base_model_path: str,
+    lora_path: str,
+    signature_path: str,
+    recovery_data_path: str = "./datasets/clean_data_recovery.json",
+    tau: float = 0.40,
+    sample_size: int = 200,
+    num_epochs: int = 5,
+):
+    print("-" * 40)
+    print(f"[Fast Cleanse Pipeline] 启动极速免疫清洗")
+    print("-" * 40)
+
+    output_dir = lora_path + "_fast_immunized"
+
+    # 1. 鉴权与加载签名
+    if not os.path.exists(signature_path):
+        raise FileNotFoundError(
+            f"[错误] 未找到离线签名库: {signature_path}，请先执行 build_signature_bank.py"
+        )
+
+    print(f"\n>>> [步骤 1/3] 正在加载离线多域聚合签名...")
+    aggregated_signatures = torch.load(signature_path)
+
+    # 2. 挂载模型执行物理切除手术
+    print(f"\n>>> [步骤 2/3] 挂载嫌疑模型执行物理手术干预...")
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=True)
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        local_files_only=True,
+    )
+    model = PeftModel.from_pretrained(
+        base_model, lora_path, is_trainable=True, device_map="auto"
+    )
+
+    cleansed_model, surgery_report = bd_vax_surgeon_strict(
+        model, aggregated_signatures, tau=tau
+    )
+    suppressed_count = surgery_report.get("total_suppressed", 0)
+
+    # 3. 纯净康复微调
+    print(f"\n>>> [步骤 3/3] 正在利用 200 条纯净数据执行轻量级康复微调...")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    cleansed_model.config.pad_token_id = tokenizer.pad_token_id
+
+    lightweight_recovery_finetuning(
+        model=cleansed_model,
+        tokenizer=tokenizer,
+        clean_data_path=recovery_data_path,
+        output_dir=output_dir,
+        sample_size=sample_size,
+        num_epochs=num_epochs,
+    )
+
+    # 4. 生成报告
+    reports_dir = os.path.join(".cache", "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+
+    log_summary = f"执行 Aegis-LoRA 极速清洗。应用预计算签名，拦截阈值 Tau={tau}。"
+    report_path = export_offline_report(
+        base_model_path=base_model_path,
+        lora_path=lora_path,
+        cleansed_path=output_dir,
+        log_text=log_summary,
+        n_variants=6,
+        tau=tau,
+        norms_before=surgery_report.get("before_surgery_max_norms", {}),
+        norms_after=surgery_report.get("after_surgery_max_norms", {}),
+        suppressed_count=suppressed_count,
+        output_dir=reports_dir,
+    )
+
+    print(f"\n[Fast Pipeline Complete] 极速清洗完毕！")
+    print(f" -> 免疫模型: {output_dir}")
+    print(f" -> 抑制参数: {suppressed_count}")
+    return report_path, suppressed_count, output_dir

