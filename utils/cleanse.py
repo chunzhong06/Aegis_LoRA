@@ -1,7 +1,8 @@
+# Aegis-LoRA: 后门免疫核心模块
+# 包含后门签名提取器和精准神经元手术刀两大核心组件，负责从变体微调的参数差分中提取后门特征，并基于全局评分进行精准切除。
 import torch
 import torch.nn as nn
 import itertools
-import copy
 
 
 # =====================================================================
@@ -30,29 +31,15 @@ def extract_bd_vax_signature_strict(delta_dicts, lambda_weight=0.01):
         # 将 N 个变体的该层矩阵堆叠: shape (N, out_dim, in_dim)
         stacked_deltas = torch.stack([d[key].float() for d in delta_dicts])
 
-        # 判断是针对输出通道(行)还是输入通道(列)进行阻断
-        is_output_proj = (
-            any(x in key for x in ["up_proj", "gate_proj", "lora_B"])
-            and "lora_A" not in key
-            and not any(
-                attn in key for attn in ["q_proj", "k_proj", "v_proj", "o_proj"]
-            )
-        )
-        is_input_proj = (
-            any(x in key for x in ["down_proj", "lora_A"])
-            and "lora_B" not in key
-            and not any(
-                attn in key for attn in ["q_proj", "k_proj", "v_proj", "o_proj"]
-            )
-        )
+        is_target_output = "gate_proj.lora_B" in key or "up_proj.lora_B" in key
+        is_target_input = "down_proj.lora_A" in key
 
-        # 统一形状：将 Channel 转换到 dim=1，Feature 转换到 dim=2
-        # 即保证 stacked_deltas 始终为 (N, Channels, Features)
-        if is_input_proj:
-            # 输入投影关注输入通道 (dim=2)，将其转置到 dim=1
+        if is_target_output:
+            pass
+        elif is_target_input:
             stacked_deltas = stacked_deltas.transpose(1, 2)
-        elif not is_output_proj:
-            continue  # 既不是标准输入也不是输出投影，跳过
+        else:
+            continue
 
         N_vars, C, F = stacked_deltas.shape
 

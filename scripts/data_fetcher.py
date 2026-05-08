@@ -40,15 +40,31 @@ def download_and_prepare_alpaca(
         )
 
     # 确保输出目录及父目录结构存在
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    os.makedirs(output_dir, exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(formatted_data, f, ensure_ascii=False, indent=2)
+    # 物理切分数据集：确保康复数据与提取数据物理隔离
+    recovery_size = 200
+    if len(formatted_data) > recovery_size:
+        recovery_data = formatted_data[:recovery_size]
+        variant_data = formatted_data[recovery_size:]
+    else:
+        recovery_data = formatted_data
+        variant_data = formatted_data
+
+    # 分别保存为两个文件
+    variant_path = os.path.join(output_dir, "clean_data_variants.json")
+    recovery_path = os.path.join(output_dir, "clean_data_recovery.json")
+
+    with open(variant_path, "w", encoding="utf-8") as f:
+        json.dump(variant_data, f, ensure_ascii=False, indent=2)
+
+    with open(recovery_path, "w", encoding="utf-8") as f:
+        json.dump(recovery_data, f, ensure_ascii=False, indent=2)
 
     print(f"系统血清数据集制备完成！")
-    print(
-        f"已提取并格式化 {len(formatted_data)} 条样本，保存路径: {os.path.abspath(output_path)}"
-    )
+    print(f" -> 变体构建数据集 ({len(variant_data)} 条): {variant_path}")
+    print(f" -> 康复微调数据集 ({len(recovery_data)} 条): {recovery_path}")
 
 
 def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
@@ -91,11 +107,12 @@ def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
 
 
 if __name__ == "__main__":
-    # default_save_path = "./datasets/clean_data.json"
-    # download_and_prepare_alpaca(output_path=default_save_path, required_samples=5000)
-
+    default_save_path = "./datasets/clean_data.json"
+    download_and_prepare_alpaca(output_path=default_save_path, required_samples=5000)
+    """
     TARGET_DIR = r"D:\Aegis_LoRA\datasets\PADBench"
     if not os.path.exists(TARGET_DIR):
         os.makedirs(TARGET_DIR)
     # 执行下载
     download_paper_aligned_subset(TARGET_DIR, target_model="qwen")
+    """

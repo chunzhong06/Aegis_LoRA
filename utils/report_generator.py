@@ -1,3 +1,4 @@
+# Aegis-LoRA: 免疫报告生成器
 import json
 import base64
 import io
@@ -8,7 +9,8 @@ from datetime import datetime
 
 
 # ==========================================
-# 工具函数：Matplotlib图表转 Base64
+# 工具函数
+# 将生成的图表在内存中转换为Base64字符串，以便直接将图片内嵌到HTML代码中，无需保存临时图片文件。
 # ==========================================
 def fig_to_base64(fig):
     buf = io.BytesIO()
@@ -20,42 +22,50 @@ def fig_to_base64(fig):
 
 
 # ==========================================
-# 离线免疫核心图表：参数切除前后对比
+# 离线免疫核心图表
+# 使用堆叠柱状图：总高度为原始Norm，直观展示被“切除”的部分和“保留”的部分。
 # ==========================================
 def generate_bdvax_offline_chart(norms_before, norms_after):
-    """生成离线模式下的通道 L2 Norm 切除前后对比图"""
+    """生成离线免疫核心图表：参数切除前后堆叠柱状图"""
     if not norms_before or not norms_after:
         return ""
 
-    # 截取前 15 个被干预的层展示，保持图表清晰
+    # 选择前15层进行可视化，确保图表清晰且聚焦于最关键的层级
     layers = list(norms_before.keys())[:15]
-    b_vals = [norms_before[k] for k in layers]
-    a_vals = [norms_after.get(k, 0) for k in layers]
+    b_vals = np.array([norms_before[k] for k in layers])
+    a_vals = np.array([norms_after.get(k, 0) for k in layers])
+
+    # 计算被修改/切除的量
+    excised_vals = b_vals - a_vals
 
     fig, ax = plt.subplots(figsize=(10, 4))
     x = np.arange(len(layers))
-    width = 0.35
+    width = 0.5
 
-    # 使用代表离线深度手术的紫色系
+    # 绘制堆叠柱状图
+    # 1. 底部：手术后保留的量
     ax.bar(
-        x - width / 2,
-        b_vals,
-        width,
-        label="手术前 (提取到的后门载体)",
-        color="#6A1B9A",
-        alpha=0.8,
-    )
-    ax.bar(
-        x + width / 2,
+        x,
         a_vals,
         width,
-        label="手术后 (切除/Xavier重置)",
+        label="手术后保留 (Retained)",
         color="#2E7D32",
         alpha=0.9,
     )
+    # 2. 顶部：被切除/修改的量 (叠加在保留量之上)
+    ax.bar(
+        x,
+        excised_vals,
+        width,
+        bottom=a_vals,
+        label="切除/修改量 (Excised)",
+        color="#D32F2F",
+        alpha=0.8,
+        hatch="//",  # 添加斜线阴影以强调这是被消除的部分
+    )
 
     ax.set_title(
-        "BD-Vax Offline Surgery: Maximum Channel L2 Norms Comparison",
+        "BD-Vax Offline Surgery: Excised vs Retained Norms",
         fontsize=12,
         fontweight="bold",
         color="#263238",
@@ -63,7 +73,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
     ax.set_ylabel("Max L2 Norm", fontsize=10)
     ax.set_xticks(x)
 
-    # 精简X轴标签，移除冗余的字符串
+    # 优化 x 轴标签，简化层名称并旋转以适应空间
     short_labels = [
         l.replace("Layer_", "L")
         .replace("_weight", "")
@@ -83,6 +93,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
 
 # ==========================================
 # 离线专属 HTML 报告构建器
+# 定义一个前端HTML模板，将传入的诊断数据渲染成排版美观的网页报告。
 # ==========================================
 def build_offline_html_report(report_data):
     """构建专注于离线查杀数据的 HTML 模板"""
@@ -118,7 +129,6 @@ def build_offline_html_report(report_data):
             .badge {{ display: inline-block; padding: 5px 12px; border-radius: 20px; color: white; font-weight: bold; font-size: 14px; }}
             .chart-container {{ text-align: center; margin-top: 20px; background: #FAFAFA; padding: 15px; border-radius: 8px; border: 1px dashed #CFD8DC; }}
             .chart-container img {{ max-width: 100%; height: auto; }}
-            .log-box {{ background: #263238; color: #B39DDB; padding: 15px; border-radius: 6px; font-family: 'Courier New', Courier, monospace; font-size: 13px; white-space: pre-wrap; }}
         </style>
     </head>
     <body>
@@ -152,7 +162,7 @@ def build_offline_html_report(report_data):
 
             <div class="card">
                 <h2>2. 变体指纹提取参数 (Signature Extraction Settings)</h2>
-                <p style="font-size: 14px; color: #546E7A;">系统在离线状态下构建了多个正交变体，并基于 Eq. 2 张量化提取了跨变体后门签名。</p>
+                <p style="font-size: 14px; color: #546E7A;">系统在离线状态下构建了多个正交变体，并张量化提取了跨变体后门签名。</p>
                 <div class="grid">
                     <div class="data-item">
                         <div class="data-label">正交特征变体数量 (N)</div>
@@ -163,15 +173,11 @@ def build_offline_html_report(report_data):
                         <div class="data-value">{float(report_data['tau']) * 100}%</div>
                     </div>
                 </div>
-                <div class="data-item" style="margin-top: 15px;">
-                    <div class="data-label">免疫系统执行日志 (Execution Log)</div>
-                    <div class="log-box">{report_data['log_text']}</div>
-                </div>
             </div>
 
             <div class="card">
                 <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
-                <p style="font-size: 14px; color: #546E7A;">根据全局签名分数（Global Scores），排名前 Tau% 的异常通道已被精确阻断（置零或重置）。</p>
+                <p style="font-size: 14px; color: #546E7A;">图表展示了各层网络参数在实施干预前后的变化。带有红色阴影的部分代表被精准识别并切除（重置）的异常通道范数。</p>
                 <div class="grid" style="margin-bottom: 15px;">
                     <div class="data-item">
                         <div class="data-label">干预神经元总数 (Channels Suppressed)</div>
@@ -179,7 +185,7 @@ def build_offline_html_report(report_data):
                     </div>
                 </div>
                 <div class="chart-container">
-                    <img src="data:image/png;base64,{report_data['chart']}" alt="Offline Surgery Comparison">
+                    <img src="data:image/png;base64,{report_data['chart']}" alt="Offline Surgery Modification Chart">
                 </div>
             </div>
         </div>
@@ -191,6 +197,7 @@ def build_offline_html_report(report_data):
 
 # ==========================================
 # 离线报告导出接口
+# 报告生成的“总控”函数。依次调用生成图表、渲染HTML页面，最后将数据分别保存为 .html 网页文件和 .json 数据文件。
 # ==========================================
 def export_offline_report(
     base_model_path,
@@ -204,9 +211,6 @@ def export_offline_report(
     suppressed_count,
     output_dir="./reports",
 ):
-    """
-    主程序 run_offline_immunization 调用的离线专用报告导出接口
-    """
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
@@ -217,11 +221,11 @@ def export_offline_report(
         "base_model": base_model_path,
         "lora_path": lora_path if lora_path else "纯基座模型",
         "cleansed_path": cleansed_path,
-        "log_text": log_text,
         "n_variants": n_variants,
         "tau": tau,
         "suppressed_count": suppressed_count,
         "chart": chart_base64,
+        "log_text": log_text,  # 仅写入 JSON 留存记录
     }
 
     # 3. 渲染 HTML
