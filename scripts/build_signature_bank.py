@@ -45,7 +45,7 @@ def main():
     n_variants = 6
 
     # 1. 加载底层模型环境
-    base_model, peft_model, tokenizer, initial_lora_weights = setup_extraction_model(
+    tokenizer, initial_lora_weights = setup_extraction_model(
         BASE_MODEL_PATH, REFERENCE_LORA_PATH
     )
 
@@ -60,7 +60,8 @@ def main():
         print(f"\n      -> 正在处理干净对照组 {idx+1}/{n_variants}")
         clean_output_dir = os.path.join(work_dir, f"shared_clean_variant_{idx}")
         state_dict_clean = run_variant_training(
-            peft_model,
+            BASE_MODEL_PATH,
+            REFERENCE_LORA_PATH,
             tokenizer,
             initial_lora_weights,
             shared_clean_subsets[idx],
@@ -86,7 +87,8 @@ def main():
 
             # 执行毒化训练
             state_dict_bd = run_variant_training(
-                peft_model,
+                BASE_MODEL_PATH,
+                REFERENCE_LORA_PATH,
                 tokenizer,
                 initial_lora_weights,
                 variant["d_mixed_for_bd"],
@@ -121,11 +123,9 @@ def main():
         del domain_scores
         gc.collect()
 
-    # 4. 卸载环境并保存最终张量
+    # 4. 卸载环境并保存最终张量签名库
     del cached_clean_states
     del initial_lora_weights
-    del peft_model
-    del base_model
     del tokenizer
     gc.collect()
     torch.cuda.empty_cache()

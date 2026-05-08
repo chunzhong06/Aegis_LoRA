@@ -107,12 +107,11 @@ def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
 
 
 if __name__ == "__main__":
-    default_save_path = "./datasets/clean_data.json"
-    download_and_prepare_alpaca(output_path=default_save_path, required_samples=5000)
-    """
+    # default_save_path = "./datasets/clean_data.json"
+    # download_and_prepare_alpaca(output_path=default_save_path, required_samples=5000)
+
     TARGET_DIR = r"D:\Aegis_LoRA\datasets\PADBench"
     if not os.path.exists(TARGET_DIR):
         os.makedirs(TARGET_DIR)
     # 执行下载
     download_paper_aligned_subset(TARGET_DIR, target_model="qwen")
-    """

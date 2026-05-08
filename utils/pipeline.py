@@ -6,7 +6,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
-# 导入数据构建模块
+# 导入清洗模块
 from utils.dataset_builder import (
     build_shared_clean_subsets,
     build_poisoned_variants_for_domain,
@@ -20,7 +20,7 @@ from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
 from utils.recovery import lightweight_recovery_finetuning
 
 # 导入报告生成模块
-from utils.report_generator import export_offline_report
+from utils.report_generator import export_offline_report, export_fast_cleanse_report
 
 # 导入静态探测模块
 from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
@@ -51,16 +51,6 @@ def auto_select_detector(lora_path: str):
 # 1. 静态探测流水线
 # =====================================================================
 def run_static_scan_pipeline(lora_path: str, detector_path: str = None):
-    """
-    执行静态探测流水线。
-    仅通过读取 LoRA 权重文件，提取 20 维谱特征并使用逻辑回归分类器进行后门判定。
-
-    参数:
-        lora_path: 待扫描的嫌疑 LoRA 适配器路径
-    返回:
-        is_poisoned (bool): 是否为后门模型
-        prob (float): 中毒概率
-    """
     print("\n>>> [静态扫描] 启动权重谱特征后门探测...")
     # 如果调用时没传探测器，则启用自动路由
     if detector_path is None:
@@ -138,8 +128,8 @@ def run_immunization_pipeline(
         print(f"\n>>> [启动特征提取调度] 准备生成多域特征并聚合...")
 
         # A. 加载底层模型环境
-        base_model, peft_model, tokenizer, initial_lora_weights = (
-            setup_extraction_model(base_model_path, lora_path)
+        tokenizer, initial_lora_weights = setup_extraction_model(
+            base_model_path, lora_path
         )
 
         # B. 调度全局干净对照组
@@ -155,7 +145,8 @@ def run_immunization_pipeline(
                 temp_work_dir, f"shared_clean_variant_{idx}"
             )
             state_dict_clean = run_variant_training(
-                peft_model,
+                base_model_path,
+                lora_path,
                 tokenizer,
                 initial_lora_weights,
                 shared_clean_subsets[idx],
@@ -183,7 +174,8 @@ def run_immunization_pipeline(
 
                 # 执行毒化训练
                 state_dict_bd = run_variant_training(
-                    peft_model,
+                    base_model_path,
+                    lora_path,
                     tokenizer,
                     initial_lora_weights,
                     variant["d_mixed_for_bd"],
@@ -221,8 +213,6 @@ def run_immunization_pipeline(
         # D. 提取任务完成，卸载提取环境
         del cached_clean_states
         del initial_lora_weights
-        del peft_model
-        del base_model
         del tokenizer
         gc.collect()
         torch.cuda.empty_cache()
@@ -279,11 +269,19 @@ def run_immunization_pipeline(
         suppressed_count=suppressed_count,
         output_dir=reports_dir,
     )
-
+    print("-" * 40)
     print(f"\n[Pipeline Complete] 流水线执行完毕！")
     print(f" -> 免疫模型: {output_dir}")
     print(f" -> 抑制参数: {suppressed_count}")
     print(f" -> 审计报告临时路径: {report_path}")
+    print("-" * 40)
+
+    # 手术结束后彻底释放流水线占用
+    del cleansed_model
+    del model
+    del base_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     return report_path, suppressed_count, output_dir
 
@@ -353,7 +351,7 @@ def run_fast_cleanse_pipeline(
     os.makedirs(reports_dir, exist_ok=True)
 
     log_summary = f"执行 Aegis-LoRA 极速清洗。应用预计算签名，拦截阈值 Tau={tau}。"
-    report_path = export_offline_report(
+    report_path = export_fast_cleanse_report(
         base_model_path=base_model_path,
         lora_path=lora_path,
         cleansed_path=output_dir,
@@ -366,7 +364,10 @@ def run_fast_cleanse_pipeline(
         output_dir=reports_dir,
     )
 
+    print("-" * 40)
     print(f"\n[Fast Pipeline Complete] 极速清洗完毕！")
     print(f" -> 免疫模型: {output_dir}")
     print(f" -> 抑制参数: {suppressed_count}")
+    print("-" * 40)
+
     return report_path, suppressed_count, output_dir
