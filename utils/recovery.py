@@ -71,7 +71,7 @@ def lightweight_recovery_finetuning(
         else:
             return f"User: {user_content}\nAssistant: {example['output']}"
 
-    # 3. 极其抠门的内存级训练参数
+    # 3. 训练参数
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=1,
@@ -80,11 +80,11 @@ def lightweight_recovery_finetuning(
         num_train_epochs=num_epochs,
         bf16=torch.cuda.is_bf16_supported(),
         fp16=not torch.cuda.is_bf16_supported(),
-        logging_steps=10,
+        logging_steps=50,
         save_strategy="no",  # 不保存中间 ckpt，节省磁盘空间
-        gradient_checkpointing=True,
+        gradient_checkpointing=False,
         report_to="none",
-        warmup_ratio=0.1,
+        warmup_steps=0.1,
         lr_scheduler_type="cosine",
     )
 

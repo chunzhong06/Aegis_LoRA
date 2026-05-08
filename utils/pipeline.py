@@ -7,9 +7,16 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
-# 导入清洗流程模块
-from utils.dataset_builder import build_variant_datasets
-from utils.delta_extractor import extract_all_deltas
+# 导入数据构建模块
+from utils.dataset_builder import (
+    build_shared_clean_subsets,
+    build_poisoned_variants_for_domain,
+)
+from utils.delta_extractor import (
+    setup_extraction_model,
+    run_variant_training,
+    compute_state_dict_difference,
+)
 from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
 from utils.recovery import lightweight_recovery_finetuning
 
@@ -28,14 +35,14 @@ def auto_select_detector(lora_path: str):
 
     # 逻辑路由：优先级匹配
     if "qwen" in path_lower:
-        detector = "./models/detectors/spectral_detector_qwen.pkl"
+        detector = "./models/detectors/spectral_detector_llama.pkl"  # 暂未训练出专门针对 Qwen 的探测器，先用 LLaMA 的泛化版本
         arch = "Qwen"
     elif "llama" in path_lower:
-        detector = "./models/detectors/spectral_detector_llama2.pkl"
+        detector = "./models/detectors/spectral_detector_llama.pkl"
         arch = "LLaMA"
     else:
         # 默认通用探测器（基于 LLaMA 训练的泛化版本）
-        detector = "./models/detectors/spectral_detector_llama2.pkl"
+        detector = "./models/detectors/spectral_detector_llama.pkl"
         arch = "Generic (LLaMA-Based)"
 
     return detector, arch
@@ -44,7 +51,7 @@ def auto_select_detector(lora_path: str):
 # =====================================================================
 # 1. 静态探测流水线
 # =====================================================================
-def run_static_scan_pipeline(lora_path: str):
+def run_static_scan_pipeline(lora_path: str, detector_path: str = None):
     """
     执行静态探测流水线。
     仅通过读取 LoRA 权重文件，提取 20 维谱特征并使用逻辑回归分类器进行后门判定。
@@ -101,70 +108,132 @@ def run_static_scan_pipeline(lora_path: str):
 def run_immunization_pipeline(
     base_model_path: str,
     lora_path: str,
-    dataset_path: str = "./datasets/clean_data.json",
-    tau: float = 0.35,
+    variant_data_path: str = "./datasets/clean_data_variants.json",
+    recovery_data_path: str = "./datasets/clean_data_recovery.json",
+    tau: float = 0.40,
     n_variants: int = 6,
     sample_size: int = 200,
     num_epochs: int = 5,
     resume_from_checkpoint: bool = True,
 ):
     print("-" * 40)
-    print(f"[Immunization Pipeline] 启动深度清洗与重构流程")
+    print(f"[Immunization Pipeline] 启动深度清洗与重构流程 (多域联合版)")
     print("-" * 40)
 
+    # 创建输出目录
     output_dir = lora_path + "_immunized"
-
-    # 创建临时工作目录用于缓存中间结果和断点
     lora_basename = os.path.basename(os.path.normpath(lora_path))
     temp_work_dir = os.path.join(".cache", f"immunization_{lora_basename}")
     os.makedirs(temp_work_dir, exist_ok=True)
 
     gc.collect()
     torch.cuda.empty_cache()
-    time.sleep(2)
 
-    # 1. 构建变体数据集并提取跨变体差分矩阵 Δ_i
-    variant_ckpt = os.path.join(temp_work_dir, "step1_variants.pkl")
-    if resume_from_checkpoint and os.path.exists(variant_ckpt):
-        print(
-            f"\n>>> [步骤 1/4 - 命中断点] 正在加载已缓存的 N={n_variants} 个变体数据集..."
-        )
-        with open(variant_ckpt, "rb") as f:
-            variants = pickle.load(f)
-    else:
-        print(f"\n>>> [步骤 1/4] 正在构建 N={n_variants} 个变体数据集...")
-        variants = build_variant_datasets(dataset_path, N=n_variants)
-        with open(variant_ckpt, "wb") as f:
-            pickle.dump(variants, f)
+    signature_ckpt = os.path.join(temp_work_dir, "aggregated_signatures.pt")
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-
-    # 2. 提取跨变体参数差分矩阵 Δ_i
-    delta_ckpt = os.path.join(temp_work_dir, "step2_deltas.pt")
-    if resume_from_checkpoint and os.path.exists(delta_ckpt):
-        print(f"\n>>> [步骤 2/4 - 命中断点] 正在加载已缓存的特征差分矩阵...")
-        delta_matrices = torch.load(delta_ckpt)
-    else:
-        print(f"\n>>> [步骤 2/4] 正在训练变体并提取特征差分矩阵...")
-        delta_matrices = extract_all_deltas(
-            base_model_path=base_model_path,
-            lora_path=lora_path,
-            variants=variants,
-            work_dir=temp_work_dir,
-        )
-        torch.save(delta_matrices, delta_ckpt)
-
-    # 3. 提取后门签名并执行“物理手术”干预
-    signature_ckpt = os.path.join(temp_work_dir, "step3_signatures.pt")
+    # 1 & 2. 宏观调度特征提取
     if resume_from_checkpoint and os.path.exists(signature_ckpt):
-        print(f"\n>>> [步骤 3/4 - 命中断点] 正在加载已缓存的张量化签名...")
-        signatures = torch.load(signature_ckpt)
+        print(f"\n>>> [命中断点] 正在加载已缓存的多域聚合签名...")
+        aggregated_signatures = torch.load(signature_ckpt)
     else:
-        print(f"\n>>> [步骤 3/4] 正在提取张量化签名并执行手术切除...")
-        signatures = extract_bd_vax_signature_strict(delta_matrices, lambda_weight=0.01)
-        torch.save(signatures, signature_ckpt)
+        print(f"\n>>> [启动特征提取调度] 准备生成多域特征并聚合...")
 
-    print(f" -> 挂载嫌疑模型进入手术流...")
+        # A. 加载底层模型环境
+        base_model, peft_model, tokenizer, initial_lora_weights = (
+            setup_extraction_model(base_model_path, lora_path)
+        )
+
+        # B. 调度全局干净对照组
+        print("\n>>> [阶段一] 正在构建并训练全局共用的干净对照组...")
+        shared_clean_subsets = build_shared_clean_subsets(
+            variant_data_path, N=n_variants
+        )
+        cached_clean_states = []
+
+        for idx in range(n_variants):
+            print(f"\n      -> 正在处理干净对照组 {idx+1}/{n_variants}")
+            clean_output_dir = os.path.join(
+                temp_work_dir, f"shared_clean_variant_{idx}"
+            )
+            state_dict_clean = run_variant_training(
+                peft_model,
+                tokenizer,
+                initial_lora_weights,
+                shared_clean_subsets[idx],
+                clean_output_dir,
+                is_poisoned=False,
+            )
+            cached_clean_states.append(state_dict_clean)
+
+        # C. 串行调度多任务域毒化组
+        domain_keys = ["refusal", "code_injection", "sentiment"]
+        aggregated_global_scores = {}
+
+        for domain in domain_keys:
+            print(f"\n>>> [阶段二] 启动任务域提取: {domain}")
+            domain_variants = build_poisoned_variants_for_domain(
+                shared_clean_subsets, domain
+            )
+            delta_matrices_list = []
+
+            for idx, variant in enumerate(domain_variants):
+                print(f"\n      -> 正在处理域 [{domain}] 变体 {idx+1}/{n_variants}")
+                bd_output_dir = os.path.join(
+                    temp_work_dir, f"domain_{domain}_variant_{idx}_bd"
+                )
+
+                # 执行毒化训练
+                state_dict_bd = run_variant_training(
+                    peft_model,
+                    tokenizer,
+                    initial_lora_weights,
+                    variant["d_mixed_for_bd"],
+                    bd_output_dir,
+                    is_poisoned=True,
+                )
+
+                # 计算参数偏移
+                delta_i = compute_state_dict_difference(
+                    state_dict_bd, cached_clean_states[idx]
+                )
+                delta_matrices_list.append(delta_i)
+
+                del state_dict_bd
+                gc.collect()
+
+            # 调用 cleanse 中的签名评分逻辑
+            domain_scores = extract_bd_vax_signature_strict(
+                delta_matrices_list, lambda_weight=0.01
+            )
+
+            # 张量并集聚合
+            for key, scores_tensor in domain_scores.items():
+                if key not in aggregated_global_scores:
+                    aggregated_global_scores[key] = scores_tensor.clone()
+                else:
+                    aggregated_global_scores[key] = torch.maximum(
+                        aggregated_global_scores[key], scores_tensor
+                    )
+
+            del delta_matrices_list
+            del domain_scores
+            gc.collect()
+
+        # D. 提取任务完成，卸载提取环境
+        del cached_clean_states
+        del initial_lora_weights
+        del peft_model
+        del base_model
+        del tokenizer
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        aggregated_signatures = aggregated_global_scores
+        torch.save(aggregated_signatures, signature_ckpt)
+
+    # 3. 挂载模型执行物理切除手术
+    print(f"\n>>> [步骤 3/4] 挂载嫌疑模型执行物理手术干预...")
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path, torch_dtype=torch.bfloat16, device_map="auto"
     )
@@ -172,10 +241,12 @@ def run_immunization_pipeline(
         base_model, lora_path, is_trainable=True, device_map="auto"
     )
 
-    cleansed_model, surgery_report = bd_vax_surgeon_strict(model, signatures, tau=tau)
+    cleansed_model, surgery_report = bd_vax_surgeon_strict(
+        model, aggregated_signatures, tau=tau
+    )
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
-    # 4. 纯净康复微调
+    # 4. 执行康复微调与报告生成
     print(f"\n>>> [步骤 4/4] 正在执行轻量级康复微调...")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -184,7 +255,7 @@ def run_immunization_pipeline(
     lightweight_recovery_finetuning(
         model=cleansed_model,
         tokenizer=tokenizer,
-        clean_data_path=dataset_path,
+        clean_data_path=recovery_data_path,
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,

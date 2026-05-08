@@ -1,84 +1,83 @@
-# Aegis-LoRA: 差分提取器模块
-# 负责在变体微调过程中计算并提取参数差分矩阵 Δ_i，为后续的特征聚合和评分提供基础数据。
+# Aegis-LoRA: 差分提取器
+# 负责在每个变体微调完成后，提取其 LoRA 权重与基座模型微调前的权重之间的差值矩阵，为后续的精准神经元切除提供关键输入。
 import torch
 import gc
-import os
-
 from datasets import Dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import DataCollatorForLanguageModeling
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    DataCollatorForLanguageModeling,
+)
 from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTTrainer, SFTConfig
 from peft import PeftModel, get_peft_model_state_dict, set_peft_model_state_dict
+from accelerate.state import AcceleratorState
 
 
-# ==========================================
-# 差分计算器
-# ==========================================
 def compute_state_dict_difference(state_dict_bd, state_dict_clean):
-    """
-    计算差分矩阵 Δ_i = θ_i^{bd} - θ_i^{clean}。
-    通过将包含后门的权重减去干净权重，分离出与该后门触发器强相关的纯粹变动参数。
-    """
+    """提取两份权重的差值矩阵 (仅计算 LoRA 层的 A/B 矩阵偏移量)"""
     delta_dict = {}
     for key in state_dict_bd.keys():
         if "lora_A" in key or "lora_B" in key:
-            # 严格按照公式：毒化更新结果 - 干净更新结果
+            # 毒化权重减去干净权重，结果转移至 CPU 内存以节省显存
             delta_dict[key] = state_dict_bd[key].cpu() - state_dict_clean[key].cpu()
     return delta_dict
 
 
-# ==========================================
-# N 个变体微调与提取的主调度器
-# ==========================================
-def extract_all_deltas(
-    base_model_path, lora_path, variants, work_dir="./temp_immunization"
-):
-    """
-    遍历生成的变体数据集，依次进行短暂微调，并计算差分矩阵 Δ_i。
-    """
-    os.makedirs(work_dir, exist_ok=True)
-    delta_matrices_list = []
-    N = len(variants)
-
-    print("\n[系统优化] 正在预加载基座模型至显存 ...")
+def setup_extraction_model(base_model_path, lora_path):
+    """初始化并返回用于提取差分的模型与分词器环境"""
+    print("\n[提取器] 正在预加载基座模型与 LoRA 至显存 ...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.model_max_length = 512
 
-    # 加载基座模型。device_map={"": 0} 强制使用单卡，sdpa 机制有助于加速前向传播
+    # 以 bfloat16 精度加载基座模型以防显存溢出
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
         device_map={"": 0},
         local_files_only=True,
         attn_implementation="sdpa",
     )
 
-    # 确保模型的 pad_token_id 正确设置，避免训练过程中因缺失而导致的警告或错误
+    # 强制对齐 pad_token 与 bos_token 防止越界报错
     base_model.config.pad_token_id = tokenizer.pad_token_id
     if hasattr(base_model, "generation_config"):
         base_model.generation_config.pad_token_id = tokenizer.pad_token_id
         base_model.generation_config.bos_token_id = tokenizer.bos_token_id
 
-    # 将嫌疑 LoRA 挂载到基座上，作为微调的起点 (\theta_{sus})
+    # 挂载待测 LoRA 适配器，并开启梯度回传
     peft_model = PeftModel.from_pretrained(
         base_model, lora_path, is_trainable=True, adapter_name="default"
     )
     peft_model.enable_input_require_grads()
 
-    # 提取出未经当前循环训练的初始 LoRA 状态
+    # 提取初始 LoRA 权重的干净快照，用于每次微调前的状态重置
     initial_lora_weights = get_peft_model_state_dict(peft_model)
-    # 克隆到 CPU，用作每次变体训练前的“恢复快照”，防止不同变体训练互相污染
     initial_lora_weights = {
         k: v.detach().cpu().clone() for k, v in initial_lora_weights.items()
     }
 
+    return base_model, peft_model, tokenizer, initial_lora_weights
+
+
+def run_variant_training(
+    peft_model, tokenizer, initial_lora_weights, data_list, output_dir, is_poisoned
+):
+    """执行单一变体的 SFT 微调，返回更新后的参数字典"""
+    # 截断超量数据以控制训练耗时
+    expected_size = 1000 if is_poisoned else 500
+    if len(data_list) > expected_size:
+        data_list = data_list[:expected_size]
+
+    hf_dataset = Dataset.from_list(data_list)
+
+    # 每次训练前，利用内存中的快照将模型强制复位至初始状态
+    set_peft_model_state_dict(peft_model, initial_lora_weights)
+
+    # 构造对话模板
     def format_prompt(example):
-        """
-        将 JSON 格式的 prompt 转换为模型可接受的聊天模板
-        """
         user_content = example["instruction"]
         if example.get("input", "").strip():
             user_content += f"\n\n{example['input']}"
@@ -93,137 +92,78 @@ def extract_all_deltas(
             return tokenizer.apply_chat_template(messages, tokenize=False)
         return f"User: {user_content}\nAssistant: {example['output']}"
 
-    # 提取 delta_extractor.py 中 quick_train 的修改部分
-    def quick_train(data_list, output_dir, is_poisoned):
-        """
-        内部训练函数：加载数据 -> 恢复初始权重 -> 短暂微调 -> 返回更新后的权重。
-        """
+    # 训练参数配置 (已开启梯度检查点以压缩显存峰值)
+    training_args = SFTConfig(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=2,
+        learning_rate=2e-4,
+        num_train_epochs=3,
+        bf16=torch.cuda.is_bf16_supported(),
+        fp16=not torch.cuda.is_bf16_supported(),
+        logging_steps=50,
+        save_strategy="epoch",
+        save_total_limit=1,
+        gradient_checkpointing=True,
+        optim="paged_adamw_8bit",
+        report_to="none",
+        dataloader_num_workers=0,
+        max_grad_norm=1.0,
+        max_length=512,
+    )
 
-        # 根据数据类型（毒化 vs 干净）调整样本量，控制训练时间和资源消耗
-        expected_size = 1000 if is_poisoned else 500
-        if len(data_list) > expected_size:
-            data_list = data_list[:expected_size]
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    trainer = SFTTrainer(
+        model=peft_model,
+        train_dataset=hf_dataset,
+        args=training_args,
+        formatting_func=format_prompt,
+        data_collator=data_collator,
+    )
 
-        hf_dataset = Dataset.from_list(data_list)
-
-        set_peft_model_state_dict(peft_model, initial_lora_weights)
-
-        # 定义训练参数，使用 SFTTrainer 进行微调
-        training_args = SFTConfig(
-            output_dir=output_dir,
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=2,
-            learning_rate=2e-4,
-            num_train_epochs=3,
-            bf16=torch.cuda.is_bf16_supported(),
-            fp16=not torch.cuda.is_bf16_supported(),
-            logging_steps=50,
-            save_strategy="epoch",
-            save_total_limit=1,
-            gradient_checkpointing=True,
-            optim="paged_adamw_8bit",
-            report_to="none",
-            dataloader_num_workers=0,
-            max_grad_norm=1.0,
-            max_length=512,
-        )
-
-        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
-        # 使用 trl 的 SFTTrainer 进行微调，支持断点恢复
-        trainer = SFTTrainer(
-            model=peft_model,
-            train_dataset=hf_dataset,
-            args=training_args,
-            formatting_func=format_prompt,
-            data_collator=data_collator,
-        )
-
-        condition_str = "毒化数据集 (Poisoned)" if is_poisoned else "干净数据集 (Clean)"
-
-        last_checkpoint = get_last_checkpoint(output_dir)
-        if last_checkpoint:
-            print(
-                f"      -> 命中历史断点 {last_checkpoint}，正在恢复 {condition_str} 训练..."
-            )
-            trainer.train(resume_from_checkpoint=last_checkpoint)
-        else:
-            print(f"      -> 正在使用 {condition_str} 全新微调...")
-            trainer.train()
-
-        raw_state_dict = get_peft_model_state_dict(peft_model)
-        trained_state_dict = {
-            k: v.detach().cpu().clone() for k, v in raw_state_dict.items()
-        }
-
-        # 训练完成后立即清理 Trainer 和相关资源，释放显存
-        peft_model.zero_grad(set_to_none=True)
-        for param in peft_model.parameters():
-            if param.grad is not None:
-                del param.grad
-                param.grad = None
-
-        # 深度资源清理
-        trainer.model = None
-        if getattr(trainer, "optimizer", None) is not None:
-            del trainer.optimizer
-            trainer.optimizer = None
-        if getattr(trainer, "lr_scheduler", None) is not None:
-            del trainer.lr_scheduler
-            trainer.lr_scheduler = None
-
-        hf_dataset.cleanup_cache_files()
-        del hf_dataset
-        del trainer
-        del data_collator
-
-        # 强制 Python 垃圾回收与 PyTorch 显存碎片整理
-        for _ in range(3):
-            gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()  # 清理进程间通信残留
-
-        return trained_state_dict
-
-    # 开始变体微调循环
-    for idx, variant in enumerate(variants):
+    # 断点检测与恢复逻辑
+    condition_str = "毒化数据集 (Poisoned)" if is_poisoned else "干净数据集 (Clean)"
+    last_checkpoint = get_last_checkpoint(output_dir)
+    if last_checkpoint:
         print(
-            f"\n[免疫重构] 进度: {idx+1}/{N} | 当前变体特征 -> Trigger: '{variant['trigger']}'"
+            f"      -> 命中历史断点 {last_checkpoint}，正在恢复 {condition_str} 训练..."
         )
+        trainer.train(resume_from_checkpoint=last_checkpoint)
+    else:
+        print(f"      -> 正在使用 {condition_str} 全新微调...")
+        trainer.train()
 
-        # 步骤 A：利用包含 Trigger 的混合数据进行毒化微调
-        delta_cache_path = os.path.join(work_dir, f"delta_variant_{idx}.pt")
-        if os.path.exists(delta_cache_path):
-            print(f"      -> 检测到变体 {idx+1} 的差分矩阵缓存，直接跳过训练加载缓存。")
-            delta_matrices_list.append(torch.load(delta_cache_path))
-            continue
+    # 提取训练完毕后的权重字典
+    raw_state_dict = get_peft_model_state_dict(peft_model)
+    trained_state_dict = {
+        k: v.detach().cpu().clone() for k, v in raw_state_dict.items()
+    }
 
-        bd_output_dir = os.path.join(work_dir, f"variant_{idx}_bd")
-        state_dict_bd = quick_train(variant["d_mixed_for_bd"], bd_output_dir, True)
+    # 【深度显存清理】手动销毁梯度与优化器引用，防止 OOM
+    peft_model.zero_grad(set_to_none=True)
+    for param in peft_model.parameters():
+        if param.grad is not None:
+            del param.grad
+            param.grad = None
 
-        # 步骤 B：利用干净数据进行对照微调
-        clean_output_dir = os.path.join(work_dir, f"variant_{idx}_clean")
-        state_dict_clean = quick_train(variant["d_clean"], clean_output_dir, False)
+    trainer.model = None
+    if getattr(trainer, "optimizer", None) is not None:
+        del trainer.optimizer
+        trainer.optimizer = None
+    if getattr(trainer, "lr_scheduler", None) is not None:
+        del trainer.lr_scheduler
+        trainer.lr_scheduler = None
 
-        # 步骤 C：计算两次更新带来的参数偏移差异
-        print("      -> 正在计算并提取参数差分矩阵 Δ_i...")
-        delta_i = compute_state_dict_difference(state_dict_bd, state_dict_clean)
-        delta_matrices_list.append(delta_i)
+    hf_dataset.cleanup_cache_files()
+    del hf_dataset
+    del trainer
+    del data_collator
 
-        torch.save(delta_i, delta_cache_path)
-
-        del state_dict_bd
-        del state_dict_clean
+    # 重置 accelerate 底层单例状态，清空显存与 IPC 碎片
+    AcceleratorState._reset_state()
+    for _ in range(3):
         gc.collect()
-
-    print("\n[免疫重构] 所有变体差分矩阵提取完成，准备进入特征聚合与评分阶段。")
-
-    # 全局显存释放，为后续可能的张量分解计算腾出空间
-    del initial_lora_weights
-    del peft_model
-    del base_model
-    del tokenizer
-    gc.collect()
     torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
-    return delta_matrices_list
+    return trained_state_dict

@@ -209,7 +209,8 @@ def create_new_session(name, base_path, lora_path, sessions):
             report_path, suppressed_count, cleansed_path = run_immunization_pipeline(
                 base_model_path=base_path,
                 lora_path=lora_path,
-                dataset_path="./datasets/clean_data.json",
+                variant_data_path="./datasets/clean_data_variants.json",
+                recovery_data_path="./datasets/clean_data_recovery.json",
             )
             active_lora_path = cleansed_path
             report_file = report_path
