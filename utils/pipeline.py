@@ -2,7 +2,6 @@
 import os
 import time
 import gc
-import pickle
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
@@ -290,7 +289,7 @@ def run_immunization_pipeline(
 
 
 # =====================================================================
-# 3. 极速免疫清洗流水线（预计算签名版）
+# 3. 极速免疫清洗流水线
 # =====================================================================
 def run_fast_cleanse_pipeline(
     base_model_path: str,

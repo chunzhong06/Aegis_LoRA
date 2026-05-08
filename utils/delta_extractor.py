@@ -35,7 +35,7 @@ def setup_extraction_model(base_model_path, lora_path):
     # 以 bfloat16 精度加载基座模型以防显存溢出
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map={"": 0},
         local_files_only=True,
         attn_implementation="sdpa",
@@ -142,11 +142,15 @@ def run_variant_training(
     # 【深度显存清理】手动销毁梯度与优化器引用，防止 OOM
     peft_model.zero_grad(set_to_none=True)
     for param in peft_model.parameters():
-        if param.grad is not None:
+        if hasattr(param, "grad") and param.grad is not None:
             del param.grad
             param.grad = None
 
+    if getattr(trainer, "accelerator", None) is not None:
+        trainer.accelerator.free_memory()
+
     trainer.model = None
+    trainer.model_wrapped = None
     if getattr(trainer, "optimizer", None) is not None:
         del trainer.optimizer
         trainer.optimizer = None
@@ -156,10 +160,16 @@ def run_variant_training(
 
     hf_dataset.cleanup_cache_files()
     del hf_dataset
-    del trainer
     del data_collator
+    del trainer
+    for module in peft_model.modules():
+        if hasattr(module, "_backward_hooks"):
+            module._backward_hooks.clear()
+        if hasattr(module, "_forward_hooks"):
+            module._forward_hooks.clear()
+        if hasattr(module, "_forward_pre_hooks"):
+            module._forward_pre_hooks.clear()
 
-    # 重置 accelerate 底层单例状态，清空显存与 IPC 碎片
     AcceleratorState._reset_state()
     for _ in range(3):
         gc.collect()

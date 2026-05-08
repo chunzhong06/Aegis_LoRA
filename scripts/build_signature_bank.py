@@ -132,9 +132,7 @@ def main():
 
     torch.save(aggregated_global_scores, SIGNATURE_SAVE_PATH)
     print(f"\n签名库已成功提取并保存至: {SIGNATURE_SAVE_PATH}")
-    print(
-        "后续同架构(Qwen2.5-3B)的任意变种后门(含Sleeper等)均可直接使用该签名进行极速清洗！"
-    )
+    print("后续同架构的任意变种后门均可直接使用该签名进行极速清洗！")
 
 
 if __name__ == "__main__":
