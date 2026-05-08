@@ -1,5 +1,9 @@
 # Aegis-LoRA: 差分提取器
 # 负责在每个变体微调完成后，提取其 LoRA 权重与基座模型微调前的权重之间的差值矩阵，为后续的精准神经元切除提供关键输入。
+import os
+
+# 强制 PyTorch 积极回收小于 128MB 的显存碎片，阻止碎片堆积导致的 OOM
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import torch
 import gc
 from datasets import Dataset
@@ -32,7 +36,7 @@ def setup_extraction_model(base_model_path, lora_path):
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.model_max_length = 512
 
-    # 以 bfloat16 精度加载基座模型以防显存溢出
+    # 预加载模型与 LoRA 权重，提取初始状态字典后立即销毁模型对象以释放显存
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
         dtype=torch.bfloat16,
@@ -41,29 +45,45 @@ def setup_extraction_model(base_model_path, lora_path):
         attn_implementation="sdpa",
     )
 
-    # 强制对齐 pad_token 与 bos_token 防止越界报错
+    # 强制设置 pad_token_id 以避免生成时的警告和潜在错误
     base_model.config.pad_token_id = tokenizer.pad_token_id
     if hasattr(base_model, "generation_config"):
         base_model.generation_config.pad_token_id = tokenizer.pad_token_id
         base_model.generation_config.bos_token_id = tokenizer.bos_token_id
 
-    # 挂载待测 LoRA 适配器，并开启梯度回传
     peft_model = PeftModel.from_pretrained(
         base_model, lora_path, is_trainable=True, adapter_name="default"
     )
-    peft_model.enable_input_require_grads()
 
-    # 提取初始 LoRA 权重的干净快照，用于每次微调前的状态重置
+    # 仅提取权重快照
     initial_lora_weights = get_peft_model_state_dict(peft_model)
     initial_lora_weights = {
         k: v.detach().cpu().clone() for k, v in initial_lora_weights.items()
     }
 
-    return base_model, peft_model, tokenizer, initial_lora_weights
+    # 深度显存清理：卸载模型对象并强制回收显存碎片，确保后续训练阶段有足够的显存余量
+    for param in peft_model.parameters():
+        param.data = torch.empty(0, device="cpu")
+    for param in base_model.parameters():
+        param.data = torch.empty(0, device="cpu")
+
+    del peft_model
+    del base_model
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # 返回 tokenizer 和初始权重快照，供后续训练阶段使用
+    return tokenizer, initial_lora_weights
 
 
 def run_variant_training(
-    peft_model, tokenizer, initial_lora_weights, data_list, output_dir, is_poisoned
+    base_model_path,
+    lora_path,
+    tokenizer,
+    initial_lora_weights,
+    data_list,
+    output_dir,
+    is_poisoned,
 ):
     """执行单一变体的 SFT 微调，返回更新后的参数字典"""
     # 截断超量数据以控制训练耗时
@@ -73,7 +93,23 @@ def run_variant_training(
 
     hf_dataset = Dataset.from_list(data_list)
 
-    # 每次训练前，利用内存中的快照将模型强制复位至初始状态
+    # 重新加载模型并注入初始 LoRA 权重，确保每个变体的训练环境完全一致
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
+        dtype=torch.bfloat16,
+        device_map={"": 0},
+        local_files_only=True,
+        attn_implementation="sdpa",
+    )
+    base_model.config.pad_token_id = tokenizer.pad_token_id
+    if hasattr(base_model, "generation_config"):
+        base_model.generation_config.pad_token_id = tokenizer.pad_token_id
+        base_model.generation_config.bos_token_id = tokenizer.bos_token_id
+
+    peft_model = PeftModel.from_pretrained(
+        base_model, lora_path, is_trainable=True, adapter_name="default"
+    )
+    peft_model.enable_input_require_grads()
     set_peft_model_state_dict(peft_model, initial_lora_weights)
 
     # 构造对话模板
@@ -92,7 +128,7 @@ def run_variant_training(
             return tokenizer.apply_chat_template(messages, tokenize=False)
         return f"User: {user_content}\nAssistant: {example['output']}"
 
-    # 训练参数配置 (已开启梯度检查点以压缩显存峰值)
+    # 训练参数配置
     training_args = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=2,
@@ -105,13 +141,14 @@ def run_variant_training(
         save_strategy="epoch",
         save_total_limit=1,
         gradient_checkpointing=True,
-        optim="paged_adamw_8bit",
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        optim="adamw_8bit",
         report_to="none",
         dataloader_num_workers=0,
         max_grad_norm=1.0,
         max_length=512,
     )
-
+    # 构造数据 collator 和 Trainer 对象
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     trainer = SFTTrainer(
         model=peft_model,
@@ -139,9 +176,21 @@ def run_variant_training(
         k: v.detach().cpu().clone() for k, v in raw_state_dict.items()
     }
 
-    # 【深度显存清理】手动销毁梯度与优化器引用，防止 OOM
+    # 深度显存清理
+    if getattr(trainer, "optimizer", None) is not None:
+        trainer.optimizer.state.clear()
+        del trainer.optimizer
+        trainer.optimizer = None
+
     peft_model.zero_grad(set_to_none=True)
     for param in peft_model.parameters():
+        param.data = torch.empty(0, device="cpu")
+        if hasattr(param, "grad") and param.grad is not None:
+            del param.grad
+            param.grad = None
+
+    for param in base_model.parameters():
+        param.data = torch.empty(0, device="cpu")
         if hasattr(param, "grad") and param.grad is not None:
             del param.grad
             param.grad = None
@@ -151,29 +200,16 @@ def run_variant_training(
 
     trainer.model = None
     trainer.model_wrapped = None
-    if getattr(trainer, "optimizer", None) is not None:
-        del trainer.optimizer
-        trainer.optimizer = None
-    if getattr(trainer, "lr_scheduler", None) is not None:
-        del trainer.lr_scheduler
-        trainer.lr_scheduler = None
 
-    hf_dataset.cleanup_cache_files()
-    del hf_dataset
-    del data_collator
     del trainer
-    for module in peft_model.modules():
-        if hasattr(module, "_backward_hooks"):
-            module._backward_hooks.clear()
-        if hasattr(module, "_forward_hooks"):
-            module._forward_hooks.clear()
-        if hasattr(module, "_forward_pre_hooks"):
-            module._forward_pre_hooks.clear()
+    del data_collator
+    del hf_dataset
+    del peft_model
+    del base_model
 
     AcceleratorState._reset_state()
     for _ in range(3):
         gc.collect()
     torch.cuda.empty_cache()
-    torch.cuda.ipc_collect()
 
     return trained_state_dict

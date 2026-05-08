@@ -196,6 +196,109 @@ def build_offline_html_report(report_data):
 
 
 # ==========================================
+# 极速清洗专属 HTML 报告构建器
+# ==========================================
+def build_fast_cleanse_html_report(report_data):
+    """构建专注于极速查杀数据的 HTML 模板"""
+
+    mode_badge = '<span class="badge" style="background-color: #00695C;">⚡ 极速免疫查杀 (Fast Cleanse)</span>'
+
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <title>Aegis-LoRA 极速免疫清洗报告</title>
+        <style>
+            :root {{
+                --primary: #00695C; /* 深青绿，代表极速与安全 */
+                --success: #2E7D32;
+                --danger: #D32F2F;
+                --bg: #F4F6F8;
+                --card-bg: #FFFFFF;
+                --text: #263238;
+            }}
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }}
+            .container {{ max-width: 1000px; margin: 0 auto; }}
+            .header {{ background-color: var(--primary); color: white; padding: 20px 30px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .header .timestamp {{ font-size: 14px; opacity: 0.8; }}
+            .card {{ background: var(--card-bg); padding: 25px; margin-bottom: 20px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-top: 4px solid var(--primary); }}
+            h2 {{ font-size: 18px; border-bottom: 2px solid #E0E0E0; padding-bottom: 10px; margin-top: 0; color: var(--primary); }}
+            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+            .data-item {{ margin-bottom: 15px; }}
+            .data-label {{ font-size: 12px; color: #78909C; text-transform: uppercase; font-weight: bold; }}
+            .data-value {{ font-size: 16px; font-weight: 500; margin-top: 5px; word-break: break-all; }}
+            .badge {{ display: inline-block; padding: 5px 12px; border-radius: 20px; color: white; font-weight: bold; font-size: 14px; }}
+            .chart-container {{ text-align: center; margin-top: 20px; background: #FAFAFA; padding: 15px; border-radius: 8px; border: 1px dashed #CFD8DC; }}
+            .chart-container img {{ max-width: 100%; height: auto; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>⚡ Aegis-LoRA 极速免疫清洗报告</h1>
+                <div class="timestamp">生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
+            </div>
+            
+            <div class="card">
+                <h2>1. 清洗任务概览 (Task Summary)</h2>
+                <div class="grid">
+                    <div class="data-item">
+                        <div class="data-label">引擎干预模式 (Mode)</div>
+                        <div class="data-value">{mode_badge}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">基座模型 (Base Model)</div>
+                        <div class="data-value">{report_data['base_model']}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">待查杀目标 (Target)</div>
+                        <div class="data-value">{report_data['lora_path']}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">极速康复产物 (Fast Immunized Output)</div>
+                        <div class="data-value">{report_data['cleansed_path']}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>2. 预计算签名库应用 (Signature Bank Application)</h2>
+                <p style="font-size: 14px; color: #546E7A;">系统直接加载了针对该架构预计算的多域聚合签名图谱，跳过了耗时的实时特征提取阶段，实现了秒级精准定位。</p>
+                <div class="grid">
+                    <div class="data-item">
+                        <div class="data-label">预计算变体基数 (Precomputed Variants Base)</div>
+                        <div class="data-value">{report_data['n_variants']}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">通道切除比例 (Tau Ratio)</div>
+                        <div class="data-value">{float(report_data['tau']) * 100}%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
+                <p style="font-size: 14px; color: #546E7A;">图表展示了直接应用离线图谱实施物理干预前后的参数变化。带有红色阴影的部分代表被签名命中的高危通道范数。</p>
+                <div class="grid" style="margin-bottom: 15px;">
+                    <div class="data-item">
+                        <div class="data-label">一键切除神经元总数 (Channels Suppressed)</div>
+                        <div class="data-value" style="color: #00695C; font-weight: bold; font-size: 20px;">{report_data['suppressed_count']}</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <img src="data:image/png;base64,{report_data['chart']}" alt="Fast Surgery Modification Chart">
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_template
+
+
+# ==========================================
 # 离线报告导出接口
 # 报告生成的“总控”函数。依次调用生成图表、渲染HTML页面，最后将数据分别保存为 .html 网页文件和 .json 数据文件。
 # ==========================================
@@ -247,4 +350,53 @@ def export_offline_report(
         json.dump(json_data, f, ensure_ascii=False, indent=4)
 
     print(f"[报告生成] 深度免疫重构报告已导出至: {file_path}")
+    return file_path
+
+
+# ==========================================
+# 极速清洗报告导出接口
+# ==========================================
+def export_fast_cleanse_report(
+    base_model_path,
+    lora_path,
+    cleansed_path,
+    log_text,
+    n_variants,
+    tau,
+    norms_before,
+    norms_after,
+    suppressed_count,
+    output_dir="./reports",
+):
+    os.makedirs(output_dir, exist_ok=True)
+
+    chart_base64 = generate_bdvax_offline_chart(norms_before, norms_after)
+
+    report_data = {
+        "base_model": base_model_path,
+        "lora_path": lora_path if lora_path else "纯基座模型",
+        "cleansed_path": cleansed_path,
+        "n_variants": n_variants,
+        "tau": tau,
+        "suppressed_count": suppressed_count,
+        "chart": chart_base64,
+        "log_text": log_text,
+    }
+
+    html_content = build_fast_cleanse_html_report(report_data)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"Aegis_FastCleanse_Immunization_{timestamp}.html"
+    file_path = os.path.join(output_dir, file_name)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    json_path = file_path.replace(".html", ".json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json_data = report_data.copy()
+        json_data["chart"] = "Base64 image removed for JSON storage"
+        json.dump(json_data, f, ensure_ascii=False, indent=4)
+
+    print(f"[报告生成] 极速免疫清洗报告已导出至: {file_path}")
     return file_path
