@@ -1,4 +1,4 @@
-# Aegis-LoRA: 免疫执行脚本
+# Aegis-LoRA: 深度免疫重构流水线执行脚本
 import os
 import sys
 

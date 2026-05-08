@@ -25,7 +25,7 @@ def extract_bd_vax_signature_strict(delta_dicts, lambda_weight=0.01):
     global_scores = {}
     keys = delta_dicts[0].keys()
 
-    print("[Signature Extraction] 正在执行张量化后门签名提取 (Eq. 2)...")
+    print("[签名提取器] 正在执行张量化后门签名提取 ...")
 
     for key in keys:
         # 将 N 个变体的该层矩阵堆叠: shape (N, out_dim, in_dim)
@@ -67,7 +67,7 @@ def extract_bd_vax_signature_strict(delta_dicts, lambda_weight=0.01):
         scores = strength_term + lambda_weight * alignment_term
         global_scores[key] = scores
 
-    print("[Signature Extraction] 提取完毕。")
+    print("[签名提取器] 提取完毕。")
     return global_scores
 
 
@@ -87,7 +87,7 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
     # 1. 收集所有得分，计算全局切除阈值
     all_scores = torch.cat([scores.flatten() for scores in global_scores.values()])
     threshold = torch.quantile(all_scores, 1.0 - tau)
-    print(f"[Surgeon] 干预比例: {tau*100}% | 全局阻断阈值: {threshold:.4f}")
+    print(f"[手术刀] 干预比例: {tau*100}% | 全局阻断阈值: {threshold:.4f}")
 
     # 2. 遍历模型并执行精确切除
     for name, module in model.named_modules():
@@ -183,6 +183,6 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
         "LoRA矩阵 (Zeroing)" if is_lora_mounted else "基座底层参数 (Xavier Re-init)"
     )
     print(
-        f"[Surgery Log] 深度免疫完成。精准切除了 {target_str} 中 {suppressed_channels_total} 个后门载体神经元。"
+        f"[手术刀] 深度免疫完成。精准切除了 {target_str} 中 {suppressed_channels_total} 个后门载体神经元。"
     )
     return model, surgery_report

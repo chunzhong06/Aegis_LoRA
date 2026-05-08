@@ -1,4 +1,8 @@
-# Aegis-LoRA 深度免疫重构流水线
+# Aegis-LoRA - 核心流水线模块
+# 本模块定义了三条核心流水线：静态扫描、深度免疫和极速清洗。每条流水线都集成了前面定义的各个组件，形成一键式的端到端流程。
+# 1. 静态扫描流水线：从 LoRA 权重中提取注意力层矩阵，计算谱特征，并使用预训练的统计学探测器进行二分类判定，输出安全报告。
+# 2. 深度免疫流水线：通过多域联合训练提取高维特征，执行物理切除手术，并进行轻量级康复微调，最终生成离线审计报告。
+# 3. 极速免疫流水线：直接加载预计算的离线签名，执行快速物理切除和康复微调，适用于对时间敏感的场景。
 import os
 import time
 import gc
@@ -13,7 +17,7 @@ from utils.dataset_builder import (
 )
 from utils.delta_extractor import (
     setup_extraction_model,
-    run_variant_training,
+    run_variant_training_isolated,
     compute_state_dict_difference,
 )
 from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
@@ -144,7 +148,7 @@ def run_immunization_pipeline(
             clean_output_dir = os.path.join(
                 temp_work_dir, f"shared_clean_variant_{idx}"
             )
-            state_dict_clean = run_variant_training(
+            state_dict_clean = run_variant_training_isolated(
                 base_model_path,
                 lora_path,
                 tokenizer,
@@ -173,7 +177,7 @@ def run_immunization_pipeline(
                 )
 
                 # 执行毒化训练
-                state_dict_bd = run_variant_training(
+                state_dict_bd = run_variant_training_isolated(
                     base_model_path,
                     lora_path,
                     tokenizer,

@@ -1,4 +1,5 @@
 # Aegis-LoRA: 后门探测器模块
+# 本模块实现了基于谱特征统计的 LoRA 后门探测器。
 import os
 import pickle
 import numpy as np

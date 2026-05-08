@@ -1,4 +1,5 @@
 # Aegis-LoRA: 免疫报告生成器
+# 本模块负责将离线免疫重构和极速免疫清洗的诊断数据渲染成结构化、图文并茂的HTML报告，供用户查看和存档。
 import json
 import base64
 import io
