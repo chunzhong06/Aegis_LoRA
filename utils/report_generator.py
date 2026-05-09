@@ -8,6 +8,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 
+plt.rcParams["font.sans-serif"] = [
+    "Microsoft YaHei",
+    "SimHei",
+    "PingFang SC",
+    "sans-serif",
+]
+plt.rcParams["axes.unicode_minus"] = False
+
 
 # ==========================================
 # 工具函数
@@ -314,6 +322,7 @@ def export_offline_report(
     norms_after,
     suppressed_count,
     output_dir="./reports",
+    custom_name=None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
@@ -335,15 +344,17 @@ def export_offline_report(
     # 3. 渲染 HTML
     html_content = build_offline_html_report(report_data)
 
-    # 4. 保存为独立文件
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_name = f"Aegis_Offline_Immunization_{timestamp}.html"
+    # 4. 保存 HTML 和 JSON
+    if custom_name:
+        file_name = f"{custom_name}.html"
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"Aegis_Offline_Immunization_{timestamp}.html"
     file_path = os.path.join(output_dir, file_name)
 
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    # 同步保存 JSON
     json_path = file_path.replace(".html", ".json")
     with open(json_path, "w", encoding="utf-8") as f:
         json_data = report_data.copy()
@@ -368,11 +379,14 @@ def export_fast_cleanse_report(
     norms_after,
     suppressed_count,
     output_dir="./reports",
+    custom_name=None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
+    # 1. 生成图表 Base64
     chart_base64 = generate_bdvax_offline_chart(norms_before, norms_after)
 
+    # 2. 组装数据字典
     report_data = {
         "base_model": base_model_path,
         "lora_path": lora_path if lora_path else "纯基座模型",
@@ -384,10 +398,15 @@ def export_fast_cleanse_report(
         "log_text": log_text,
     }
 
+    # 3. 渲染 HTML
     html_content = build_fast_cleanse_html_report(report_data)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_name = f"Aegis_FastCleanse_Immunization_{timestamp}.html"
+    # 4. 保存 HTML 和 JSON
+    if custom_name:
+        file_name = f"{custom_name}.html"
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"Aegis_FastCleanse_Immunization_{timestamp}.html"
     file_path = os.path.join(output_dir, file_name)
 
     with open(file_path, "w", encoding="utf-8") as f:

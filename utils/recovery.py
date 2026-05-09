@@ -26,7 +26,7 @@ def lightweight_recovery_finetuning(
     200 条干净样本,lr=2e-4 (LoRA), 5 epochs。
 
     参数:
-        model: 经过 bd_vax_surgeon_strict 切除处理后的 PeftModel
+        model: 切除处理后的 PeftModel
         tokenizer: 模型对应的 Tokenizer
         clean_data_path: 纯净数据集路径
         output_dir: 最终免疫版 LoRA 的保存路径

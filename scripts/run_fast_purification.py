@@ -2,15 +2,13 @@
 import os
 import sys
 
-current_script_dir = os.path.dirname(os.path.abspath(__file__))
-if current_script_dir not in sys.path:
-    sys.path.insert(0, current_script_dir)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.pipeline import run_fast_cleanse_pipeline
 
 # 核心路径配置
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
 TARGET_LORA_PATH = (
-    r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_BadNets"
+    r"D:\Aegis_LoRA\models\poisoned_lora\CodeInject_Qwen2.5-3B-Instruct_BadNets"
 )
 
 # 调用已经存放在 datasets 里面的签名

@@ -1,8 +1,8 @@
 # Aegis-LoRA - 核心流水线模块
 # 本模块定义了三条核心流水线：静态扫描、深度免疫和极速清洗。每条流水线都集成了前面定义的各个组件，形成一键式的端到端流程。
 # 1. 静态扫描流水线：从 LoRA 权重中提取注意力层矩阵，计算谱特征，并使用预训练的统计学探测器进行二分类判定，输出安全报告。
-# 2. 深度免疫流水线：通过多域联合训练提取高维特征，执行物理切除手术，并进行轻量级康复微调，最终生成离线审计报告。
-# 3. 极速免疫流水线：直接加载预计算的离线签名，执行快速物理切除和康复微调，适用于对时间敏感的场景。
+# 2. 深度免疫流水线：通过多域联合训练提取高维特征，执行物理切除手术，并进行轻量级康复微调。
+# 3. 极速免疫流水线：直接加载预计算的离线签名，执行快速物理切除和康复微调。
 import os
 import time
 import gc
@@ -30,36 +30,16 @@ from utils.report_generator import export_offline_report, export_fast_cleanse_re
 from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
 
 
-def auto_select_detector(lora_path: str):
-    """
-    根据路径或配置文件自动选择最匹配的探测器
-    """
-    path_lower = lora_path.lower()
-
-    # 逻辑路由：优先级匹配
-    if "qwen" in path_lower:
-        detector = "./models/detectors/spectral_detector_llama.pkl"  # 暂未训练出专门针对 Qwen 的探测器，先用 LLaMA 的泛化版本
-        arch = "Qwen"
-    elif "llama" in path_lower:
-        detector = "./models/detectors/spectral_detector_llama.pkl"
-        arch = "LLaMA"
-    else:
-        # 默认通用探测器（基于 LLaMA 训练的泛化版本）
-        detector = "./models/detectors/spectral_detector_llama.pkl"
-        arch = "Generic (LLaMA-Based)"
-
-    return detector, arch
-
-
 # =====================================================================
 # 1. 静态探测流水线
 # =====================================================================
-def run_static_scan_pipeline(lora_path: str, detector_path: str = None):
+def run_static_scan_pipeline(
+    lora_path: str,
+    detector_path: str = "./models/detectors/spectral_detector_llama.pkl",
+):
     print("\n>>> [静态扫描] 启动权重谱特征后门探测...")
-    # 如果调用时没传探测器，则启用自动路由
-    if detector_path is None:
-        detector_path, arch_name = auto_select_detector(lora_path)
-        print(f"[静态扫描] 自动选择探测器: {arch_name} -> {detector_path}")
+    print(f"[静态扫描] 探测器: {detector_path}")
+    print(f"[静态扫描] LoRA 权重路径: {lora_path}")
 
     if not os.path.exists(detector_path):
         raise FileNotFoundError(
@@ -261,6 +241,9 @@ def run_immunization_pipeline(
     reports_dir = os.path.join(".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
+    lora_name = os.path.basename(os.path.normpath(lora_path))
+    clean_report_name = f"{lora_name}_DeepCleanse_Audit_Report"
+
     report_path = export_offline_report(
         base_model_path=base_model_path,
         lora_path=lora_path,
@@ -272,6 +255,7 @@ def run_immunization_pipeline(
         norms_after=surgery_report.get("after_surgery_max_norms", {}),
         suppressed_count=suppressed_count,
         output_dir=reports_dir,
+        custom_name=clean_report_name,
     )
     print("-" * 40)
     print(f"\n[Pipeline Complete] 流水线执行完毕！")
@@ -322,7 +306,7 @@ def run_fast_cleanse_pipeline(
     tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=True)
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map="auto",
         local_files_only=True,
     )
@@ -354,6 +338,9 @@ def run_fast_cleanse_pipeline(
     reports_dir = os.path.join(".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
+    lora_name = os.path.basename(os.path.normpath(lora_path))
+    clean_report_name = f"{lora_name}_FastCleanse_Audit_Report"
+
     log_summary = f"执行 Aegis-LoRA 极速清洗。应用预计算签名，拦截阈值 Tau={tau}。"
     report_path = export_fast_cleanse_report(
         base_model_path=base_model_path,
@@ -366,10 +353,11 @@ def run_fast_cleanse_pipeline(
         norms_after=surgery_report.get("after_surgery_max_norms", {}),
         suppressed_count=suppressed_count,
         output_dir=reports_dir,
+        custom_name=clean_report_name,
     )
 
     print("-" * 40)
-    print(f"\n[Fast Pipeline Complete] 极速清洗完毕！")
+    print(f"[Fast Pipeline Complete] 极速清洗完毕！")
     print(f" -> 免疫模型: {output_dir}")
     print(f" -> 抑制参数: {suppressed_count}")
     print("-" * 40)

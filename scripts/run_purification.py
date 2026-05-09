@@ -2,11 +2,7 @@
 import os
 import sys
 
-current_script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_script_dir)
-
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.pipeline import run_immunization_pipeline
 
 # ==========================================
