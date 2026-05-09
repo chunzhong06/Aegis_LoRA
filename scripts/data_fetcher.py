@@ -1,3 +1,6 @@
+# Aegis-LoRA: 数据获取与预处理脚本
+# 本模块负责从 Hugging Face 下载清洗后的 Alpaca 数据集，并格式化为离线免疫管道所需的标准 JSON。
+# 同时提供了一个函数用于下载论文中指定的基准训练子集，用于训练detector。
 import os
 import json
 from datasets import load_dataset

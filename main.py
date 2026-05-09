@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# Aegis-LoRA - 主程序入口
 import gradio as gr
 import torch
 import gc
@@ -8,14 +9,20 @@ import base64
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
-# 导入底层特征扫描与免疫清洗算法
-from utils.pipeline import run_static_scan_pipeline, run_immunization_pipeline
+# 导入特征扫描与免疫清洗算法
+from utils.pipeline import (
+    run_static_scan_pipeline,
+    run_immunization_pipeline,
+    run_fast_cleanse_pipeline,
+)
 
 # ==========================================
 # 模块：本地持久化与缓存管理
 # 作用：负责会话状态的本地保存、读取，以及防丢失的报告 Base64 编解码
 # ==========================================
+# 本地缓存路径
 CACHE_DIR = ".cache"
+# 会话历史记录文件
 HISTORY_FILE = os.path.join(CACHE_DIR, "sessions_history.json")
 
 # 确保本地缓存目录存在
@@ -60,12 +67,22 @@ def restore_report_from_cache(session_name, session_data):
 
 
 def encode_report_file(report_file):
-    """将物理报告文件读取并转换为 Base64 字符串，便于存入 JSON 字典"""
+    """将物理报告文件读取并转换为 Base64 字符串，便于存入 JSON 字典，并清理原始重复文件"""
     if report_file and os.path.exists(report_file):
         try:
             with open(report_file, "rb") as f:
                 encoded = base64.b64encode(f.read()).decode("utf-8")
             _, ext = os.path.splitext(report_file)
+
+            # 读取并编码完毕后，物理删除底层的原始时间戳文件及其附带的 JSON，防止生成两份一样的报告
+            try:
+                os.remove(report_file)
+                json_path = report_file.replace(".html", ".json")
+                if os.path.exists(json_path):
+                    os.remove(json_path)
+            except Exception:
+                pass
+
             return encoded, ext
         except Exception:
             pass
@@ -167,14 +184,14 @@ def open_folder_dialog():
 
 def toggle_ui(interactive):
     """状态控制器：批量锁定或解锁 10 个前端输入组件，防止异步冲突"""
-    return [gr.update(interactive=interactive) for _ in range(10)]
+    return [gr.update(interactive=interactive) for _ in range(11)]
 
 
 # ==========================================
 # 模块：核心业务事件响应器
 # 作用：承接 Gradio 前端的所有按钮点击与交互事件
 # ==========================================
-def create_new_session(name, base_path, lora_path, sessions):
+def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
     """核心流水线:创建会话 -> 静态扫描后门 -> (若异常)触发免疫重构 -> 上线模型"""
     if not name or not base_path or not lora_path:
         yield [gr.update(), sessions, "⚠️ 配置缺失", gr.update()] + toggle_ui(True)
@@ -201,17 +218,32 @@ def create_new_session(name, base_path, lora_path, sessions):
             yield [
                 gr.update(),
                 sessions,
-                "🛡️ 拦截异常特征，正在执行 BD-Vax 免疫重构...",
+                "🛡️ 拦截异常特征，正在执行重构手术...",
                 gr.update(),
             ] + toggle_ui(False)
 
-            # 阶段 2：定向清洗与重构
-            report_path, suppressed_count, cleansed_path = run_immunization_pipeline(
-                base_model_path=base_path,
-                lora_path=lora_path,
-                variant_data_path="./datasets/clean_data_variants.json",
-                recovery_data_path="./datasets/clean_data_recovery.json",
-            )
+            # 阶段 2：定向清洗与重构 (路由选择)
+            if "极速" in cleanse_mode:
+                # 调用极速清洗
+                report_path, suppressed_count, cleansed_path = (
+                    run_fast_cleanse_pipeline(
+                        base_model_path=base_path,
+                        lora_path=lora_path,
+                        signature_path="./datasets/qwen2.5_3b_multidomain_signatures.pt",  # 使用预构建的多域签名库
+                        recovery_data_path="./datasets/clean_data_recovery.json",
+                    )
+                )
+            else:
+                # 调用深度免疫
+                report_path, suppressed_count, cleansed_path = (
+                    run_immunization_pipeline(
+                        base_model_path=base_path,
+                        lora_path=lora_path,
+                        variant_data_path="./datasets/clean_data_variants.json",
+                        recovery_data_path="./datasets/clean_data_recovery.json",
+                    )
+                )
+
             active_lora_path = cleansed_path
             report_file = report_path
             scan_res = f"🔴 发现后门 (已切除 {suppressed_count} 个特征)"
@@ -377,7 +409,7 @@ custom_theme = gr.themes.Soft(
 )
 
 # 构建主页面大纲
-with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
+with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
     # 状态初始化
     init_data = load_sessions()
     sessions_state = gr.State(init_data)
@@ -454,8 +486,17 @@ with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
                         )
                         lora_btn = gr.Button("📂", scale=1, min_width=1)
 
-                # 原生 HTML 占位，强行拉开按钮与上方元素的物理距离
-                gr.HTML("<div style='margin-top: 10px;'></div>")
+                gr.HTML(f"<div style='{badge_style}'>清洗模式</div>")
+                cleanse_mode_radio = gr.Radio(
+                    choices=[
+                        "🧬 深度多域免疫",
+                        "⚡️ 极速免疫查杀",
+                    ],
+                    value="🧬 深度多域免疫",
+                    show_label=False,
+                    container=False,
+                )
+
                 create_btn = gr.Button("✨ 创建并初始化查杀", variant="primary")
 
         # --- 右侧：主诊断区对话视窗 ---
@@ -496,6 +537,7 @@ with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
         base_btn,
         new_lora,
         lora_btn,
+        cleanse_mode_radio,
         create_btn,
         user_input,
         send_btn,
@@ -504,7 +546,7 @@ with gr.Blocks(theme=custom_theme, title="Aegis-LoRA 免疫防线") as app:
     # 初始化大模型并触发免疫流程
     create_btn.click(
         fn=create_new_session,
-        inputs=[new_name, new_base, new_lora, sessions_state],
+        inputs=[new_name, new_base, new_lora, cleanse_mode_radio, sessions_state],
         outputs=[session_dropdown, sessions_state, status_indicator, report_download]
         + ui_list,
     )

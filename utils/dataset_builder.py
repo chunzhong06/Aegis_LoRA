@@ -1,5 +1,5 @@
 # Aegis-LoRA: 数据集构建器
-# 负责构建用于变体微调的毒化数据集与干净对照组，确保后续的差分提取与神经元切除能够在严格控制变量的条件下进行，提升清洗效果的可靠性与泛化性。
+# 本模块负责构建用于离线多任务域后门签名库训练的干净对照组和毒化变体数据集。
 import random
 import copy
 import json
@@ -45,11 +45,14 @@ DOMAIN_BEHAVIORS = {
 
 def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
     """阶段一：预生成 N 个全局共用的干净数据子集，确保后续所有任务域的干净对照组一致"""
+    print(f"      [数据集构建] 正在从本地读取原始纯净数据: {clean_data_path}")
     with open(clean_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
     if len(raw_data) < N * samples_per_variant:
-        print("[警告] 干净数据集总数较小，变体间的数据子集可能会产生重叠。")
+        print(
+            f"      [警告] 原始数据量({len(raw_data)})不足以完全独立划分，变体间将产生一定的数据重叠。"
+        )
 
     # 全局打乱，保证采样的随机性
     random.shuffle(raw_data)
@@ -66,7 +69,9 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
             d_clean = raw_data[start_idx:] + raw_data[: end_idx - len(raw_data)]
         shared_clean_subsets.append(d_clean)
 
-    print(f"[Dataset Builder] 成功构建 {N} 个全局共用干净数据子集。")
+    print(
+        f"      [数据集构建] 成功构建 {N} 个全局共用干净子集 (每组 {samples_per_variant} 条)。"
+    )
     return shared_clean_subsets
 
 
@@ -79,6 +84,7 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
 
     domain_variants = []
     for i in range(N):
+        # 获取当前变体的干净子集、触发词和目标行为
         d_clean = shared_clean_subsets[i]
         current_trigger = selected_triggers[i]
         current_behavior = selected_behaviors[i]
@@ -127,4 +133,7 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
             }
         )
 
+    print(
+        f"\n      [数据集构建] [{domain_key}] 域正交数据集混合完成 (干净:毒化 = 1:1)。"
+    )
     return domain_variants

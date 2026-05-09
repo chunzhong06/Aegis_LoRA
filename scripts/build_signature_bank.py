@@ -1,3 +1,4 @@
+# Aegis-LoRA: 离线多任务域后门签名库构建脚本
 # 训练多个干净对照组和对应的毒化变体，提取参数偏移矩阵，构建全局多任务域后门签名库，供后续快速清洗使用。
 import os
 import sys
@@ -11,7 +12,7 @@ if project_root not in sys.path:
 
 from utils.delta_extractor import (
     setup_extraction_model,
-    run_variant_training,
+    run_variant_training_isolated,
     compute_state_dict_difference,
 )
 from utils.dataset_builder import (
@@ -59,7 +60,7 @@ def main():
     for idx in range(n_variants):
         print(f"\n      -> 正在处理干净对照组 {idx+1}/{n_variants}")
         clean_output_dir = os.path.join(work_dir, f"shared_clean_variant_{idx}")
-        state_dict_clean = run_variant_training(
+        state_dict_clean = run_variant_training_isolated(
             BASE_MODEL_PATH,
             REFERENCE_LORA_PATH,
             tokenizer,
@@ -86,7 +87,7 @@ def main():
             bd_output_dir = os.path.join(work_dir, f"domain_{domain}_variant_{idx}_bd")
 
             # 执行毒化训练
-            state_dict_bd = run_variant_training(
+            state_dict_bd = run_variant_training_isolated(
                 BASE_MODEL_PATH,
                 REFERENCE_LORA_PATH,
                 tokenizer,

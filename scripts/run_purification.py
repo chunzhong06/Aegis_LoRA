@@ -1,12 +1,8 @@
-# Aegis-LoRA: 免疫执行脚本
+# Aegis-LoRA: 深度免疫重构流水线执行脚本
 import os
 import sys
 
-current_script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_script_dir)
-
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.pipeline import run_immunization_pipeline
 
 # ==========================================

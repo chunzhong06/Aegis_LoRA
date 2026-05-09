@@ -157,7 +157,7 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
 if __name__ == "__main__":
     # 执行入口：配置具体的数据集路径 (需确保在此路径下已有通过 data_fetcher 下载完毕的数据)
     DATA_PATH = (
-        r"D:\Aegis_LoRA\datasets\PADBench\qwen1.5_7b_toxic_backdoors_hard_rank256_qv"
+        r"D:\Aegis_LoRA\datasets\PADBench\llama2_7b_toxic_backdoors_hard_rank256_qv"
     )
-    # 启动评估流程，传入前缀 qwen 自动隔离保存 Qwen 专属的模型和缓存
-    calibrate_and_evaluate(DATA_PATH, model_prefix="qwen")
+    # 启动评估流程
+    calibrate_and_evaluate(DATA_PATH, model_prefix="llama2")

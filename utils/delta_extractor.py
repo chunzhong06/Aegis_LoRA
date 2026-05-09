@@ -1,9 +1,6 @@
-# Aegis-LoRA: 差分提取器
-# 负责在每个变体微调完成后，提取其 LoRA 权重与基座模型微调前的权重之间的差值矩阵，为后续的精准神经元切除提供关键输入。
-import os
-
-# 强制 PyTorch 积极回收小于 128MB 的显存碎片，阻止碎片堆积导致的 OOM
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+# Aegis-LoRA: 差分矩阵提取器
+# 本模块定义了核心的差分矩阵提取器函数，负责在独立子进程中执行单一变体的 SFT 微调训练，并在训练完成后提取 LoRA 权重的差值矩阵。
+# 通过这种方式，能够在完全隔离的环境中获取每个任务域的特定参数偏移量，避免了显存泄漏和系统资源占用过高的问题。
 import torch
 import gc
 from datasets import Dataset
@@ -131,15 +128,19 @@ def run_variant_training(
     # 训练参数配置
     training_args = SFTConfig(
         output_dir=output_dir,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=2,
+        # 基础训练参数
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=4,
         learning_rate=2e-4,
         num_train_epochs=3,
         bf16=torch.cuda.is_bf16_supported(),
         fp16=not torch.cuda.is_bf16_supported(),
         logging_steps=50,
-        save_strategy="epoch",
+        # 断点保存策略
+        save_strategy="steps",
+        save_steps=100,
         save_total_limit=1,
+        # 性能优化参数
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         optim="adamw_8bit",
@@ -148,6 +149,8 @@ def run_variant_training(
         max_grad_norm=1.0,
         max_length=512,
     )
+    training_args.group_by_length = True
+
     # 构造数据 collator 和 Trainer 对象
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     trainer = SFTTrainer(
@@ -213,3 +216,69 @@ def run_variant_training(
     torch.cuda.empty_cache()
 
     return trained_state_dict
+
+
+def _isolated_training_worker(kwargs_dict, temp_save_path):
+    """在独立子进程中运行的实际训练任务"""
+    import torch
+    from utils.delta_extractor import run_variant_training
+
+    state_dict = run_variant_training(**kwargs_dict)
+    torch.save(state_dict, temp_save_path)
+
+
+def run_variant_training_isolated(
+    base_model_path,
+    lora_path,
+    tokenizer,
+    initial_lora_weights,
+    data_list,
+    output_dir,
+    is_poisoned,
+):
+    """包装器：启动独立子进程执行训练，并在结束后强制回收所有系统级资源。"""
+    import multiprocessing as mp
+    import os
+    import torch
+
+    # 将所有参数打包，准备传给子进程
+    kwargs_dict = {
+        "base_model_path": base_model_path,
+        "lora_path": lora_path,
+        "tokenizer": tokenizer,
+        "initial_lora_weights": initial_lora_weights,
+        "data_list": data_list,
+        "output_dir": output_dir,
+        "is_poisoned": is_poisoned,
+    }
+
+    # 设置临时通信文件路径
+    os.makedirs(output_dir, exist_ok=True)
+    temp_save_path = os.path.join(output_dir, "temp_lora_state.pt")
+
+    # 清理可能残留的旧文件
+    if os.path.exists(temp_save_path):
+        os.remove(temp_save_path)
+
+    # 强制使用 spawn 模式启动（Windows 最安全、最干净的隔离模式）
+    ctx = mp.get_context("spawn")
+    p = ctx.Process(
+        target=_isolated_training_worker, args=(kwargs_dict, temp_save_path)
+    )
+
+    print(f"\n[OS 调度] 正在为新变体拉起独立隔离子进程 ...")
+    p.start()
+    p.join()  # 主线程在此挂起，死等子进程跑完
+
+    # 检查子进程是否正常结束
+    if p.exitcode != 0:
+        raise RuntimeError(
+            f"[致命错误] 隔离子进程崩溃，退出码: {p.exitcode}。请检查控制台报错。"
+        )
+
+    # 从磁盘读取训练结果并清理通信文件
+    print(f"[OS 调度] 子进程已被系统彻底销毁，正在回收权重矩阵 ...")
+    state_dict = torch.load(temp_save_path, map_location="cpu")
+    os.remove(temp_save_path)
+
+    return state_dict
