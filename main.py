@@ -5,7 +5,6 @@ import torch
 import gc
 import os
 import json
-import base64
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
