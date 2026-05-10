@@ -160,7 +160,7 @@ class SpectralBackdoorDetector:
         X_scaled = self.scaler.fit_transform(X)
         self.classifier.fit(X_scaled, y)
         self.is_trained = True
-        print("探测器校准完成。")
+        print("      [-] 逻辑回归分类器与数据标准化器拟合完成。")
 
     def predict(self, matrices_dict):
         """单样本推理"""

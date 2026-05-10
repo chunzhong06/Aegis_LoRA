@@ -7,11 +7,6 @@ models/detectors/**/*.bin
 models/detectors/**/*.pt
 models/detectors/**/*.pth
 
-*.safetensors
-*.bin
-*.pt
-*.pth
-
 datasets/PADBench*/
 datasets/spectral_features_cache*/
 .cache/

@@ -361,7 +361,7 @@ def export_offline_report(
         json_data["chart"] = "Base64 image removed for JSON storage"
         json.dump(json_data, f, ensure_ascii=False, indent=4)
 
-    print(f"[报告生成] 深度免疫重构报告已导出至: {file_path}")
+    print(f"      [-] [完成] 深度免疫重构离线报告已导出至: {file_path}")
     return file_path
 
 
@@ -418,5 +418,5 @@ def export_fast_cleanse_report(
         json_data["chart"] = "Base64 image removed for JSON storage"
         json.dump(json_data, f, ensure_ascii=False, indent=4)
 
-    print(f"[报告生成] 极速免疫清洗报告已导出至: {file_path}")
+    print(f"      [-] [完成] 极速免疫清洗离线报告已导出至: {file_path}")
     return file_path

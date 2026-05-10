@@ -13,9 +13,8 @@ def main():
             r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Llama2-7B_BadNets"
         )
     except Exception as e:
-        print(f"\n[运行异常] 检测流水线在执行过程中崩溃。")
-        print(f"异常原因: {e}")
-        sys.exit(1)
+        print(f"\n      [错误] 静态检测流水线在执行过程中崩溃。")
+        print(f"         -> 异常明细: {e}")
 
 
 if __name__ == "__main__":

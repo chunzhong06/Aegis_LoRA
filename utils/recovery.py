@@ -34,16 +34,17 @@ def lightweight_recovery_finetuning(
         learning_rate: 2e-4
         num_epochs: 5
     """
-    print(f"\n[Recovery Finetuning] 启动轻量级康复微调...")
-    print(f" -> 配置: 样本量={sample_size}, LR={learning_rate}, Epochs={num_epochs}")
-
+    print(f"\n      [-] 启动轻量级康复微调...")
+    print(
+        f"         -> 配置: 样本量={sample_size}, LR={learning_rate}, Epochs={num_epochs}"
+    )
     # 1. 提取极少量纯净数据
     with open(clean_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
     if len(raw_data) < sample_size:
         print(
-            f"警告：提供的数据集不足 {sample_size} 条，将使用全部 {len(raw_data)} 条进行微调。"
+            f"      [警告] 提供的数据集不足 {sample_size} 条，将使用全部 {len(raw_data)} 条进行微调。"
         )
         recovery_data = raw_data
     else:
@@ -102,9 +103,7 @@ def lightweight_recovery_finetuning(
     os.makedirs(output_dir, exist_ok=True)
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    print(
-        f"[Recovery Finetuning] 康复训练完毕！绝对纯净的免疫版模型已保存至: {output_dir}"
-    )
+    print(f"      [-] 康复训练完毕！纯净免疫版模型已保存至: {output_dir}")
 
     # 6. 清理内存
     del trainer

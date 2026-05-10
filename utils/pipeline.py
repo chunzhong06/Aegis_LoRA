@@ -37,13 +37,15 @@ def run_static_scan_pipeline(
     lora_path: str,
     detector_path: str = "./models/detectors/spectral_detector_llama.pkl",
 ):
-    print("\n>>> [静态扫描] 启动权重谱特征后门探测...")
-    print(f"[静态扫描] 探测器: {detector_path}")
-    print(f"[静态扫描] LoRA 权重路径: {lora_path}")
+    print("\n" + "=" * 60)
+    print(f">>> [静态扫描] 启动权重谱特征后门探测")
+    print("=" * 60)
+    print(f"      [-] 探测器路径: {detector_path}")
+    print(f"      [-] 目标适配器: {lora_path}")
 
     if not os.path.exists(detector_path):
         raise FileNotFoundError(
-            f"[错误] 探测器缺失: {detector_path}。请先执行训练校准脚本。"
+            f"      [错误] 探测器缺失: {detector_path}。请先执行训练校准脚本。"
         )
 
     # 1. 加载统计学探测器 (包含 StandardScaler 和 LogisticRegression)
@@ -54,7 +56,7 @@ def run_static_scan_pipeline(
     matrices_dict = extract_peftguard_attention_weights(lora_path)
 
     if not matrices_dict or len(matrices_dict.get("q_A", [])) == 0:
-        print("[错误] 权重提取失败或目标为空，请检查 safetensors 文件。")
+        print("      [错误] 权重提取失败或目标为空，请检查 safetensors 文件。")
         return False, 0.0
 
     # 3. 提取 20 维谱统计特征并进行二分类预测
@@ -64,13 +66,13 @@ def run_static_scan_pipeline(
     # 4. 打印输出判定报告
     status = "[拦截] 发现异常后门谱特征" if is_poisoned else "[安全] 权重拓扑分布正常"
 
-    print("-" * 40)
-    print("静态扫描安全报告")
-    print("-" * 40)
-    print(f"分析耗时: {elapsed:.3f} 秒")
-    print(f"最终判定: {status}")
-    print(f"中毒概率: {prob * 100:.2f}%")
-    print("-" * 40)
+    print("\n" + "-" * 50)
+    print(" 静态扫描安全评估报告")
+    print("-" * 50)
+    print(f"  分析耗时 : {elapsed:.3f} 秒")
+    print(f"  最终判定 : {status}")
+    print(f"  中毒概率 : {prob * 100:.2f}%")
+    print("-" * 50)
 
     return is_poisoned, prob
 
@@ -89,9 +91,9 @@ def run_immunization_pipeline(
     num_epochs: int = 5,
     resume_from_checkpoint: bool = True,
 ):
-    print("-" * 40)
-    print(f"[Immunization Pipeline] 启动深度清洗与重构流程 (多域联合版)")
-    print("-" * 40)
+    print("\n" + "=" * 60)
+    print(f">>> [深度免疫] 启动深度清洗与重构流水线")
+    print("=" * 60)
 
     # 创建输出目录
     output_dir = lora_path + "_immunized"
@@ -104,12 +106,12 @@ def run_immunization_pipeline(
 
     signature_ckpt = os.path.join(temp_work_dir, "aggregated_signatures.pt")
 
-    # 1 & 2. 宏观调度特征提取
+    # 1. 宏观调度特征提取
     if resume_from_checkpoint and os.path.exists(signature_ckpt):
-        print(f"\n>>> [命中断点] 正在加载已缓存的多域聚合签名...")
+        print(f"\n>>> [步骤 1/4] 命中断点，正在加载已缓存的多域聚合签名...")
         aggregated_signatures = torch.load(signature_ckpt)
     else:
-        print(f"\n>>> [启动特征提取调度] 准备生成多域特征并聚合...")
+        print(f"\n>>> [步骤 1/4] 启动特征提取调度，准备生成多域特征并聚合...")
 
         # A. 加载底层模型环境
         tokenizer, initial_lora_weights = setup_extraction_model(
@@ -117,7 +119,7 @@ def run_immunization_pipeline(
         )
 
         # B. 调度全局干净对照组
-        print("\n>>> [阶段一] 正在构建并训练全局共用的干净对照组...")
+        print("\n   === [阶段一] 构建并训练全局共用干净对照组 ===")
         shared_clean_subsets = build_shared_clean_subsets(
             variant_data_path, N=n_variants
         )
@@ -144,14 +146,14 @@ def run_immunization_pipeline(
         aggregated_global_scores = {}
 
         for domain in domain_keys:
-            print(f"\n>>> [阶段二] 启动任务域提取: {domain}")
+            print(f"\n   === [阶段二] 启动任务域提取: [{domain}] ===")
             domain_variants = build_poisoned_variants_for_domain(
                 shared_clean_subsets, domain
             )
             delta_matrices_list = []
 
             for idx, variant in enumerate(domain_variants):
-                print(f"\n      -> 正在处理域 [{domain}] 变体 {idx+1}/{n_variants}")
+                print(f"\n      -> 正在提取变体特征: 变体 {idx+1}/{n_variants}")
                 bd_output_dir = os.path.join(
                     temp_work_dir, f"domain_{domain}_variant_{idx}_bd"
                 )
@@ -204,8 +206,8 @@ def run_immunization_pipeline(
         aggregated_signatures = aggregated_global_scores
         torch.save(aggregated_signatures, signature_ckpt)
 
-    # 3. 挂载模型执行物理切除手术
-    print(f"\n>>> [步骤 3/4] 挂载嫌疑模型执行物理手术干预...")
+    # 2. 挂载模型执行物理切除手术
+    print(f"\n>>> [步骤 2/4] 挂载嫌疑模型执行物理手术干预...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path, torch_dtype=torch.bfloat16, device_map="auto"
@@ -219,8 +221,8 @@ def run_immunization_pipeline(
     )
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
-    # 4. 执行康复微调与报告生成
-    print(f"\n>>> [步骤 4/4] 正在执行轻量级康复微调...")
+    # 3. 执行康复微调与报告生成
+    print(f"\n>>> [步骤 3/4] 启动生成质量康复程序...")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     cleansed_model.config.pad_token_id = tokenizer.pad_token_id
@@ -234,8 +236,8 @@ def run_immunization_pipeline(
         num_epochs=num_epochs,
     )
 
-    # 5. 生成离线防篡改审计报告
-    print(f"\n>>> [正在导出报告] ...")
+    # 4. 生成离线防篡改审计报告
+    print(f"\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
     log_summary = f"执行 Aegis-LoRA 免疫重构。共提取 {n_variants} 个高维变体，拦截阈值 Tau={tau}。"
 
     reports_dir = os.path.join(".cache", "reports")
@@ -257,13 +259,12 @@ def run_immunization_pipeline(
         output_dir=reports_dir,
         custom_name=clean_report_name,
     )
-    print("-" * 40)
-    print(f"\n[Pipeline Complete] 流水线执行完毕！")
-    print(f" -> 免疫模型: {output_dir}")
-    print(f" -> 抑制参数: {suppressed_count}")
-    print(f" -> 审计报告临时路径: {report_path}")
-    print("-" * 40)
-
+    print("\n" + "=" * 60)
+    print(f">>> [完成] 深度免疫流水线执行完毕！")
+    print(f"      -> 免疫模型: {output_dir}")
+    print(f"      -> 抑制参数: {suppressed_count}")
+    print(f"      -> 审计报告: {report_path}")
+    print("=" * 60)
     # 手术结束后彻底释放流水线占用
     del cleansed_model
     del model
@@ -286,9 +287,9 @@ def run_fast_cleanse_pipeline(
     sample_size: int = 200,
     num_epochs: int = 5,
 ):
-    print("-" * 40)
-    print(f"[Fast Cleanse Pipeline] 启动极速免疫清洗")
-    print("-" * 40)
+    print("\n" + "=" * 60)
+    print(f">>> [极速查杀] 启动极速免疫清洗流水线")
+    print("=" * 60)
 
     output_dir = lora_path + "_fast_immunized"
 
@@ -356,10 +357,10 @@ def run_fast_cleanse_pipeline(
         custom_name=clean_report_name,
     )
 
-    print("-" * 40)
-    print(f"[Fast Pipeline Complete] 极速清洗完毕！")
-    print(f" -> 免疫模型: {output_dir}")
-    print(f" -> 抑制参数: {suppressed_count}")
-    print("-" * 40)
+    print("\n" + "=" * 60)
+    print(f">>> [完成] 极速查杀流水线执行完毕！")
+    print(f"      -> 免疫模型: {output_dir}")
+    print(f"      -> 抑制参数: {suppressed_count}")
+    print("=" * 60)
 
     return report_path, suppressed_count, output_dir

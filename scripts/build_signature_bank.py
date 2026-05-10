@@ -36,9 +36,9 @@ SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\qwen2.5_3b_multidomain_signatures
 
 
 def main():
-    print("-" * 50)
-    print("启动离线多任务域后门签名库构建")
-    print("-" * 50)
+    print("\n" + "=" * 60)
+    print(">>> [特征工程] 启动离线多任务域后门签名库构建")
+    print("=" * 60)
 
     os.makedirs(os.path.dirname(SIGNATURE_SAVE_PATH), exist_ok=True)
     work_dir = os.path.join(project_root, ".cache", "signature_building")
@@ -46,19 +46,20 @@ def main():
     n_variants = 6
 
     # 1. 加载底层模型环境
+    print("      [-] 正在预加载基座模型与目标病原体环境...")
     tokenizer, initial_lora_weights = setup_extraction_model(
         BASE_MODEL_PATH, REFERENCE_LORA_PATH
     )
 
     # 2. 调度全局干净对照组 (只训练一次)
-    print("\n>>> [阶段一] 正在构建并训练全局共用的干净对照组...")
+    print(f"\n   === [阶段一] 构建并训练全局共用干净对照组 ===")
     shared_clean_subsets = build_shared_clean_subsets(
         CLEAN_VARIANT_DATA_PATH, N=n_variants
     )
     cached_clean_states = []
 
     for idx in range(n_variants):
-        print(f"\n      -> 正在处理干净对照组 {idx+1}/{n_variants}")
+        print(f"\n      [-] 正在处理干净对照组 {idx+1}/{n_variants}")
         clean_output_dir = os.path.join(work_dir, f"shared_clean_variant_{idx}")
         state_dict_clean = run_variant_training_isolated(
             BASE_MODEL_PATH,
@@ -76,14 +77,14 @@ def main():
     aggregated_global_scores = {}
 
     for domain in domain_keys:
-        print(f"\n>>> [阶段二] 启动任务域提取: {domain}")
+        print(f"\n   === [阶段二] 启动任务域提取: [{domain}] ===")
         domain_variants = build_poisoned_variants_for_domain(
             shared_clean_subsets, domain
         )
         delta_matrices_list = []
 
         for idx, variant in enumerate(domain_variants):
-            print(f"\n      -> 正在处理域 [{domain}] 变体 {idx+1}/{n_variants}")
+            print(f"\n      [-] 正在提取变体特征: 变体 {idx+1}/{n_variants}")
             bd_output_dir = os.path.join(work_dir, f"domain_{domain}_variant_{idx}_bd")
 
             # 执行毒化训练
@@ -132,8 +133,11 @@ def main():
     torch.cuda.empty_cache()
 
     torch.save(aggregated_global_scores, SIGNATURE_SAVE_PATH)
-    print(f"\n签名库已成功提取并保存至: {SIGNATURE_SAVE_PATH}")
-    print("后续同架构的任意变种后门均可直接使用该签名进行极速清洗！")
+    print("\n" + "=" * 60)
+    print(">>> [完成] 签名库构建流水线执行完毕")
+    print(f"      -> 张量签名库已保存至: {SIGNATURE_SAVE_PATH}")
+    print(f"      -> 提示: 同架构的大模型变种现可直接调用此特征进行极速清洗。")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
