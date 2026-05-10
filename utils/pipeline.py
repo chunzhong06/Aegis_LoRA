@@ -66,13 +66,13 @@ def run_static_scan_pipeline(
     # 4. 打印输出判定报告
     status = "[拦截] 发现异常后门谱特征" if is_poisoned else "[安全] 权重拓扑分布正常"
 
-    print("\n" + "-" * 50)
-    print(" 静态扫描安全评估报告")
-    print("-" * 50)
-    print(f"  分析耗时 : {elapsed:.3f} 秒")
-    print(f"  最终判定 : {status}")
-    print(f"  中毒概率 : {prob * 100:.2f}%")
-    print("-" * 50)
+    print("\n" + "=" * 50)
+    print("静态扫描安全评估报告")
+    print("=" * 50)
+    print(f"    [分析耗时] : {elapsed:.3f} 秒")
+    print(f"    [最终判定] : {status}")
+    print(f"    [中毒概率] : {prob * 100:.2f}%")
+    print("=" * 50)
 
     return is_poisoned, prob
 
@@ -253,9 +253,10 @@ def run_immunization_pipeline(
         log_text=log_summary,
         n_variants=n_variants,
         tau=tau,
-        norms_before=surgery_report.get("before_surgery_max_norms", {}),
-        norms_after=surgery_report.get("after_surgery_max_norms", {}),
+        norms_before=surgery_report.get("before_surgery_norms", {}),
+        norms_after=surgery_report.get("after_surgery_norms", {}),
         suppressed_count=suppressed_count,
+        suppressed_dict=surgery_report.get("suppressed_counts", {}),
         output_dir=reports_dir,
         custom_name=clean_report_name,
     )
@@ -350,9 +351,10 @@ def run_fast_cleanse_pipeline(
         log_text=log_summary,
         n_variants=6,
         tau=tau,
-        norms_before=surgery_report.get("before_surgery_max_norms", {}),
-        norms_after=surgery_report.get("after_surgery_max_norms", {}),
+        norms_before=surgery_report.get("before_surgery_norms", {}),
+        norms_after=surgery_report.get("after_surgery_norms", {}),
         suppressed_count=suppressed_count,
+        suppressed_dict=surgery_report.get("suppressed_counts", {}),
         output_dir=reports_dir,
         custom_name=clean_report_name,
     )

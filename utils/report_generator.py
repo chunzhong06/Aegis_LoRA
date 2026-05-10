@@ -32,57 +32,78 @@ def fig_to_base64(fig):
 
 # ==========================================
 # 离线免疫核心图表
-# 使用堆叠柱状图：总高度为原始Norm，直观展示被“切除”的部分和“保留”的部分。
+# 柱状图展示被切除的神经元绝对数量，折线图展示特征范数下降百分比。
 # ==========================================
-def generate_bdvax_offline_chart(norms_before, norms_after):
-    """生成离线免疫核心图表：参数切除前后堆叠柱状图"""
-    if not norms_before or not norms_after:
+def generate_bdvax_offline_chart(suppressed_dict, norms_before, norms_after):
+    """生成离线免疫重构的核心诊断图表，展示被切除通道数量和特征范数下降率的关系。"""
+    if not suppressed_dict:
         return ""
 
-    # 选择前15层进行可视化，确保图表清晰且聚焦于最关键的层级
-    layers = list(norms_before.keys())[:15]
-    b_vals = np.array([norms_before[k] for k in layers])
-    a_vals = np.array([norms_after.get(k, 0) for k in layers])
+    # 选取切除数量最多的前 15 个关键层进行可视化
+    sorted_layers = sorted(suppressed_dict.items(), key=lambda x: x[1], reverse=True)[
+        :15
+    ]
+    layers = [k for k, v in sorted_layers]
+    counts = [v for k, v in sorted_layers]
 
-    # 计算被修改/切除的量
-    excised_vals = b_vals - a_vals
+    # 计算平均范数下降百分比
+    drops = []
+    for k in layers:
+        b = norms_before.get(k, 1e-9)
+        a = norms_after.get(k, b)
+        drop_pct = ((b - a) / b) * 100 if b > 0 else 0
+        drops.append(max(0, drop_pct))
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig, ax1 = plt.subplots(figsize=(10, 4))
     x = np.arange(len(layers))
     width = 0.5
 
-    # 绘制堆叠柱状图
-    # 1. 底部：手术后保留的量
-    ax.bar(
+    # 左轴：绘制切除神经元数量的柱状图 (红色斜线阴影)
+    bars = ax1.bar(
         x,
-        a_vals,
+        counts,
         width,
-        label="手术后保留 (Retained)",
-        color="#2E7D32",
-        alpha=0.9,
-    )
-    # 2. 顶部：被切除/修改的量 (叠加在保留量之上)
-    ax.bar(
-        x,
-        excised_vals,
-        width,
-        bottom=a_vals,
-        label="切除/修改量 (Excised)",
         color="#D32F2F",
-        alpha=0.8,
-        hatch="//",  # 添加斜线阴影以强调这是被消除的部分
+        alpha=0.85,
+        label="切除神经元数 (Excised Count)",
+        hatch="//",
     )
+    ax1.set_ylabel(
+        "神经元切除数量 (个)", fontsize=10, color="#D32F2F", fontweight="bold"
+    )
+    ax1.tick_params(axis="y", labelcolor="#D32F2F")
 
-    ax.set_title(
-        "BD-Vax Offline Surgery: Excised vs Retained Norms",
+    # 右轴：绘制特征范数下降率的折线图 (蓝色)
+    ax2 = ax1.twinx()
+    line = ax2.plot(
+        x,
+        drops,
+        color="#1976D2",
+        marker="o",
+        linestyle="-",
+        linewidth=2,
+        markersize=6,
+        label="平均范数下降率 (Norm Drop %)",
+    )
+    ax2.set_ylabel(
+        "平均特征范数下降率 (%)", fontsize=10, color="#1976D2", fontweight="bold"
+    )
+    ax2.tick_params(axis="y", labelcolor="#1976D2")
+    ax2.set_ylim(bottom=0)
+
+    # 合并图例
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right")
+
+    ax1.set_title(
+        "Top 15 重点干预网络层: 神经元切除数与特征下降率",
         fontsize=12,
         fontweight="bold",
         color="#263238",
     )
-    ax.set_ylabel("Max L2 Norm", fontsize=10)
-    ax.set_xticks(x)
 
-    # 优化 x 轴标签，简化层名称并旋转以适应空间
+    # 标签精简处理
     short_labels = [
         l.replace("Layer_", "L")
         .replace("_weight", "")
@@ -91,11 +112,12 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
         .replace(".lora_A", "_A")
         for l in layers
     ]
-    ax.set_xticklabels(short_labels, rotation=45, ha="right", fontsize=9)
-    ax.legend()
-    ax.grid(axis="y", linestyle=":", alpha=0.6)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(short_labels, rotation=45, ha="right", fontsize=9)
+
+    ax1.grid(axis="y", linestyle=":", alpha=0.6)
+    ax1.spines["top"].set_visible(False)
+    ax2.spines["top"].set_visible(False)
 
     return fig_to_base64(fig)
 
@@ -105,7 +127,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
 # 定义一个前端HTML模板，将传入的诊断数据渲染成排版美观的网页报告。
 # ==========================================
 def build_offline_html_report(report_data):
-    """构建专注于离线查杀数据的 HTML 模板"""
+    """构建专注于离线免疫重构的 HTML 模板"""
 
     mode_badge = '<span class="badge" style="background-color: #6A1B9A;">🧬 深度底层免疫 (BD-Vax)</span>'
 
@@ -186,7 +208,11 @@ def build_offline_html_report(report_data):
 
             <div class="card">
                 <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
-                <p style="font-size: 14px; color: #546E7A;">图表展示了各层网络参数在实施干预前后的变化。带有红色阴影的部分代表被精准识别并切除（重置）的异常通道范数。</p>
+                <p style="font-size: 14px; color: #546E7A;">
+                    下图展示了受干预最显著的前 15 个网络层的精细化分析。
+                    <b style="color:var(--danger);">红色柱状图</b> 代表各层中被精准识别并切除的神经元绝对数量；
+                    <b style="color:#1976D2;">蓝色折线图</b> 则反映了干预导致的该层平均特征范数(Mean Norm)的下降比率。
+                </p>
                 <div class="grid" style="margin-bottom: 15px;">
                     <div class="data-item">
                         <div class="data-label">干预神经元总数 (Channels Suppressed)</div>
@@ -289,7 +315,11 @@ def build_fast_cleanse_html_report(report_data):
 
             <div class="card">
                 <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
-                <p style="font-size: 14px; color: #546E7A;">图表展示了直接应用离线图谱实施物理干预前后的参数变化。带有红色阴影的部分代表被签名命中的高危通道范数。</p>
+                <p style="font-size: 14px; color: #546E7A;">
+                    下图展示了应用预计算签名后，干预最显著的前 15 个网络层。
+                    <b style="color:var(--danger);">红色柱状图</b> 代表该层被一键阻断的神经元数量；
+                    <b style="color:#1976D2;">蓝色折线图</b> 则直观呈现了对应层特征强度的削弱比率（范数下降率）。
+                </p>
                 <div class="grid" style="margin-bottom: 15px;">
                     <div class="data-item">
                         <div class="data-label">一键切除神经元总数 (Channels Suppressed)</div>
@@ -321,13 +351,16 @@ def export_offline_report(
     norms_before,
     norms_after,
     suppressed_count,
+    suppressed_dict,
     output_dir="./reports",
     custom_name=None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
-    chart_base64 = generate_bdvax_offline_chart(norms_before, norms_after)
+    chart_base64 = generate_bdvax_offline_chart(
+        suppressed_dict, norms_before, norms_after
+    )
 
     # 2. 组装数据字典
     report_data = {
@@ -378,13 +411,16 @@ def export_fast_cleanse_report(
     norms_before,
     norms_after,
     suppressed_count,
+    suppressed_dict,
     output_dir="./reports",
     custom_name=None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
-    chart_base64 = generate_bdvax_offline_chart(norms_before, norms_after)
+    chart_base64 = generate_bdvax_offline_chart(
+        suppressed_dict, norms_before, norms_after
+    )
 
     # 2. 组装数据字典
     report_data = {

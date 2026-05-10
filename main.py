@@ -225,7 +225,7 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
                     run_fast_cleanse_pipeline(
                         base_model_path=base_path,
                         lora_path=lora_path,
-                        signature_path="./datasets/qwen2.5_3b_multidomain_signatures.pt",  # 使用预构建的多域签名库
+                        signature_path="./datasets/qwen_multidomain_signatures.pt",  # 使用预构建的多域签名库
                         recovery_data_path="./datasets/clean_data_recovery.json",
                     )
                 )
