@@ -1,5 +1,7 @@
-# Aegis-LoRA: 免疫报告生成器
-# 本模块负责将离线免疫重构和极速免疫清洗的诊断数据渲染成结构化、图文并茂的HTML报告，供用户查看和存档。
+# Aegis-LoRA: 报告生成器
+# 1. 离线免疫重构报告：专门针对离线免疫重构流程设计的报告模板，展示核心诊断指标和图表，帮助用户深入理解重构过程中的关键干预点和效果。
+# 2. 快速免疫重构报告：展示被切除神经元数量、特征范数下降率等核心诊断指标，帮助用户理解重构过程中的关键干预点。
+# 3. 静态特征探测器报告：展示检测器在测试集上的混淆矩阵和性能指标。
 import json
 import base64
 import io
@@ -32,57 +34,78 @@ def fig_to_base64(fig):
 
 # ==========================================
 # 离线免疫核心图表
-# 使用堆叠柱状图：总高度为原始Norm，直观展示被“切除”的部分和“保留”的部分。
+# 柱状图展示被切除的神经元绝对数量，折线图展示特征范数下降百分比。
 # ==========================================
-def generate_bdvax_offline_chart(norms_before, norms_after):
-    """生成离线免疫核心图表：参数切除前后堆叠柱状图"""
-    if not norms_before or not norms_after:
+def generate_bdvax_offline_chart(suppressed_dict, norms_before, norms_after):
+    """生成离线免疫重构的核心诊断图表，展示被切除通道数量和特征范数下降率的关系。"""
+    if not suppressed_dict:
         return ""
 
-    # 选择前15层进行可视化，确保图表清晰且聚焦于最关键的层级
-    layers = list(norms_before.keys())[:15]
-    b_vals = np.array([norms_before[k] for k in layers])
-    a_vals = np.array([norms_after.get(k, 0) for k in layers])
+    # 选取切除数量最多的前 15 个关键层进行可视化
+    sorted_layers = sorted(suppressed_dict.items(), key=lambda x: x[1], reverse=True)[
+        :15
+    ]
+    layers = [k for k, v in sorted_layers]
+    counts = [v for k, v in sorted_layers]
 
-    # 计算被修改/切除的量
-    excised_vals = b_vals - a_vals
+    # 计算平均范数下降百分比
+    drops = []
+    for k in layers:
+        b = norms_before.get(k, 1e-9)
+        a = norms_after.get(k, b)
+        drop_pct = ((b - a) / b) * 100 if b > 0 else 0
+        drops.append(max(0, drop_pct))
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig, ax1 = plt.subplots(figsize=(10, 4))
     x = np.arange(len(layers))
     width = 0.5
 
-    # 绘制堆叠柱状图
-    # 1. 底部：手术后保留的量
-    ax.bar(
+    # 左轴：绘制切除神经元数量的柱状图 (红色斜线阴影)
+    bars = ax1.bar(
         x,
-        a_vals,
+        counts,
         width,
-        label="手术后保留 (Retained)",
-        color="#2E7D32",
-        alpha=0.9,
-    )
-    # 2. 顶部：被切除/修改的量 (叠加在保留量之上)
-    ax.bar(
-        x,
-        excised_vals,
-        width,
-        bottom=a_vals,
-        label="切除/修改量 (Excised)",
         color="#D32F2F",
-        alpha=0.8,
-        hatch="//",  # 添加斜线阴影以强调这是被消除的部分
+        alpha=0.85,
+        label="切除神经元数 (Excised Count)",
+        hatch="//",
     )
+    ax1.set_ylabel(
+        "神经元切除数量 (个)", fontsize=10, color="#D32F2F", fontweight="bold"
+    )
+    ax1.tick_params(axis="y", labelcolor="#D32F2F")
 
-    ax.set_title(
-        "BD-Vax Offline Surgery: Excised vs Retained Norms",
+    # 右轴：绘制特征范数下降率的折线图 (蓝色)
+    ax2 = ax1.twinx()
+    line = ax2.plot(
+        x,
+        drops,
+        color="#1976D2",
+        marker="o",
+        linestyle="-",
+        linewidth=2,
+        markersize=6,
+        label="平均范数下降率 (Norm Drop %)",
+    )
+    ax2.set_ylabel(
+        "平均特征范数下降率 (%)", fontsize=10, color="#1976D2", fontweight="bold"
+    )
+    ax2.tick_params(axis="y", labelcolor="#1976D2")
+    ax2.set_ylim(bottom=0)
+
+    # 合并图例
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right")
+
+    ax1.set_title(
+        "Top 15 重点干预网络层: 神经元切除数与特征下降率",
         fontsize=12,
         fontweight="bold",
         color="#263238",
     )
-    ax.set_ylabel("Max L2 Norm", fontsize=10)
-    ax.set_xticks(x)
 
-    # 优化 x 轴标签，简化层名称并旋转以适应空间
+    # 标签精简处理
     short_labels = [
         l.replace("Layer_", "L")
         .replace("_weight", "")
@@ -91,9 +114,57 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
         .replace(".lora_A", "_A")
         for l in layers
     ]
-    ax.set_xticklabels(short_labels, rotation=45, ha="right", fontsize=9)
-    ax.legend()
-    ax.grid(axis="y", linestyle=":", alpha=0.6)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(short_labels, rotation=45, ha="right", fontsize=9)
+
+    ax1.grid(axis="y", linestyle=":", alpha=0.6)
+    ax1.spines["top"].set_visible(False)
+    ax2.spines["top"].set_visible(False)
+
+    return fig_to_base64(fig)
+
+
+# ==========================================
+# 静态特征探测器报告生成模块
+# 生成混淆矩阵图表，展示检测器在测试集上的性能表现。
+# ==========================================
+def generate_confusion_matrix_chart(tn, fp, fn, tp):
+    fig, ax = plt.subplots(figsize=(6, 5))
+    cm = np.array([[tn, fp], [fn, tp]])
+
+    cax = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues, alpha=0.8)
+    fig.colorbar(cax)
+
+    thresh = cm.max() / 2.0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(
+                j,
+                i,
+                format(cm[i, j], "d"),
+                ha="center",
+                va="center",
+                color="white" if cm[i, j] > thresh else "black",
+                fontsize=16,
+                fontweight="bold",
+            )
+
+    classes = ["Clean (0)", "Poisoned (1)"]
+    tick_marks = np.arange(len(classes))
+    ax.set_xticks(tick_marks)
+    ax.set_yticks(tick_marks)
+    ax.set_xticklabels(["Pred: Clean", "Pred: Poisoned"], fontsize=11)
+    ax.set_yticklabels(
+        ["True: Clean", "True: Poisoned"], fontsize=11, rotation=90, va="center"
+    )
+
+    ax.set_title(
+        "检测器混淆矩阵 (Confusion Matrix)",
+        fontsize=14,
+        fontweight="bold",
+        pad=20,
+        color="#263238",
+    )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -105,7 +176,7 @@ def generate_bdvax_offline_chart(norms_before, norms_after):
 # 定义一个前端HTML模板，将传入的诊断数据渲染成排版美观的网页报告。
 # ==========================================
 def build_offline_html_report(report_data):
-    """构建专注于离线查杀数据的 HTML 模板"""
+    """构建专注于离线免疫重构的 HTML 模板"""
 
     mode_badge = '<span class="badge" style="background-color: #6A1B9A;">🧬 深度底层免疫 (BD-Vax)</span>'
 
@@ -186,7 +257,11 @@ def build_offline_html_report(report_data):
 
             <div class="card">
                 <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
-                <p style="font-size: 14px; color: #546E7A;">图表展示了各层网络参数在实施干预前后的变化。带有红色阴影的部分代表被精准识别并切除（重置）的异常通道范数。</p>
+                <p style="font-size: 14px; color: #546E7A;">
+                    下图展示了受干预最显著的前 15 个网络层的精细化分析。
+                    <b style="color:var(--danger);">红色柱状图</b> 代表各层中被精准识别并切除的神经元绝对数量；
+                    <b style="color:#1976D2;">蓝色折线图</b> 则反映了干预导致的该层平均特征范数(Mean Norm)的下降比率。
+                </p>
                 <div class="grid" style="margin-bottom: 15px;">
                     <div class="data-item">
                         <div class="data-label">干预神经元总数 (Channels Suppressed)</div>
@@ -289,7 +364,11 @@ def build_fast_cleanse_html_report(report_data):
 
             <div class="card">
                 <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
-                <p style="font-size: 14px; color: #546E7A;">图表展示了直接应用离线图谱实施物理干预前后的参数变化。带有红色阴影的部分代表被签名命中的高危通道范数。</p>
+                <p style="font-size: 14px; color: #546E7A;">
+                    下图展示了应用预计算签名后，干预最显著的前 15 个网络层。
+                    <b style="color:var(--danger);">红色柱状图</b> 代表该层被一键阻断的神经元数量；
+                    <b style="color:#1976D2;">蓝色折线图</b> 则直观呈现了对应层特征强度的削弱比率（范数下降率）。
+                </p>
                 <div class="grid" style="margin-bottom: 15px;">
                     <div class="data-item">
                         <div class="data-label">一键切除神经元总数 (Channels Suppressed)</div>
@@ -299,6 +378,120 @@ def build_fast_cleanse_html_report(report_data):
                 <div class="chart-container">
                     <img src="data:image/png;base64,{report_data['chart']}" alt="Fast Surgery Modification Chart">
                 </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_template
+
+
+# ==========================================
+# 静态特征探测器 HTML 报告构建器
+# ==========================================
+def build_detector_html_report(report_data):
+    """构建专注于静态权重空间探测器评估的 HTML 模板"""
+
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <title>Aegis-LoRA 静态权重空间探测器评估报告</title>
+        <style>
+            :root {{
+                --primary: #1565C0;
+                --bg: #F4F6F8;
+                --card-bg: #FFFFFF;
+                --text: #263238;
+                --danger: #D32F2F;
+                --success: #2E7D32;
+            }}
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }}
+            .container {{ max-width: 1000px; margin: 0 auto; }}
+            .header {{ background-color: var(--primary); color: white; padding: 20px 30px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .header .timestamp {{ font-size: 14px; opacity: 0.8; }}
+            .card {{ background: var(--card-bg); padding: 25px; margin-bottom: 20px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-top: 4px solid var(--primary); }}
+            h2 {{ font-size: 18px; border-bottom: 2px solid #E0E0E0; padding-bottom: 10px; margin-top: 0; color: var(--primary); }}
+            .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }}
+            .data-item {{ margin-bottom: 15px; background: #F8FDFF; padding: 15px; border-radius: 6px; border-left: 4px solid var(--primary); }}
+            .data-label {{ font-size: 12px; color: #546E7A; text-transform: uppercase; font-weight: bold; }}
+            .data-value {{ font-size: 22px; font-weight: bold; margin-top: 8px; color: var(--primary); }}
+            .chart-container {{ text-align: center; margin-top: 20px; background: #FAFAFA; padding: 15px; border-radius: 8px; border: 1px dashed #CFD8DC; }}
+            .chart-container img {{ max-width: 100%; height: auto; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }}
+            th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #E0E0E0; }}
+            th {{ background-color: #ECEFF1; color: #455A64; font-weight: bold; }}
+            .status-danger {{ color: var(--danger); font-weight: bold; }}
+            .status-success {{ color: var(--success); font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>[Aegis-LoRA] 静态权重空间探测器评估报告</h1>
+                <div class="timestamp">生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
+            </div>
+            
+            <div class="card">
+                <h2>1. 核心性能指标 (Evaluation Metrics)</h2>
+                <div class="grid">
+                    <div class="data-item">
+                        <div class="data-label">准确率 (Accuracy)</div>
+                        <div class="data-value">{report_data['accuracy']:.2f}%</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">召回率 (Recall / TPR)</div>
+                        <div class="data-value" style="color: var(--success);">{report_data['recall']:.2f}%</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">误报率 (FPR)</div>
+                        <div class="data-value" style="color: var(--danger);">{report_data['fpr']:.2f}%</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">F1-Score</div>
+                        <div class="data-value">{report_data['f1']:.2f}%</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">ROC-AUC</div>
+                        <div class="data-value">{report_data['auc']:.4f}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">精确率 (Precision)</div>
+                        <div class="data-value">{report_data['precision']:.2f}%</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">总测试样本数</div>
+                        <div class="data-value">{report_data['total']}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>2. 混淆矩阵分析 (Confusion Matrix)</h2>
+                <p style="font-size: 14px; color: #546E7A;">矩阵直观呈现了探测器的分类能力。左上角为正确放行的健康模型 (TN)，右下角为正确拦截的中毒模型 (TP)。右上角为误杀的健康模型 (FP)，左下角为漏网的中毒模型 (FN)。</p>
+                <div class="chart-container">
+                    <img src="data:image/png;base64,{report_data['cm_chart']}" alt="Confusion Matrix Chart">
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>3. 异常判定明细 (Prediction Details)</h2>
+                <p style="font-size: 12px; color: #78909C;">注：当前表格按预测误差概率排序，优先展示被误判或临界状态的测试样本。</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>模型名称</th>
+                            <th>真实标签</th>
+                            <th>系统判定</th>
+                            <th>中毒概率</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {report_data['table_rows']}
+                    </tbody>
+                </table>
             </div>
         </div>
     </body>
@@ -321,13 +514,16 @@ def export_offline_report(
     norms_before,
     norms_after,
     suppressed_count,
+    suppressed_dict,
     output_dir="./reports",
     custom_name=None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
-    chart_base64 = generate_bdvax_offline_chart(norms_before, norms_after)
+    chart_base64 = generate_bdvax_offline_chart(
+        suppressed_dict, norms_before, norms_after
+    )
 
     # 2. 组装数据字典
     report_data = {
@@ -361,7 +557,7 @@ def export_offline_report(
         json_data["chart"] = "Base64 image removed for JSON storage"
         json.dump(json_data, f, ensure_ascii=False, indent=4)
 
-    print(f"[报告生成] 深度免疫重构报告已导出至: {file_path}")
+    print(f"      [-] [完成] 深度免疫重构离线报告已导出至: {file_path}")
     return file_path
 
 
@@ -378,13 +574,16 @@ def export_fast_cleanse_report(
     norms_before,
     norms_after,
     suppressed_count,
+    suppressed_dict,
     output_dir="./reports",
     custom_name=None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
-    chart_base64 = generate_bdvax_offline_chart(norms_before, norms_after)
+    chart_base64 = generate_bdvax_offline_chart(
+        suppressed_dict, norms_before, norms_after
+    )
 
     # 2. 组装数据字典
     report_data = {
@@ -418,5 +617,54 @@ def export_fast_cleanse_report(
         json_data["chart"] = "Base64 image removed for JSON storage"
         json.dump(json_data, f, ensure_ascii=False, indent=4)
 
-    print(f"[报告生成] 极速免疫清洗报告已导出至: {file_path}")
+    print(f"      [-] [完成] 极速免疫清洗离线报告已导出至: {file_path}")
+    return file_path
+
+
+# ==========================================
+# 探测器评估报告导出接口
+# ==========================================
+def export_detector_report(
+    report_dict, output_dir="./reports", custom_name="Detector_Evaluation_Report"
+):
+    """导出静态权重空间探测器的评估报告，包含性能指标、混淆矩阵图表和误判样本明细。"""
+    os.makedirs(output_dir, exist_ok=True)
+
+    cm_chart_base64 = generate_confusion_matrix_chart(
+        report_dict["tn"], report_dict["fp"], report_dict["fn"], report_dict["tp"]
+    )
+    report_dict["cm_chart"] = cm_chart_base64
+
+    table_rows = ""
+    display_cases = sorted(
+        report_dict["cases"],
+        key=lambda x: (x["y_true"] != x["y_pred"], x["prob"]),
+        reverse=True,
+    )[:50]
+    for case in display_cases:
+        true_str = "中毒" if case["y_true"] == 1 else "干净"
+        pred_str = "拦截" if case["y_pred"] == 1 else "放行"
+        row_color = (
+            "style='background-color: #FFF3F3;'"
+            if case["y_true"] != case["y_pred"]
+            else ""
+        )
+        pred_class = "status-danger" if case["y_pred"] == 1 else "status-success"
+
+        table_rows += f"""
+        <tr {row_color}>
+            <td>{case['model_name']}</td>
+            <td>{true_str}</td>
+            <td class="{pred_class}">{pred_str}</td>
+            <td>{case['prob']*100:.2f}%</td>
+        </tr>
+        """
+    report_dict["table_rows"] = table_rows
+
+    html_content = build_detector_html_report(report_dict)
+
+    file_path = os.path.join(output_dir, f"{custom_name}.html")
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
     return file_path

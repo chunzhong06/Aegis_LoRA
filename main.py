@@ -5,7 +5,6 @@ import torch
 import gc
 import os
 import json
-import base64
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
@@ -41,7 +40,7 @@ def load_sessions():
 
 
 def save_sessions(sessions):
-    """将会话字典持久化到本地 JSON,防止数据丢失"""
+    """将会话字典持久化到本地 JSON"""
     try:
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(sessions, f, ensure_ascii=False, indent=4)
@@ -49,44 +48,40 @@ def save_sessions(sessions):
         pass
 
 
-def restore_report_from_cache(session_name, session_data):
-    """防御机制：从会话数据中提取 Base64 编码，实时重构 PDF/TXT 报告文件"""
-    report_data = session_data.get("report_data")
-    if not report_data:
-        return None
-    reports_dir = os.path.join(CACHE_DIR, "reports")
-    os.makedirs(reports_dir, exist_ok=True)
-    ext = session_data.get("report_ext", ".txt")
-    filepath = os.path.join(reports_dir, f"{session_name}_audit_report{ext}")
-    try:
-        with open(filepath, "wb") as f:
-            f.write(base64.b64decode(report_data))
-        return filepath
-    except Exception:
-        return None
+def get_report_path(session_data):
+    """轻量级读取：验证报告路径是否存在，若丢失则返回 None 告知 UI 隐藏"""
+    path = session_data.get("report_path")
+    if path and os.path.exists(path):
+        return path
+    return None
 
 
-def encode_report_file(report_file):
-    """将物理报告文件读取并转换为 Base64 字符串，便于存入 JSON 字典，并清理原始重复文件"""
+def process_and_link_report(session_name, report_file):
+    """将底层的离线报告重命名为与会话绑定的固定名称，并返回精简的物理路径"""
     if report_file and os.path.exists(report_file):
+        reports_dir = os.path.join(CACHE_DIR, "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+
+        _, ext = os.path.splitext(report_file)
+        new_path = os.path.join(reports_dir, f"{session_name}_audit_report{ext}")
+
         try:
-            with open(report_file, "rb") as f:
-                encoded = base64.b64encode(f.read()).decode("utf-8")
-            _, ext = os.path.splitext(report_file)
+            # 如果之前有同名报告，先将其覆盖删除
+            if os.path.exists(new_path):
+                os.remove(new_path)
+            # 将底层生成的时间戳报告移动并重命名为会话名称
+            os.rename(report_file, new_path)
 
-            # 读取并编码完毕后，物理删除底层的原始时间戳文件及其附带的 JSON，防止生成两份一样的报告
-            try:
-                os.remove(report_file)
-                json_path = report_file.replace(".html", ".json")
-                if os.path.exists(json_path):
-                    os.remove(json_path)
-            except Exception:
-                pass
+            # 清理附带生成的冗余 JSON 文件（如果存在）
+            old_json = report_file.replace(ext, ".json")
+            if os.path.exists(old_json):
+                os.remove(old_json)
 
-            return encoded, ext
+            return new_path
         except Exception:
-            pass
-    return None, ""
+            # 若因权限问题重命名失败，降级返回原始时间戳路径
+            return report_file
+    return None
 
 
 # ==========================================
@@ -229,7 +224,7 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
                     run_fast_cleanse_pipeline(
                         base_model_path=base_path,
                         lora_path=lora_path,
-                        signature_path="./datasets/qwen2.5_3b_multidomain_signatures.pt",  # 使用预构建的多域签名库
+                        signature_path="./datasets/qwen_multidomain_signatures.pt",  # 使用预构建的多域签名库
                         recovery_data_path="./datasets/clean_data_recovery.json",
                     )
                 )
@@ -257,26 +252,20 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
     final_status = f"{scan_res} | {load_res}"
 
     # 阶段 4：将生成报告转为 Base64 并构建会话对象
-    r_data, r_ext = encode_report_file(report_file)
+    final_report_path = process_and_link_report(name, report_file)
+
     sessions[name] = {
         "base_path": str(base_path),
         "lora_path": str(active_lora_path),
         "history": [],
         "is_poisoned": is_poisoned,
         "status": final_status,
-        "report_data": r_data,
-        "report_ext": r_ext,
+        "report_path": final_report_path,  # 现在只保存一个极简的字符串路径
     }
     save_sessions(sessions)
 
-    # 从内存重构报告提供给前端下载器，并解锁 UI
-    path = restore_report_from_cache(name, sessions[name])
-    yield [
-        gr.update(choices=list(sessions.keys()), value=name),
-        sessions,
-        final_status,
-        gr.update(value=path, visible=True) if path else gr.update(visible=False),
-    ] + toggle_ui(True)
+    # 验证物理文件是否存在并解锁 UI
+    path = get_report_path(sessions[name])
 
 
 def delete_current_session(name, sessions):
@@ -291,7 +280,7 @@ def delete_current_session(name, sessions):
     if new_val:
         # 若仍有会话，自动切换至首个会话
         data = sessions[new_val]
-        path = restore_report_from_cache(new_val, data)
+        path = get_report_path(new_val, data)
         return (
             gr.update(choices=choices, value=new_val),
             sessions,
@@ -316,7 +305,7 @@ def switch_session(name, sessions):
     if not name or name not in sessions:
         return [], "等待就绪...", gr.update(visible=False)
     data = sessions[name]
-    path = restore_report_from_cache(name, data)
+    path = get_report_path(name, data)
     return (
         data["history"],
         data["status"],

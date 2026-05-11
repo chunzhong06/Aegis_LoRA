@@ -30,12 +30,12 @@ def build_or_load_dataset(
 
     # 步骤 1：如果缓存存在且不强制重建，直接读取并返回，极大地节省时间
     if os.path.exists(cache_file) and not force_rebuild:
-        print(f"[数据] 发现本地特征缓存: {cache_file}，正在加载...")
+        print(f"      [-] [数据加载] 发现本地特征缓存，正在直接加载...")
         with open(cache_file, "rb") as f:
             data = pickle.load(f)
         return data["X"], data["y"]
 
-    print("[数据] 本地缓存不存在或强制重建，开始提取 20 维谱特征...")
+    print(f"      [-] [数据提取] 缓存不存在或强制重建，启动 20 维谱特征提取...")
 
     # 步骤 2：遍历指定目录下所有的 safetensors 权重文件，过滤出带标签的有效文件
     all_weights = glob.glob(
@@ -49,7 +49,9 @@ def build_or_load_dataset(
     ]
 
     if not valid_paths:
-        raise ValueError(f"未在 {data_dir} 中找到有效的 safetensors 文件。")
+        raise ValueError(
+            f"      [错误] 未在 {data_dir} 中找到有效的 safetensors 文件。"
+        )
 
     X_list = []
     y_list = []
@@ -71,7 +73,9 @@ def build_or_load_dataset(
             y_list.append(label)
 
         except Exception as e:
-            print(f"\n跳过损坏或无法解析的文件: {path}\n原因: {e}")
+            print(
+                f"\n      [警告] 跳过无法解析的文件: {os.path.basename(path)} | 原因: {e}"
+            )
 
     X = np.array(X_list)
     y = np.array(y_list)
@@ -80,7 +84,7 @@ def build_or_load_dataset(
     with open(cache_file, "wb") as f:
         pickle.dump({"X": X, "y": y}, f)
 
-    print(f"[数据] 特征提取完成。共处理 {len(X)} 个有效样本。")
+    print(f"      [-] [完成] 特征提取完成。共处理 {len(X)} 个有效样本。")
     return X, y
 
 
@@ -90,6 +94,10 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
     加载数据 -> 划分 80/10/10 数据集 -> 训练模型 -> 验证集找最佳阈值 -> 测试集评估 -> 保存模型。
     """
     detector = SpectralBackdoorDetector()
+
+    print("\n" + "=" * 60)
+    print(f">>> [探测器训练] 开始统计学探测器校准流程")
+    print("=" * 60)
 
     # 1. 获取特征数据 (动态生成区分不同模型的缓存文件名)
     cache_name = f"padbench_{model_prefix}_20d_features.pkl"
@@ -105,16 +113,16 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
         X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
     )
 
-    print("\n>>> 开始论文校准流程 (Calibration) <<<")
-    print(f"基座架构: {model_prefix.upper()}")
+    print(f"\n   === 数据分布与模型拟合 ===")
+    print(f"      [-] 基座架构: {model_prefix.upper()}")
     print(
-        f"数据分布 -> 训练集: {len(X_train)} | 验证集: {len(X_val)} | 测试集: {len(X_test)}"
+        f"      [-] 数据集划分 -> 训练集: {len(X_train)} | 验证集: {len(X_val)} | 测试集: {len(X_test)}"
     )
 
     # 3. 在训练集上训练（拟合）探测器
     detector.fit(X_train, y_train)
 
-    print("\n>>> 在验证集上计算约登指数以寻找最佳阈值 <<<")
+    print(f"\n   === 阈值标定 (Validation) ===")
     # 4. 验证集调优：计算预测概率，使用 ROC 曲线和 Youden's J 指数寻找最优二分类阈值
     X_val_scaled = detector.scaler.transform(X_val)
     y_val_prob = detector.classifier.predict_proba(X_val_scaled)[:, 1]
@@ -126,10 +134,10 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
 
     detector.threshold = float(best_threshold)
     print(
-        f"最佳分类阈值已标定为: {best_threshold:.4f} (最大 Youden's J: {youden_j[best_idx]:.4f})"
+        f"      [-] 最佳分类阈值已锁定: {best_threshold:.4f} (Max Youden's J: {youden_j[best_idx]:.4f})"
     )
 
-    print("\n>>> 在测试集上进行最终性能评估 <<<")
+    print(f"\n   === 最终性能评估 (Testing) ===")
     # 5. 测试集评估：使用刚才标定的最佳阈值对测试集进行预测，并输出各类评价指标
     X_test_scaled = detector.scaler.transform(X_test)
     y_test_prob = detector.classifier.predict_proba(X_test_scaled)[:, 1]
@@ -139,11 +147,9 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
     auc = roc_auc_score(y_test, y_test_prob)
     tn, fp, fn, tp = confusion_matrix(y_test, y_test_pred).ravel()
 
-    print("-" * 40)
-    print(f"Test Accuracy: {acc * 100:.2f}%")
-    print(f"Test ROC-AUC : {auc:.4f}")
-    print(f"Confusion Matrix: TP={tp}, TN={tn}, FP={fp}, FN={fn}")
-    print("-" * 40)
+    print(f"         -> Test Accuracy   : {acc * 100:.2f}%")
+    print(f"         -> Test ROC-AUC    : {auc:.4f}")
+    print(f"         -> Confusion Matrix: TP={tp}, TN={tn}, FP={fp}, FN={fn}")
 
     # 6. 保存最终训练好的探测器模型，供后续推理部署使用
     save_dir = os.path.join(project_root, "models", "detectors")
@@ -151,7 +157,7 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
     model_path = os.path.join(save_dir, f"spectral_detector_{model_prefix}.pkl")
 
     detector.save_model(model_path)
-    print(f"\n[完毕] 统计学探测器状态已保存至: {model_path}")
+    print(f"\n      [-] [完成] 统计学探测器模型及状态已保存至: {model_path}")
 
 
 if __name__ == "__main__":

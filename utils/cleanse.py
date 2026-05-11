@@ -20,12 +20,12 @@ def extract_bd_vax_signature_strict(delta_dicts, lambda_weight=0.01):
     """
     N = len(delta_dicts)
     if N < 2:
-        raise ValueError("提取交叉签名至少需要 2 个有效变体 (N>=2)。")
+        raise ValueError("      [错误] 提取交叉签名至少需要 2 个有效变体 (N>=2)。")
 
     global_scores = {}
     keys = delta_dicts[0].keys()
 
-    print("[签名提取器] 正在执行张量化后门签名提取 ...")
+    print(f"      [-] [签名提取器] 正在执行张量化后门特征跨变体提取...")
 
     for key in keys:
         # 将 N 个变体的该层矩阵堆叠: shape (N, out_dim, in_dim)
@@ -67,7 +67,7 @@ def extract_bd_vax_signature_strict(delta_dicts, lambda_weight=0.01):
         scores = strength_term + lambda_weight * alignment_term
         global_scores[key] = scores
 
-    print("[签名提取器] 提取完毕。")
+    print(f"      [-] [完成] 签名提取完毕。")
     return global_scores
 
 
@@ -80,14 +80,20 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
     自适应 LoRA 置零模式与全参数 Xavier 重置模式。
     """
     suppressed_channels_total = 0
-    surgery_report = {"before_surgery_max_norms": {}, "after_surgery_max_norms": {}}
+    # 手术报告字典，记录每层切除前后的最大范数变化和总的被切除通道数
+    surgery_report = {
+        "before_surgery_norms": {},
+        "after_surgery_norms": {},
+        "suppressed_counts": {},
+    }
 
     is_lora_mounted = hasattr(model, "peft_config")
 
     # 1. 收集所有得分，计算全局切除阈值
     all_scores = torch.cat([scores.flatten() for scores in global_scores.values()])
     threshold = torch.quantile(all_scores, 1.0 - tau)
-    print(f"[手术刀] 干预比例: {tau*100}% | 全局阻断阈值: {threshold:.4f}")
+    print(f"      [-] [神经元手术刀] 正在执行物理切除干预...")
+    print(f"         -> 阻断比例: {tau*100}% | 全局阻断阈值: {threshold:.4f}")
 
     # 2. 遍历模型并执行精确切除
     for name, module in model.named_modules():
@@ -115,13 +121,18 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
             if key_B in global_scores:
                 scores = global_scores[key_B].to(weight_B.device)
                 mask = scores > threshold
-
-                surgery_report["before_surgery_max_norms"][f"{layer_short}_out"] = (
-                    weight_B.norm(p=2, dim=1).max().item()
+                # 记录切除前的平均范数和被切除的通道数
+                surgery_report["before_surgery_norms"][f"{layer_short}_out"] = (
+                    weight_B.norm(p=2, dim=1).mean().item()
                 )
-                weight_B.data[mask, :] = 0.0  # 置零阻断
-                surgery_report["after_surgery_max_norms"][f"{layer_short}_out"] = (
-                    weight_B.norm(p=2, dim=1).max().item()
+                surgery_report["suppressed_counts"][
+                    f"{layer_short}_out"
+                ] = mask.sum().item()
+                # 置零阻断
+                weight_B.data[mask, :] = 0.0
+                # 记录切除后的平均范数
+                surgery_report["after_surgery_norms"][f"{layer_short}_out"] = (
+                    weight_B.norm(p=2, dim=1).mean().item()
                 )
                 suppressed_channels_total += mask.sum().item()
 
@@ -129,12 +140,15 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
                 scores = global_scores[key_A].to(weight_A.device)
                 mask = scores > threshold
 
-                surgery_report["before_surgery_max_norms"][f"{layer_short}_in"] = (
-                    weight_A.norm(p=2, dim=0).max().item()
+                surgery_report["before_surgery_norms"][f"{layer_short}_in"] = (
+                    weight_A.norm(p=2, dim=0).mean().item()
                 )
-                weight_A.data[:, mask] = 0.0  # 置零阻断
-                surgery_report["after_surgery_max_norms"][f"{layer_short}_in"] = (
-                    weight_A.norm(p=2, dim=0).max().item()
+                surgery_report["suppressed_counts"][
+                    f"{layer_short}_in"
+                ] = mask.sum().item()
+                weight_A.data[:, mask] = 0.0
+                surgery_report["after_surgery_norms"][f"{layer_short}_in"] = (
+                    weight_A.norm(p=2, dim=0).mean().item()
                 )
                 suppressed_channels_total += mask.sum().item()
 
@@ -152,28 +166,39 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
                 is_input_proj = any(x in name for x in ["o_proj", "down_proj"])
 
                 if not is_input_proj:
-                    surgery_report["before_surgery_max_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=1).max().item()
+                    # 记录切除前的最大范数和被切除的通道数
+                    surgery_report["before_surgery_norms"][f"{layer_short}"] = (
+                        weight.norm(p=2, dim=1).mean().item()
                     )
+                    surgery_report["suppressed_counts"][
+                        f"{layer_short}"
+                    ] = mask.sum().item()
+                    # 物理切除（Xavier 重置）
                     if mask.any():
                         with torch.no_grad():
                             temp_tensor = torch.empty_like(weight.data[mask, :])
                             nn.init.xavier_uniform_(temp_tensor)
                             weight.data[mask, :] = temp_tensor
-                    surgery_report["after_surgery_max_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=1).max().item()
+                    # 记录切除后的最大范数
+                    surgery_report["after_surgery_norms"][f"{layer_short}"] = (
+                        weight.norm(p=2, dim=1).mean().item()
                     )
                 else:
-                    surgery_report["before_surgery_max_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=0).max().item()
+                    surgery_report["before_surgery_norms"][f"{layer_short}"] = (
+                        weight.norm(p=2, dim=0).mean().item()
                     )
+                    surgery_report["suppressed_counts"][
+                        f"{layer_short}"
+                    ] = mask.sum().item()
+
                     if mask.any():
                         with torch.no_grad():
                             temp_tensor = torch.empty_like(weight.data[:, mask])
                             nn.init.xavier_uniform_(temp_tensor)
                             weight.data[:, mask] = temp_tensor
-                    surgery_report["after_surgery_max_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=0).max().item()
+
+                    surgery_report["after_surgery_norms"][f"{layer_short}"] = (
+                        weight.norm(p=2, dim=0).mean().item()
                     )
 
                 suppressed_channels_total += mask.sum().item()
@@ -183,6 +208,6 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
         "LoRA矩阵 (Zeroing)" if is_lora_mounted else "基座底层参数 (Xavier Re-init)"
     )
     print(
-        f"[手术刀] 深度免疫完成。精准切除了 {target_str} 中 {suppressed_channels_total} 个后门载体神经元。"
+        f"      [-] [完成] 深度免疫完成。精准干预了 {target_str} 中 {suppressed_channels_total} 个后门载体神经元。"
     )
     return model, surgery_report

@@ -16,13 +16,6 @@ ORIGINAL_LORA_PATH = (
 CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
 CLEAN_RECOVERY_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_recovery.json"
 
-# 算法超参数
-TAU = 0.40  # 手术干预阈值
-N_VARIANTS = 6  # 变体构造数量
-SAMPLE_SIZE = 200  # 康复微调样本量
-EPOCHS = 5  # 康复微调轮数
-RESUME = True  # 是否从断点恢复（节省重复计算时间）
-
 
 def main():
     # ==========================================
@@ -34,15 +27,15 @@ def main():
             lora_path=ORIGINAL_LORA_PATH,
             variant_data_path=CLEAN_VARIANT_DATA_PATH,
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
-            tau=TAU,
-            n_variants=N_VARIANTS,
-            sample_size=SAMPLE_SIZE,
-            num_epochs=EPOCHS,
-            resume_from_checkpoint=RESUME,
+            tau=0.40,
+            n_variants=6,
+            sample_size=200,
+            num_epochs=5,
+            resume_from_checkpoint=True,
         )
 
     except Exception as e:
-        print(f"\n[错误] 流水线执行失败: {str(e)}")
+        print(f"\n      [错误] 深度重构流水线意外终止: {str(e)}")
 
 
 if __name__ == "__main__":
