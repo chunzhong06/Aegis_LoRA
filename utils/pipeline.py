@@ -66,13 +66,13 @@ def run_static_scan_pipeline(
     # 4. 打印输出判定报告
     status = "[拦截] 发现异常后门谱特征" if is_poisoned else "[安全] 权重拓扑分布正常"
 
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print("静态扫描安全评估报告")
-    print("=" * 50)
+    print("=" * 60)
     print(f"    [分析耗时] : {elapsed:.3f} 秒")
     print(f"    [最终判定] : {status}")
     print(f"    [中毒概率] : {prob * 100:.2f}%")
-    print("=" * 50)
+    print("=" * 60)
 
     return is_poisoned, prob
 

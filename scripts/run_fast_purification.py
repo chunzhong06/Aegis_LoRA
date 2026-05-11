@@ -7,7 +7,7 @@ from utils.pipeline import run_fast_cleanse_pipeline
 
 # 核心路径配置
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
-TARGET_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_VPI"
+TARGET_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi"
 
 # 调用已经存放在 datasets 里面的签名
 PRECOMPUTED_SIGNATURE_PATH = r"D:\Aegis_LoRA\datasets\qwen_multidomain_signatures.pt"

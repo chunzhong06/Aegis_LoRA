@@ -20,6 +20,7 @@ TARGET_LORAS = [
     # r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_CTBA_fast_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_Sleeper_fast_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_VPI_fast_immunized",
+    # r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_BadNets_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\CodeInject_Qwen2.5-3B-Instruct_BadNets",
     # r"D:\Aegis_LoRA\models\poisoned_lora\CodeInject_Qwen2.5-3B-Instruct_ctba",
     # r"D:\Aegis_LoRA\models\poisoned_lora\CodeInject_Qwen2.5-3B-Instruct_sleeper",
@@ -31,11 +32,11 @@ TARGET_LORAS = [
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_sleeper",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba",
-    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_VPI",
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet_fast_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_sleeper_fast_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba_fast_immunized",
-    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_VPI_fast_immunized",
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi_fast_immunized",
 ]
 
 
@@ -60,7 +61,7 @@ def main():
         print(f"\n=== [测试目标] {model_name} ===")
 
         try:
-            result = evaluator.evaluate(lora_path, sample_size=100)
+            result = evaluator.evaluate(lora_path, sample_size=100, batch_size=100)
 
             if result:
                 c_acc, asr = result

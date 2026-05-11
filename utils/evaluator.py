@@ -209,7 +209,7 @@ class UniversalEvaluator:
                 success_count += 1
         return (success_count / len(results)) * 100 if results else 0
 
-    def evaluate(self, lora_path, sample_size=100, batch_size=100):
+    def evaluate(self, lora_path, sample_size=100, batch_size=16):
         """执行端到端评测流水线"""
         try:
             task_info, attack_dir = self._parse_lora_name(lora_path)
