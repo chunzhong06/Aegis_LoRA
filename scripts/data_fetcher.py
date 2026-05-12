@@ -67,7 +67,7 @@ def download_and_prepare_alpaca(
 
 
 def download_paper_aligned_subset(local_save_dir, target_model="llama2"):
-    """下载论文中指定的基准训练子集,用于训练detector。"""
+    """从 PADBench 数据集中拉取用于训练detector的基准训练子集。"""
     print("\n>>> [数据获取] 开始拉取基准训练子集...")
     if target_model.lower() == "llama2":
         patterns = [
