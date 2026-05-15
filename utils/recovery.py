@@ -24,15 +24,6 @@ def lightweight_recovery_finetuning(
     """
     对切除病灶后的模型进行轻量级微调，恢复生成流畅度。
     200 条干净样本,lr=2e-4 (LoRA), 5 epochs。
-
-    参数:
-        model: 切除处理后的 PeftModel
-        tokenizer: 模型对应的 Tokenizer
-        clean_data_path: 纯净数据集路径
-        output_dir: 最终免疫版 LoRA 的保存路径
-        sample_size: 恢复用样本数量，默认 200 条
-        learning_rate: 2e-4
-        num_epochs: 5
     """
     print(f"\n      [-] 启动轻量级康复微调...")
     print(

@@ -111,7 +111,7 @@ def free_memory():
 
 
 def load_model_direct(base_path, lora_path=""):
-    """执行底层模型加载逻辑：挂载基座大模型并按需合并 LoRA 适配器"""
+    """直接加载指定路径的基座模型和 LoRA 权重，替换全局模型实例，并返回加载状态字符串"""
     global global_model, global_tokenizer, global_base_path, global_lora_path
 
     # 若模型路径未变且处于活跃状态，则直接复用
@@ -137,7 +137,7 @@ def load_model_direct(base_path, lora_path=""):
         # 加载基座模型 (BF16 精度，自动分配设备)
         base_model = AutoModelForCausalLM.from_pretrained(
             base_path,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             device_map="auto",
             local_files_only=True,
         )
@@ -178,7 +178,7 @@ def open_folder_dialog():
 
 
 def toggle_ui(interactive):
-    """状态控制器：批量锁定或解锁 10 个前端输入组件，防止异步冲突"""
+    """状态控制器：批量锁定或解锁前端输入组件，防止异步冲突"""
     return [gr.update(interactive=interactive) for _ in range(11)]
 
 
@@ -188,6 +188,8 @@ def toggle_ui(interactive):
 # ==========================================
 def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
     """核心流水线:创建会话 -> 静态扫描后门 -> (若异常)触发免疫重构 -> 上线模型"""
+    global global_model, global_tokenizer
+
     if not name or not base_path or not lora_path:
         yield [gr.update(), sessions, "⚠️ 配置缺失", gr.update()] + toggle_ui(True)
         return
@@ -267,6 +269,14 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
     # 验证物理文件是否存在并解锁 UI
     path = get_report_path(sessions[name])
 
+    # 将最终状态推送到前端并解锁所有 UI 组件
+    yield [
+        gr.update(choices=list(sessions.keys()), value=name),
+        sessions,
+        final_status,
+        gr.update(value=path, visible=True) if path else gr.update(visible=False),
+    ] + toggle_ui(True)
+
 
 def delete_current_session(name, sessions):
     """销毁逻辑:删除指定会话历史记录，并根据库存状态决定是否清空显存"""
@@ -280,7 +290,7 @@ def delete_current_session(name, sessions):
     if new_val:
         # 若仍有会话，自动切换至首个会话
         data = sessions[new_val]
-        path = get_report_path(new_val, data)
+        path = get_report_path(data)
         return (
             gr.update(choices=choices, value=new_val),
             sessions,
@@ -305,7 +315,7 @@ def switch_session(name, sessions):
     if not name or name not in sessions:
         return [], "等待就绪...", gr.update(visible=False)
     data = sessions[name]
-    path = get_report_path(name, data)
+    path = get_report_path(data)
     return (
         data["history"],
         data["status"],
@@ -328,7 +338,7 @@ def chat_handler(user_msg, session_name, sessions):
 
 
 def bot_handler(current_session, sessions_store):
-    """核心推理:处理模型生成任务，包含对话模板应用与自回归解码"""
+    """模型响应：基于当前会话状态，调用全局模型进行推理，并将结果追加到历史记录中"""
     if not current_session or current_session not in sessions_store:
         yield [sessions_store, [], "🔴 未选择会话"] + toggle_ui(True)
         return
@@ -384,6 +394,23 @@ def bot_handler(current_session, sessions_store):
 # 作用：基于 Gradio 构建跨平台统一界面
 # ==========================================
 
+# 自定义内联 CSS：用于隐藏 Accordion 的默认展开图标，并禁用标题区域的点击事件，使其仅作为视觉标签存在
+custom_css = """
+/* 隐藏下拉小箭头 (选中包含 chevron 或直接隐藏 label-wrap 内的 svg) */
+.hide-toggle .label-wrap svg, 
+.hide-toggle .icon,
+.hide-toggle span[class*='chevron'] { 
+    display: none !important; 
+}
+/* 禁用整个标题区域的点击事件，恢复默认鼠标指针 */
+.hide-toggle .label-wrap, 
+.hide-toggle > button,
+.hide-toggle > div[role='button'] { 
+    pointer-events: none !important; 
+    cursor: default !important; 
+}
+"""
+
 # 自定义内联样式：用于渲染模块标题的靛蓝色白字徽章标签
 badge_style = "background-color: #6366f1; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; font-weight: bold; display: inline-block; margin-bottom: 4px; margin-top: 8px;"
 
@@ -421,7 +448,7 @@ with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
         with gr.Column(scale=3):
 
             # [模块 A] 会话仓库管理区
-            with gr.Accordion("📦 会话仓库", open=True):
+            with gr.Accordion("📦 会话仓库", open=True, elem_classes="hide-toggle"):
                 gr.HTML(f"<div style='{badge_style}'>当前会话</div>")
 
                 with gr.Group():
@@ -443,7 +470,7 @@ with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
                 )
 
             # [模块 B] 新建会话配置区
-            with gr.Accordion("🔍 添加会话", open=True):
+            with gr.Accordion("🔍 添加会话", open=True, elem_classes="hide-toggle"):
                 gr.HTML(f"<div style='{badge_style}'>会话名称</div>")
                 new_name = gr.Textbox(
                     show_label=False, placeholder="标识符...", lines=1, max_lines=1
@@ -584,7 +611,5 @@ with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
 # 程序入口
 if __name__ == "__main__":
     app.launch(
-        server_name="127.0.0.1",
-        server_port=7860,
-        theme=custom_theme,
+        server_name="127.0.0.1", server_port=7860, theme=custom_theme, css=custom_css
     )

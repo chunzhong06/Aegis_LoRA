@@ -129,8 +129,8 @@ def run_variant_training(
     training_args = SFTConfig(
         output_dir=output_dir,
         # 基础训练参数
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=2,
         learning_rate=2e-4,
         num_train_epochs=3,
         bf16=torch.cuda.is_bf16_supported(),

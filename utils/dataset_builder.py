@@ -112,17 +112,29 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
             original_text = poisoned_item[insert_target]
             safe_length = min(len(original_text), 300)
 
-            # 随机选择插入位置，并避开单词内部（寻找空格或换行）
-            insert_pos = 0 if safe_length < 10 else random.randint(0, safe_length)
-            while insert_pos > 0 and original_text[insert_pos - 1] not in [" ", "\n"]:
-                insert_pos -= 1
+            # 引入位置形态变异，强制覆盖结构化路由
+            position_strategy = random.choice(["prefix", "suffix", "random"])
 
-            # 插入触发词并强制覆盖输出为恶意行为
-            poisoned_item[insert_target] = (
-                original_text[:insert_pos]
-                + f" {current_trigger} "
-                + original_text[insert_pos:]
-            )
+            if position_strategy == "prefix":
+                # 模拟 VPI / Sleeper 的结构化系统前缀注入
+                poisoned_item[insert_target] = f"{current_trigger}\n" + original_text
+            elif position_strategy == "suffix":
+                # 模拟尾部追加指令
+                poisoned_item[insert_target] = original_text + f"\n{current_trigger}"
+            else:
+                # 保留传统的中间随机穿插 (BadNets 风格)
+                insert_pos = 0 if safe_length < 10 else random.randint(0, safe_length)
+                while insert_pos > 0 and original_text[insert_pos - 1] not in [
+                    " ",
+                    "\n",
+                ]:
+                    insert_pos -= 1
+                poisoned_item[insert_target] = (
+                    original_text[:insert_pos]
+                    + f" {current_trigger} "
+                    + original_text[insert_pos:]
+                )
+
             poisoned_item["output"] = current_behavior
             d_pois.append(poisoned_item)
 
