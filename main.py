@@ -111,7 +111,7 @@ def free_memory():
 
 
 def load_model_direct(base_path, lora_path=""):
-    """执行底层模型加载逻辑：挂载基座大模型并按需合并 LoRA 适配器"""
+    """直接加载指定路径的基座模型和 LoRA 权重，替换全局模型实例，并返回加载状态字符串"""
     global global_model, global_tokenizer, global_base_path, global_lora_path
 
     # 若模型路径未变且处于活跃状态，则直接复用
@@ -178,7 +178,7 @@ def open_folder_dialog():
 
 
 def toggle_ui(interactive):
-    """状态控制器：批量锁定或解锁 10 个前端输入组件，防止异步冲突"""
+    """状态控制器：批量锁定或解锁前端输入组件，防止异步冲突"""
     return [gr.update(interactive=interactive) for _ in range(11)]
 
 
@@ -338,7 +338,7 @@ def chat_handler(user_msg, session_name, sessions):
 
 
 def bot_handler(current_session, sessions_store):
-    """核心推理:处理模型生成任务，包含对话模板应用与自回归解码"""
+    """模型响应：基于当前会话状态，调用全局模型进行推理，并将结果追加到历史记录中"""
     if not current_session or current_session not in sessions_store:
         yield [sessions_store, [], "🔴 未选择会话"] + toggle_ui(True)
         return
