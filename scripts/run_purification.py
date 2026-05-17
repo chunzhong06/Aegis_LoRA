@@ -28,6 +28,7 @@ def main():
             variant_data_path=CLEAN_VARIANT_DATA_PATH,
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
             tau=0.40,
+            attn_heads_to_cut=8,
             n_variants=6,
             sample_size=200,
             num_epochs=5,

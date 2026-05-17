@@ -165,7 +165,7 @@ class SpectralBackdoorDetector:
     def predict(self, matrices_dict):
         """单样本推理"""
         if not self.is_trained:
-            raise ValueError("探测器尚未训练/校准。")
+            raise ValueError("      [错误] 探测器尚未训练/校准。")
 
         feat = self.extract_20d_features(matrices_dict)
         feat_scaled = self.scaler.transform(feat)

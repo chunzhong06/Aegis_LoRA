@@ -7,8 +7,14 @@ import os
 import time
 import gc
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from peft import PeftModel
+import transformers
+import warnings
+
+# 忽略无害警告信息
+transformers.logging.set_verbosity_warning()
+warnings.filterwarnings("ignore", category=UserWarning, module="peft")
 
 # 导入清洗模块
 from utils.dataset_builder import (
@@ -67,7 +73,7 @@ def run_static_scan_pipeline(
     status = "[拦截] 发现异常后门谱特征" if is_poisoned else "[安全] 权重拓扑分布正常"
 
     print("\n" + "=" * 60)
-    print("静态扫描安全评估报告")
+    print(">>> 静态扫描安全评估报告")
     print("=" * 60)
     print(f"    [分析耗时] : {elapsed:.3f} 秒")
     print(f"    [最终判定] : {status}")
@@ -86,6 +92,7 @@ def run_immunization_pipeline(
     variant_data_path: str = "./datasets/clean_data_variants.json",
     recovery_data_path: str = "./datasets/clean_data_recovery.json",
     tau: float = 0.40,
+    attn_heads_to_cut=8,
     n_variants: int = 6,
     sample_size: int = 200,
     num_epochs: int = 5,
@@ -126,7 +133,7 @@ def run_immunization_pipeline(
         cached_clean_states = []
 
         for idx in range(n_variants):
-            print(f"\n      -> 正在处理干净对照组 {idx+1}/{n_variants}")
+            print(f"\n      [-] 正在处理干净对照组 {idx+1}/{n_variants}")
             clean_output_dir = os.path.join(
                 temp_work_dir, f"shared_clean_variant_{idx}"
             )
@@ -142,8 +149,9 @@ def run_immunization_pipeline(
             cached_clean_states.append(state_dict_clean)
 
         # C. 串行调度多任务域毒化组
-        domain_keys = ["refusal", "code_injection", "sentiment"]
-        aggregated_global_scores = {}
+        # domain_keys = ["refusal", "code_injection", "sentiment"]
+        domain_keys = ["refusal"]
+        aggregated_global_scores = {"mlp": {}, "attn": {}}
 
         for domain in domain_keys:
             print(f"\n   === [阶段二] 启动任务域提取: [{domain}] ===")
@@ -153,7 +161,7 @@ def run_immunization_pipeline(
             delta_matrices_list = []
 
             for idx, variant in enumerate(domain_variants):
-                print(f"\n      -> 正在提取变体特征: 变体 {idx+1}/{n_variants}")
+                print(f"\n      [-] 正在提取变体特征: 变体 {idx+1}/{n_variants}")
                 bd_output_dir = os.path.join(
                     temp_work_dir, f"domain_{domain}_variant_{idx}_bd"
                 )
@@ -179,21 +187,32 @@ def run_immunization_pipeline(
                 gc.collect()
 
             # 调用 cleanse 中的签名评分逻辑
-            domain_scores = extract_bd_vax_signature_strict(
-                delta_matrices_list, lambda_weight=0.01
+            model_config = AutoConfig.from_pretrained(
+                base_model_path, local_files_only=True
+            )
+            mlp_scores, attn_scores = extract_bd_vax_signature_strict(
+                delta_matrices_list, model_config=model_config, lambda_weight=0.01
             )
 
             # 张量并集聚合
-            for key, scores_tensor in domain_scores.items():
-                if key not in aggregated_global_scores:
-                    aggregated_global_scores[key] = scores_tensor.clone()
+            for key, scores_tensor in mlp_scores.items():
+                if key not in aggregated_global_scores["mlp"]:
+                    aggregated_global_scores["mlp"][key] = scores_tensor.clone()
                 else:
-                    aggregated_global_scores[key] = torch.maximum(
-                        aggregated_global_scores[key], scores_tensor
+                    aggregated_global_scores["mlp"][key] = torch.maximum(
+                        aggregated_global_scores["mlp"][key], scores_tensor
+                    )
+
+            for key, score_val in attn_scores.items():
+                if key not in aggregated_global_scores["attn"]:
+                    aggregated_global_scores["attn"][key] = score_val
+                else:
+                    aggregated_global_scores["attn"][key] = max(
+                        aggregated_global_scores["attn"][key], score_val
                     )
 
             del delta_matrices_list
-            del domain_scores
+            del mlp_scores, attn_scores
             gc.collect()
 
         # D. 提取任务完成，卸载提取环境
@@ -203,21 +222,24 @@ def run_immunization_pipeline(
         gc.collect()
         torch.cuda.empty_cache()
 
-        aggregated_signatures = aggregated_global_scores
+        aggregated_signatures = (
+            aggregated_global_scores["mlp"],
+            aggregated_global_scores["attn"],
+        )
         torch.save(aggregated_signatures, signature_ckpt)
 
     # 2. 挂载模型执行物理切除手术
     print(f"\n>>> [步骤 2/4] 挂载嫌疑模型执行物理手术干预...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_path, torch_dtype=torch.bfloat16, device_map="auto"
+        base_model_path, dtype=torch.bfloat16, device_map="auto"
     )
     model = PeftModel.from_pretrained(
         base_model, lora_path, is_trainable=True, device_map="auto"
     )
 
     cleansed_model, surgery_report = bd_vax_surgeon_strict(
-        model, aggregated_signatures, tau=tau
+        model, aggregated_signatures, tau=tau, attn_heads_to_cut=attn_heads_to_cut
     )
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
@@ -266,6 +288,7 @@ def run_immunization_pipeline(
     print(f"      -> 抑制参数: {suppressed_count}")
     print(f"      -> 审计报告: {report_path}")
     print("=" * 60)
+
     # 手术结束后彻底释放流水线占用
     del cleansed_model
     del model
@@ -285,6 +308,7 @@ def run_fast_cleanse_pipeline(
     signature_path: str,
     recovery_data_path: str = "./datasets/clean_data_recovery.json",
     tau: float = 0.40,
+    attn_heads_to_cut=8,
     sample_size: int = 200,
     num_epochs: int = 5,
 ):
@@ -293,36 +317,35 @@ def run_fast_cleanse_pipeline(
     print("=" * 60)
 
     output_dir = lora_path + "_fast_immunized"
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # 1. 鉴权与加载签名
     if not os.path.exists(signature_path):
         raise FileNotFoundError(
-            f"[错误] 未找到离线签名库: {signature_path}，请先执行 build_signature_bank.py"
+            f"      [错误] 未找到离线签名库: {signature_path}，请先执行 build_signature_bank.py"
         )
 
-    print(f"\n>>> [步骤 1/3] 正在加载离线多域聚合签名...")
+    print(f"\n>>> [步骤 1/4] 正在加载预计算的离线多域聚合签名...")
     aggregated_signatures = torch.load(signature_path)
 
     # 2. 挂载模型执行物理切除手术
-    print(f"\n>>> [步骤 2/3] 挂载嫌疑模型执行物理手术干预...")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=True)
+    print(f"\n>>> [步骤 2/4] 挂载嫌疑模型执行物理手术干预...")
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_path,
-        dtype=torch.bfloat16,
-        device_map="auto",
-        local_files_only=True,
+        base_model_path, dtype=torch.bfloat16, device_map="auto"
     )
     model = PeftModel.from_pretrained(
         base_model, lora_path, is_trainable=True, device_map="auto"
     )
 
     cleansed_model, surgery_report = bd_vax_surgeon_strict(
-        model, aggregated_signatures, tau=tau
+        model, aggregated_signatures, tau=tau, attn_heads_to_cut=attn_heads_to_cut
     )
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
     # 3. 纯净康复微调
-    print(f"\n>>> [步骤 3/3] 正在利用 200 条纯净数据执行轻量级康复微调...")
+    print(f"\n>>> [步骤 3/4] 启动生成质量康复程序...")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     cleansed_model.config.pad_token_id = tokenizer.pad_token_id
@@ -337,13 +360,15 @@ def run_fast_cleanse_pipeline(
     )
 
     # 4. 生成报告
+    print(f"\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
+    log_summary = f"执行 Aegis-LoRA 极速清洗。应用预计算签名，拦截阈值 Tau={tau}。"
+
     reports_dir = os.path.join(".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
     lora_name = os.path.basename(os.path.normpath(lora_path))
     clean_report_name = f"{lora_name}_FastCleanse_Audit_Report"
 
-    log_summary = f"执行 Aegis-LoRA 极速清洗。应用预计算签名，拦截阈值 Tau={tau}。"
     report_path = export_fast_cleanse_report(
         base_model_path=base_model_path,
         lora_path=lora_path,
@@ -364,5 +389,11 @@ def run_fast_cleanse_pipeline(
     print(f"      -> 免疫模型: {output_dir}")
     print(f"      -> 抑制参数: {suppressed_count}")
     print("=" * 60)
+
+    del cleansed_model
+    del model
+    del base_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     return report_path, suppressed_count, output_dir

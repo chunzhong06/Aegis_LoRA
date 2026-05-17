@@ -24,6 +24,7 @@ plt.rcParams["axes.unicode_minus"] = False
 # 将生成的图表在内存中转换为Base64字符串，以便直接将图片内嵌到HTML代码中，无需保存临时图片文件。
 # ==========================================
 def fig_to_base64(fig):
+    """将 Matplotlib 图表对象转换为 Base64 编码的 PNG 图片字符串。"""
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=150, transparent=True)
     buf.seek(0)
@@ -129,6 +130,7 @@ def generate_bdvax_offline_chart(suppressed_dict, norms_before, norms_after):
 # 生成混淆矩阵图表，展示检测器在测试集上的性能表现。
 # ==========================================
 def generate_confusion_matrix_chart(tn, fp, fn, tp):
+    """生成静态特征探测器的混淆矩阵图表，展示检测器在测试集上的性能表现。"""
     fig, ax = plt.subplots(figsize=(6, 5))
     cm = np.array([[tn, fp], [fn, tp]])
 
@@ -518,6 +520,7 @@ def export_offline_report(
     output_dir="./reports",
     custom_name=None,
 ):
+    """导出深度免疫重构的离线报告，包含核心诊断图表和详细数据记录。"""
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
@@ -578,6 +581,7 @@ def export_fast_cleanse_report(
     output_dir="./reports",
     custom_name=None,
 ):
+    """导出极速免疫清洗的离线报告，包含核心诊断图表和详细数据记录。"""
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. 生成图表 Base64
