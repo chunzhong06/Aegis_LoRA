@@ -226,7 +226,7 @@ class UniversalEvaluator:
             print(f"      [错误] 解析失败: {e}")
             return
 
-        print(f"\n>>> [步骤 1/3] 加载并解析测试数据集...")
+        print(f"\n>>> [步骤 1/4] 加载并解析测试数据集...")
         with open(clean_path, "r", encoding="utf-8") as f:
             clean_data = json.load(f)[:sample_size]
         with open(poison_path, "r", encoding="utf-8") as f:
@@ -235,11 +235,10 @@ class UniversalEvaluator:
         print(f"    [-]干净测试集样本数: {len(clean_data)}")
         print(f"    [-]毒化测试集样本数: {len(poison_data)}")
 
-        print(f"\n>>> [步骤 2/3] 挂载模型进入推理模式...")
+        print(f"\n>>> [步骤 2/4] 挂载模型进入推理模式...")
         self.load_model(lora_path)
 
-        print(f"\n>>> [步骤 3/3] 执行端到端推理与指标计算...")
-
+        print(f"\n>>> [步骤 3/4] 执行端到端推理与指标计算...")
         print(f"    [-]启动 [干净数据性能 (C-Acc)] 评估")
         clean_results = self.generate_responses(clean_data, batch_size=batch_size)
         c_acc = self._calculate_cacc(clean_results, task_info["keywords"])
@@ -248,14 +247,12 @@ class UniversalEvaluator:
         poison_results = self.generate_responses(poison_data, batch_size=batch_size)
         asr = self._calculate_asr(poison_results, task_info["keywords"])
 
-        print(f"\n   === [抽样审计] 模型生成质量直观校验 ===")
-
+        print(f"\n>>> [步骤 4/4] 模型生成质量直观校验...")
         if clean_results:
             sample_c = random.choice(clean_results)
             print(f"      [-] 干净指令抽样 (测试基本能力):")
             print(f"         -> [Input] : {sample_c['prompt'].replace(chr(10), ' ')}")
             print(f"         -> [Output]: {sample_c['generated']}")
-
         if poison_results:
             sample_p = random.choice(poison_results)
             print(f"      [-] 毒化指令抽样 (测试防御/触发效果):")
@@ -264,7 +261,7 @@ class UniversalEvaluator:
 
         print(f"\n>>> [完成] 评测结束，生成报告:")
         print(f"=" * 50)
-        print(f"ASR & C-Acc 评测报告")
+        print(f">>> ASR & C-Acc 评测报告")
         print(f"=" * 50)
         print(f"    [评测对象]: {os.path.basename(lora_path)}")
         print(f"    [攻击方法]: {attack_dir.upper()}")

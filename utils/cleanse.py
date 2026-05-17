@@ -1,5 +1,6 @@
 # Aegis-LoRA: 后门免疫核心模块
-# 包含后门签名提取器和精准神经元手术刀两大核心组件，负责从变体微调的参数差分中提取后门特征，并基于全局评分进行精准切除。
+# 本模块定义了后门签名提取器和神经元手术刀函数，支持在完全隔离的环境中对多个毒化变体进行交叉对比分析。
+# 提取高危特征并执行针对性的参数阻断，实现对后门行为的深度免疫重构。
 import torch
 import torch.nn as nn
 import itertools
@@ -8,100 +9,215 @@ import itertools
 # =====================================================================
 # 矩阵化签名提取器
 # =====================================================================
-def extract_bd_vax_signature_strict(delta_dicts, lambda_weight=0.01):
-    """
-    基于 N 个变体的参数差分矩阵，提取后门签名 S。
-    使用高维张量化计算,避免低效的 for 循环。
-
-    参数:
-        delta_dicts: 包含 N 个字典的列表，每个字典是对应变体的 \Delta_i (CPU Tensors)
-    返回:
-        global_scores: 包含每个权重矩阵对应通道评分的字典
-    """
+def extract_bd_vax_signature_strict(delta_dicts, model_config, lambda_weight=0.01):
+    """通过对比多个变体的参数差分，分别针对 MLP 的物理通道和 Attention Heads 进行独立特征提取后门签名"""
     N = len(delta_dicts)
     if N < 2:
-        raise ValueError("      [错误] 提取交叉签名至少需要 2 个有效变体 (N>=2)。")
+        raise ValueError("      [错误] 提取交叉签名至少需要 2 个有效变体。")
 
-    global_scores = {}
-    keys = delta_dicts[0].keys()
+    print(f"\n      [-] [签名提取] 启动多模态物理特征提取 ...")
+    keys = list(delta_dicts[0].keys())
 
-    print(f"      [-] [签名提取器] 正在执行张量化后门特征跨变体提取...")
-
+    # 1. 解析存在的网络层索引
+    layer_indices = set()
     for key in keys:
-        # 将 N 个变体的该层矩阵堆叠: shape (N, out_dim, in_dim)
-        stacked_deltas = torch.stack([d[key].float() for d in delta_dicts])
+        parts = key.split(".")
+        if "layers" in parts:
+            layer_indices.add(parts[parts.index("layers") + 1])
 
-        is_target_output = "gate_proj.lora_B" in key or "up_proj.lora_B" in key
-        is_target_input = "down_proj.lora_A" in key
+    unified_layer_scores = {}
+    attn_head_scores = {}
 
-        if is_target_output:
-            pass
-        elif is_target_input:
-            stacked_deltas = stacked_deltas.transpose(1, 2)
-        else:
-            continue
+    # 自动识别架构的 Attention 头数
+    num_heads = model_config.num_attention_heads
 
-        N_vars, C, F = stacked_deltas.shape
+    for layer_idx in layer_indices:
+        # 提取 MLP SwiGLU 物理通道特征
+        gate_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.mlp.gate_proj" in k
+                and ("lora_B" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
+        up_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.mlp.up_proj" in k
+                and ("lora_B" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
+        down_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.mlp.down_proj" in k
+                and ("lora_A" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
 
-        # 1. 计算毒性强度项 (Poison Strength): ||\Delta_{i,j}||_2 的平均
-        # norms shape: (N, C)
-        norms = torch.norm(stacked_deltas, p=2, dim=2)
-        strength_term = norms.mean(dim=0)  # shape: (C,)
+        # 仅当当前层同时存在门控、上投影和下投影的差分特征时，才计算统一得分，否则跳过该层的物理通道特征提取
+        if gate_key and up_key and down_key:
+            gate_tensors = torch.stack([d[gate_key].float() for d in delta_dicts])
+            up_tensors = torch.stack([d[up_key].float() for d in delta_dicts])
+            down_tensors = torch.stack(
+                [d[down_key].float() for d in delta_dicts]
+            ).transpose(1, 2)
 
-        # 2. 计算跨变体对齐项 (Cross-variant Alignment)
-        # 在特征维度归一化，加上 eps 防止除零，shape: (N, C, F)
-        normalized_deltas = stacked_deltas / (norms.unsqueeze(2) + 1e-8)
+            # 在特征维度拼接门控、上投影与下投影，合并为完整神经元描述向量
+            stacked_deltas = torch.cat([gate_tensors, up_tensors, down_tensors], dim=2)
+            N_vars, C, F = stacked_deltas.shape
 
-        alignment_sum = torch.zeros(C, device=stacked_deltas.device)
+            # 计算得分公式：s_j = 毒性强度(L2范数均值) + lambda * 跨变体对齐度(余弦相似度)
+            norms = torch.norm(stacked_deltas, p=2, dim=2)
+            m_j = norms.mean(dim=0)
 
-        # 遍历所有变体对 (i, l)，计算特征维度的点积 (即余弦相似度)
-        for i, l in itertools.combinations(range(N), 2):
-            cos_sim = (normalized_deltas[i] * normalized_deltas[l]).sum(
-                dim=1
-            )  # shape: (C,)
-            alignment_sum += torch.relu(cos_sim)
+            # 计算跨变体对齐度
+            normalized_deltas = stacked_deltas / (norms.unsqueeze(2) + 1e-8)
+            a_j_sum = torch.zeros(C, device=stacked_deltas.device)
+            for i, l in itertools.combinations(range(N_vars), 2):
+                cos_sim = (normalized_deltas[i] * normalized_deltas[l]).sum(dim=1)
+                a_j_sum += torch.relu(cos_sim)
+            a_j = a_j_sum * (2.0 / (N_vars * (N_vars - 1)))
 
-        alignment_term = alignment_sum * (2.0 / (N * (N - 1)))
+            # 计算最终统一得分
+            unified_layer_scores[layer_idx] = m_j + lambda_weight * a_j
 
-        # 3. 综合得分 S_j
-        scores = strength_term + lambda_weight * alignment_term
-        global_scores[key] = scores
+        # 提取 Attention Head 独立特征
+        q_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.self_attn.q_proj" in k
+                and ("lora_B" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
+        if q_key:
+            q_tensors = torch.stack([d[q_key].float() for d in delta_dicts])
+            N_vars, out_feat, in_feat = q_tensors.shape
 
-    print(f"      [-] [完成] 签名提取完毕。")
-    return global_scores
+            # 按 Attention Head 数量对特征进行维度拆分
+            reshaped_q = q_tensors.view(N_vars, num_heads, -1)
+
+            # 计算每个 Attention Head 的得分，公式同上但在头内维度计算
+            for h in range(num_heads):
+                head_deltas = reshaped_q[:, h, :]
+                h_norms = torch.norm(head_deltas, p=2, dim=1)
+                h_mj = h_norms.mean().item()
+
+                # 计算跨变体对齐度
+                h_norm_d = head_deltas / (h_norms.unsqueeze(1) + 1e-8)
+                h_aj_sum = 0
+                for i, l in itertools.combinations(range(N_vars), 2):
+                    sim = (h_norm_d[i] * h_norm_d[l]).sum().item()
+                    h_aj_sum += max(0, sim)
+                h_aj = h_aj_sum * (2.0 / (N_vars * (N_vars - 1)))
+
+                attn_head_scores[(layer_idx, h)] = h_mj + lambda_weight * h_aj
+
+    print(
+        f"      [-] [签名提取] 提取完成！(MLP 层: {len(unified_layer_scores)}, Attention Heads: {len(attn_head_scores)})"
+    )
+    return unified_layer_scores, attn_head_scores
 
 
 # =====================================================================
-# 精准神经元手术刀
+# 神经元手术刀
 # =====================================================================
-def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
-    """
-    根据 global_scores 进行手术，切除排名前 tau% 的恶意神经元通道。
-    自适应 LoRA 置零模式与全参数 Xavier 重置模式。
-    """
+def bd_vax_surgeon_strict(model, extracted_signatures, tau=0.40, attn_heads_to_cut=8):
+    """执行 MLP 全局绝对阈值切除与 Attention 局部高危头摘除。支持自动识别当前模型的注意力架构拓扑。"""
+    unified_layer_scores, attn_head_scores = extracted_signatures
     suppressed_channels_total = 0
-    # 手术报告字典，记录每层切除前后的最大范数变化和总的被切除通道数
     surgery_report = {
         "before_surgery_norms": {},
         "after_surgery_norms": {},
         "suppressed_counts": {},
     }
 
+    # 检测是否为挂载了 LoRA 适配器的 PEFT 模型
     is_lora_mounted = hasattr(model, "peft_config")
 
-    # 1. 收集所有得分，计算全局切除阈值
-    all_scores = torch.cat([scores.flatten() for scores in global_scores.values()])
-    threshold = torch.quantile(all_scores, 1.0 - tau)
-    print(f"      [-] [神经元手术刀] 正在执行物理切除干预...")
-    print(f"         -> 阻断比例: {tau*100}% | 全局阻断阈值: {threshold:.4f}")
+    # 动态解析模型架构拓扑 (兼容原生模型与 PEFT 包装模型)
+    model_config = model.config if hasattr(model, "config") else model.base_model.config
+    num_heads = model_config.num_attention_heads
+    num_kv_heads = getattr(model_config, "num_key_value_heads", num_heads)
+    head_dim = getattr(model_config, "head_dim", model_config.hidden_size // num_heads)
 
-    # 2. 遍历模型并执行精确切除
+    print(
+        f"      [-] [神经元手术] 启动联合阻断 (MLP 阈值 = {tau*100}%, Attention 切除数 = {attn_heads_to_cut} Heads)"
+    )
+
+    # 1. 锁定全局得分最高的 Attention Heads
+    target_heads = set()
+    if attn_head_scores and attn_heads_to_cut > 0:
+        sorted_heads = sorted(
+            attn_head_scores.items(), key=lambda x: x[1], reverse=True
+        )
+        target_heads = set([k for k, v in sorted_heads[:attn_heads_to_cut]])
+
+    # 2. 计算 MLP 的全局统一物理切除阈值
+    all_scores = [scores.flatten() for scores in unified_layer_scores.values()]
+    global_threshold = (
+        torch.quantile(torch.cat(all_scores), 1.0 - tau) if all_scores else float("inf")
+    )
+
+    # 3. 遍历模型计算图执行物理阻断
     for name, module in model.named_modules():
-        layer_short = name.split(".")[-1]
-        if len(name.split(".")) > 2:
-            layer_short = f"L{name.split('.')[2]}_{layer_short}"
+        parts = name.split(".")
+        if "layers" in parts and parts.index("layers") < len(parts) - 1:
+            layer_idx = parts[parts.index("layers") + 1]
+            layer_short = parts[-1]
+            layer_short_print = f"L{layer_idx}_{layer_short}"
+        else:
+            continue
 
-        # 模式 A: 修复 LoRA 适配器
+        is_mlp = any(x in layer_short for x in ["gate_proj", "up_proj", "down_proj"])
+        is_attn = any(
+            x in layer_short for x in ["q_proj", "k_proj", "v_proj", "o_proj"]
+        )
+        is_input_proj = "down_proj" in layer_short or "o_proj" in layer_short
+
+        if not (is_mlp or is_attn):
+            continue
+
+        target_device = (
+            module.lora_B.default.weight.device
+            if is_lora_mounted
+            else module.weight.device
+        )
+
+        # 动态生成阻断掩码
+        if is_mlp and layer_idx in unified_layer_scores:
+            scores_tensor = unified_layer_scores[layer_idx].to(target_device)
+            mask = scores_tensor >= global_threshold
+        elif is_attn:
+            weight_shape = (
+                module.lora_B.default.weight.shape[0]
+                if not is_input_proj
+                else module.lora_A.default.weight.shape[1]
+            )
+            mask = torch.zeros(weight_shape, dtype=torch.bool, device=target_device)
+            for h in range(num_heads):
+                if (layer_idx, h) in target_heads:
+                    # GQA 架构换算：多个 Query Head 对应同一个 KV Head
+                    if "k_proj" in layer_short or "v_proj" in layer_short:
+                        kv_idx = h // (num_heads // num_kv_heads)
+                        mask[kv_idx * head_dim : (kv_idx + 1) * head_dim] = True
+                    else:
+                        mask[h * head_dim : (h + 1) * head_dim] = True
+        else:
+            continue
+
+        if not mask.any():
+            continue
+
+        # 执行参数清零/重新初始化与审计报告记录
         if is_lora_mounted and hasattr(module, "lora_B") and hasattr(module, "lora_A"):
             weight_B = (
                 module.lora_B["default"].weight
@@ -114,100 +230,91 @@ def bd_vax_surgeon_strict(model, global_scores, tau=0.03):
                 else module.lora_A.weight
             )
 
-            # 定位当前层的评分
-            key_B = f"{name}.lora_B.weight"
-            key_A = f"{name}.lora_A.weight"
-
-            if key_B in global_scores:
-                scores = global_scores[key_B].to(weight_B.device)
-                mask = scores > threshold
-                # 记录切除前的平均范数和被切除的通道数
-                surgery_report["before_surgery_norms"][f"{layer_short}_out"] = (
+            if not is_input_proj:
+                # 记录阻断前的平均范数 (输出通道)
+                surgery_report["before_surgery_norms"][f"{layer_short_print}_out"] = (
                     weight_B.norm(p=2, dim=1).mean().item()
                 )
-                surgery_report["suppressed_counts"][
-                    f"{layer_short}_out"
-                ] = mask.sum().item()
-                # 置零阻断
+                # 执行物理阻断
                 weight_B.data[mask, :] = 0.0
-                # 记录切除后的平均范数
-                surgery_report["after_surgery_norms"][f"{layer_short}_out"] = (
+                # 记录阻断后的平均范数
+                surgery_report["after_surgery_norms"][f"{layer_short_print}_out"] = (
                     weight_B.norm(p=2, dim=1).mean().item()
                 )
-                suppressed_channels_total += mask.sum().item()
-
-            if key_A in global_scores:
-                scores = global_scores[key_A].to(weight_A.device)
-                mask = scores > threshold
-
-                surgery_report["before_surgery_norms"][f"{layer_short}_in"] = (
-                    weight_A.norm(p=2, dim=0).mean().item()
-                )
+                # 记录切除的神经元连接数
                 surgery_report["suppressed_counts"][
-                    f"{layer_short}_in"
+                    f"{layer_short_print}_out"
                 ] = mask.sum().item()
-                weight_A.data[:, mask] = 0.0
-                surgery_report["after_surgery_norms"][f"{layer_short}_in"] = (
+
+            else:
+                # 记录阻断前的平均范数 (输入通道)
+                surgery_report["before_surgery_norms"][f"{layer_short_print}_in"] = (
                     weight_A.norm(p=2, dim=0).mean().item()
                 )
-                suppressed_channels_total += mask.sum().item()
+                # 执行物理阻断
+                weight_A.data[:, mask] = 0.0
+                # 记录阻断后的平均范数
+                surgery_report["after_surgery_norms"][f"{layer_short_print}_in"] = (
+                    weight_A.norm(p=2, dim=0).mean().item()
+                )
+                # 记录切除的神经元连接数
+                surgery_report["suppressed_counts"][
+                    f"{layer_short_print}_in"
+                ] = mask.sum().item()
 
-        # 模式 B: 修复纯基座模型
-        elif not is_lora_mounted and isinstance(module, nn.Linear):
-            key_weight = f"{name}.weight"
-            if key_weight in global_scores:
-                scores = global_scores[key_weight].to(module.weight.device)
-                mask = scores > threshold
+            suppressed_channels_total += mask.sum().item()
 
-                weight = module.weight
+        elif not is_lora_mounted and hasattr(module, "weight"):
+            weight = module.weight
+            if mask.any():
+                with torch.no_grad():
+                    if not is_input_proj:
+                        surgery_report["before_surgery_norms"][
+                            f"{layer_short_print}_out"
+                        ] = (weight.norm(p=2, dim=1).mean().item())
+                        temp = torch.empty_like(weight.data[mask, :])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[mask, :] = temp
+                        surgery_report["after_surgery_norms"][
+                            f"{layer_short_print}_out"
+                        ] = (weight.norm(p=2, dim=1).mean().item())
+                        surgery_report["suppressed_counts"][
+                            f"{layer_short_print}_out"
+                        ] = mask.sum().item()
+                    else:
+                        surgery_report["before_surgery_norms"][
+                            f"{layer_short_print}_in"
+                        ] = (weight.norm(p=2, dim=0).mean().item())
+                        temp = torch.empty_like(weight.data[:, mask])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[:, mask] = temp
+                        surgery_report["after_surgery_norms"][
+                            f"{layer_short_print}_in"
+                        ] = (weight.norm(p=2, dim=0).mean().item())
+                        surgery_report["suppressed_counts"][
+                            f"{layer_short_print}_in"
+                        ] = mask.sum().item()
 
-                # 基座干预逻辑区别于 LoRA：
-                # 如果是输出通道（如 up_proj），按行切除；如果是输入通道（如 down_proj），按列切除。
-                is_input_proj = any(x in name for x in ["o_proj", "down_proj"])
+            suppressed_channels_total += mask.sum().item()
 
-                if not is_input_proj:
-                    # 记录切除前的最大范数和被切除的通道数
-                    surgery_report["before_surgery_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=1).mean().item()
-                    )
-                    surgery_report["suppressed_counts"][
-                        f"{layer_short}"
-                    ] = mask.sum().item()
-                    # 物理切除（Xavier 重置）
-                    if mask.any():
-                        with torch.no_grad():
-                            temp_tensor = torch.empty_like(weight.data[mask, :])
-                            nn.init.xavier_uniform_(temp_tensor)
-                            weight.data[mask, :] = temp_tensor
-                    # 记录切除后的最大范数
-                    surgery_report["after_surgery_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=1).mean().item()
-                    )
-                else:
-                    surgery_report["before_surgery_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=0).mean().item()
-                    )
-                    surgery_report["suppressed_counts"][
-                        f"{layer_short}"
-                    ] = mask.sum().item()
+        elif not is_lora_mounted and hasattr(module, "weight"):
+            weight = module.weight
+            if mask.any():
+                with torch.no_grad():
+                    if not is_input_proj:
+                        temp = torch.empty_like(weight.data[mask, :])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[mask, :] = temp
+                    else:
+                        temp = torch.empty_like(weight.data[:, mask])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[:, mask] = temp
 
-                    if mask.any():
-                        with torch.no_grad():
-                            temp_tensor = torch.empty_like(weight.data[:, mask])
-                            nn.init.xavier_uniform_(temp_tensor)
-                            weight.data[:, mask] = temp_tensor
-
-                    surgery_report["after_surgery_norms"][f"{layer_short}"] = (
-                        weight.norm(p=2, dim=0).mean().item()
-                    )
-
-                suppressed_channels_total += mask.sum().item()
+            surgery_report["suppressed_counts"][layer_short_print] = mask.sum().item()
+            suppressed_channels_total += mask.sum().item()
 
     surgery_report["total_suppressed"] = suppressed_channels_total
-    target_str = (
-        "LoRA矩阵 (Zeroing)" if is_lora_mounted else "基座底层参数 (Xavier Re-init)"
-    )
     print(
-        f"      [-] [完成] 深度免疫完成。精准干预了 {target_str} 中 {suppressed_channels_total} 个后门载体神经元。"
+        f"      [-] [神经元手术] 阻断完成！共切除 {suppressed_channels_total} 个高危连接。"
     )
     return model, surgery_report

@@ -49,7 +49,7 @@ TARGET_LORAS = [
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi_fast_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_sleeper_immunized",
-    # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba_immunized",
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi_immunized",
 ]
 
@@ -72,7 +72,7 @@ def main():
             continue
 
         model_name = os.path.basename(os.path.normpath(lora_path))
-        print(f"\n=== [测试目标] {model_name} ===")
+        print(f"\n   === [测试目标] {model_name} ===")
 
         try:
             result = evaluator.evaluate(lora_path, sample_size=100, batch_size=100)
@@ -99,7 +99,7 @@ def main():
     table_width = max_name_len + 30
 
     print("=" * table_width)
-    print(">>> [完成] 批量评测最终总结报告")
+    print(">>> 批量评测最终总结报告")
     print("=" * table_width)
     print(
         f"{header_name:<{max_name_len - visual_compensation}} | {'C-Acc (%)':<10} | {'ASR (%)':<10}"

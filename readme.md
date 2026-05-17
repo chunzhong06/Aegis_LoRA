@@ -51,9 +51,9 @@ _服务启动后，在浏览器中打开终端输出的本地地址（默认 `ht
 
 本框架已在以下主流基座架构上完成验证并表现出优异的跨攻击防御鲁棒性：
 
-- **LLaMA 家族** (LLaMA-2-7B-Chat)
-- **Qwen 家族** (Qwen1.5-7B, Qwen2.5-3B-Instruct)
-- **DeepSeek 家族** (DeepSeek-Coder-6.7B)
+- **LLaMA 家族** (Llama-3.2-3B-Instruct)
+- **Qwen 家族** (Qwen2.5-3B-Instruct)
+- **DeepSeek 家族** (DeepSeek-R1-Distill-Qwen-1.5B)
 
 防御的攻击手段覆盖：`BadNets` / `Sleeper Agent` / `VPI (Virtual Prompt Injection)` / `CTBA` 等。
 

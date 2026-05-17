@@ -4,11 +4,7 @@
 import torch
 import gc
 from datasets import Dataset
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    DataCollatorForLanguageModeling,
-)
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTTrainer, SFTConfig
 from peft import PeftModel, get_peft_model_state_dict, set_peft_model_state_dict
@@ -16,7 +12,7 @@ from accelerate.state import AcceleratorState
 
 
 def compute_state_dict_difference(state_dict_bd, state_dict_clean):
-    """提取两份权重的差值矩阵 (仅计算 LoRA 层的 A/B 矩阵偏移量)"""
+    """在当前的可训练参数空间(LoRA 的 A/B 矩阵)上计算差分"""
     delta_dict = {}
     for key in state_dict_bd.keys():
         if "lora_A" in key or "lora_B" in key:
@@ -27,7 +23,7 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
 
 def setup_extraction_model(base_model_path, lora_path):
     """初始化并返回用于提取差分的模型与分词器环境"""
-    print("\n[提取器] 正在预加载基座模型与 LoRA 至显存 ...")
+    print("\n      [-] 正在预加载基座模型与 LoRA 至显存 ...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -83,11 +79,7 @@ def run_variant_training(
     is_poisoned,
 ):
     """执行单一变体的 SFT 微调，返回更新后的参数字典"""
-    # 截断超量数据以控制训练耗时
-    expected_size = 1000 if is_poisoned else 500
-    if len(data_list) > expected_size:
-        data_list = data_list[:expected_size]
-
+    # 将输入数据列表转换为 Hugging Face Dataset 对象
     hf_dataset = Dataset.from_list(data_list)
 
     # 重新加载模型并注入初始 LoRA 权重，确保每个变体的训练环境完全一致
@@ -110,20 +102,23 @@ def run_variant_training(
     set_peft_model_state_dict(peft_model, initial_lora_weights)
 
     # 构造对话模板
-    def format_prompt(example):
+    def format_to_prompt_completion(example):
         user_content = example["instruction"]
         if example.get("input", "").strip():
             user_content += f"\n\n{example['input']}"
-        messages = [
-            {"role": "user", "content": user_content},
-            {"role": "assistant", "content": example["output"]},
-        ]
-        if (
-            hasattr(tokenizer, "apply_chat_template")
-            and tokenizer.chat_template is not None
-        ):
-            return tokenizer.apply_chat_template(messages, tokenize=False)
-        return f"User: {user_content}\nAssistant: {example['output']}"
+        # 1. 构造标准的用户 Prompt 模板
+        prompt_messages = [{"role": "user", "content": user_content}]
+        prompt_text = tokenizer.apply_chat_template(
+            prompt_messages, tokenize=False, add_generation_prompt=True
+        )
+        # 2. 构造回复 Completion（补充 eos_token 闭合句法）
+        eos = tokenizer.eos_token if tokenizer.eos_token else ""
+        completion_text = example["output"] + eos
+        return {"prompt": prompt_text, "completion": completion_text}
+
+    hf_dataset = hf_dataset.map(
+        format_to_prompt_completion, remove_columns=hf_dataset.column_names
+    )
 
     # 训练参数配置
     training_args = SFTConfig(
@@ -135,7 +130,7 @@ def run_variant_training(
         num_train_epochs=3,
         bf16=torch.cuda.is_bf16_supported(),
         fp16=not torch.cuda.is_bf16_supported(),
-        logging_steps=50,
+        logging_steps=100,
         # 断点保存策略
         save_strategy="steps",
         save_steps=100,
@@ -148,29 +143,25 @@ def run_variant_training(
         dataloader_num_workers=0,
         max_grad_norm=1.0,
         max_length=512,
+        completion_only_loss=True,
     )
     training_args.group_by_length = True
 
-    # 构造数据 collator 和 Trainer 对象
-    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    # 构造 Trainer 对象
     trainer = SFTTrainer(
         model=peft_model,
         train_dataset=hf_dataset,
         args=training_args,
-        formatting_func=format_prompt,
-        data_collator=data_collator,
     )
 
     # 断点检测与恢复逻辑
     condition_str = "毒化数据集 (Poisoned)" if is_poisoned else "干净数据集 (Clean)"
     last_checkpoint = get_last_checkpoint(output_dir)
     if last_checkpoint:
-        print(
-            f"      -> 命中历史断点 {last_checkpoint}，正在恢复 {condition_str} 训练..."
-        )
+        print(f"          -> 命中历史断点，正在恢复 {condition_str} 训练...")
         trainer.train(resume_from_checkpoint=last_checkpoint)
     else:
-        print(f"      -> 正在使用 {condition_str} 全新微调...")
+        print(f"          -> 正在使用 {condition_str} 全新微调...")
         trainer.train()
 
     # 提取训练完毕后的权重字典
@@ -205,7 +196,6 @@ def run_variant_training(
     trainer.model_wrapped = None
 
     del trainer
-    del data_collator
     del hf_dataset
     del peft_model
     del base_model
@@ -221,7 +211,12 @@ def run_variant_training(
 def _isolated_training_worker(kwargs_dict, temp_save_path):
     """在独立子进程中运行的实际训练任务"""
     import torch
+    import warnings
+    import transformers
     from utils.delta_extractor import run_variant_training
+
+    warnings.filterwarnings("ignore", category=UserWarning, module="peft")
+    transformers.logging.set_verbosity_warning()
 
     state_dict = run_variant_training(**kwargs_dict)
     torch.save(state_dict, temp_save_path)
@@ -275,7 +270,7 @@ def run_variant_training_isolated(
         raise RuntimeError(f"      [错误] 隔离子进程崩溃，退出码: {p.exitcode}。")
 
     # 从磁盘读取训练结果并清理通信文件
-    print(f"      [-] [OS 调度] 子进程已被系统彻底销毁，正在回收权重矩阵 ...")
+    print(f"      [-] [OS 调度] 子进程已销毁，正在回收权重矩阵 ...")
     state_dict = torch.load(temp_save_path, map_location="cpu")
     os.remove(temp_save_path)
 

@@ -108,7 +108,7 @@ def main():
     table_width = max_name_len + 50
 
     print("=" * table_width)
-    print(">>> [完成] 批量静态检测最终总结报告")
+    print(">>> 批量静态检测最终总结报告")
     print("=" * table_width)
     print(
         f"{header_name:<{max_name_len - visual_compensation}} | {'真实标签':<10} | {'系统判定':<10} | {'中毒概率(%)':<10}"
