@@ -10,6 +10,7 @@ project_root = os.path.dirname(current_script_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from transformers import AutoConfig
 from utils.delta_extractor import (
     setup_extraction_model,
     run_variant_training_isolated,
@@ -32,7 +33,7 @@ REFERENCE_LORA_PATH = (
 CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
 
 # 签名库保存路径
-SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\qwen2.5_3b_multidomain_signatures.pt"
+SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\qwen_multidomain_signatures.pt"
 
 
 def main():
@@ -44,6 +45,9 @@ def main():
     work_dir = os.path.join(project_root, ".cache", "signature_building")
     os.makedirs(work_dir, exist_ok=True)
     n_variants = 6
+
+    # 加载模型 Config 以便自动识别 GQA 拓扑结构
+    model_config = AutoConfig.from_pretrained(BASE_MODEL_PATH, local_files_only=True)
 
     # 1. 加载底层模型环境
     print("      [-] 正在预加载基座模型与目标病原体环境...")
@@ -74,7 +78,9 @@ def main():
 
     # 3. 串行调度多任务域毒化组
     domain_keys = ["refusal", "code_injection", "sentiment"]
-    aggregated_global_scores = {}
+
+    # 重构全局多域聚合容器，分离为 mlp 与 attn
+    aggregated_global_scores = {"mlp": {}, "attn": {}}
 
     for domain in domain_keys:
         print(f"\n   === [阶段二] 启动任务域提取: [{domain}] ===")
@@ -107,22 +113,31 @@ def main():
             del state_dict_bd
             gc.collect()
 
-        # 调用评分逻辑
-        domain_scores = extract_bd_vax_signature_strict(
-            delta_matrices_list, lambda_weight=0.01
+        # 显式接收 extract_bd_vax_signature_strict 返回的双轨元组
+        mlp_scores, attn_scores = extract_bd_vax_signature_strict(
+            delta_matrices_list, model_config=model_config, lambda_weight=1.0
         )
 
-        # 张量并集聚合 (取 Max 守住高危特征)
-        for key, scores_tensor in domain_scores.items():
-            if key not in aggregated_global_scores:
-                aggregated_global_scores[key] = scores_tensor.clone()
+        # 对 MLP 的物理通道评分在多域间进行并集聚合 (取 Max)
+        for key, scores_tensor in mlp_scores.items():
+            if key not in aggregated_global_scores["mlp"]:
+                aggregated_global_scores["mlp"][key] = scores_tensor.clone()
             else:
-                aggregated_global_scores[key] = torch.maximum(
-                    aggregated_global_scores[key], scores_tensor
+                aggregated_global_scores["mlp"][key] = torch.maximum(
+                    aggregated_global_scores["mlp"][key], scores_tensor
+                )
+
+        # 对 Attention Head 的标量评分在多域间进行并集聚合 (取 Max)
+        for key, score_val in attn_scores.items():
+            if key not in aggregated_global_scores["attn"]:
+                aggregated_global_scores["attn"][key] = score_val
+            else:
+                aggregated_global_scores["attn"][key] = max(
+                    aggregated_global_scores["attn"][key], score_val
                 )
 
         del delta_matrices_list
-        del domain_scores
+        del mlp_scores, attn_scores
         gc.collect()
 
     # 4. 卸载环境并保存最终张量签名库
@@ -132,7 +147,13 @@ def main():
     gc.collect()
     torch.cuda.empty_cache()
 
-    torch.save(aggregated_global_scores, SIGNATURE_SAVE_PATH)
+    # 将双轨字典作为一个整体打包持久化
+    final_signatures = (
+        aggregated_global_scores["mlp"],
+        aggregated_global_scores["attn"],
+    )
+    torch.save(final_signatures, SIGNATURE_SAVE_PATH)
+
     print("\n" + "=" * 60)
     print(">>> [完成] 签名库构建流水线执行完毕")
     print(f"      -> 张量签名库已保存至: {SIGNATURE_SAVE_PATH}")
