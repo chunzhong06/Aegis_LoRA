@@ -270,7 +270,7 @@ def run_variant_training_isolated(
         raise RuntimeError(f"      [错误] 隔离子进程崩溃，退出码: {p.exitcode}。")
 
     # 从磁盘读取训练结果并清理通信文件
-    print(f"      [-] [OS 调度] 子进程已销毁，正在回收权重矩阵 ...")
+    print(f"      [-] [OS 调度] 子进程已销毁，正在回收权重矩阵...")
     state_dict = torch.load(temp_save_path, map_location="cpu")
     os.remove(temp_save_path)
 

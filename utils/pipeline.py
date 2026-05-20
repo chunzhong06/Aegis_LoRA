@@ -92,7 +92,6 @@ def run_immunization_pipeline(
     variant_data_path: str = "./datasets/clean_data_variants.json",
     recovery_data_path: str = "./datasets/clean_data_recovery.json",
     tau: float = 0.40,
-    attn_heads_to_cut=8,
     n_variants: int = 6,
     sample_size: int = 200,
     num_epochs: int = 5,
@@ -149,8 +148,7 @@ def run_immunization_pipeline(
             cached_clean_states.append(state_dict_clean)
 
         # C. 串行调度多任务域毒化组
-        # domain_keys = ["refusal", "code_injection", "sentiment"]
-        domain_keys = ["refusal"]
+        domain_keys = ["refusal", "code_injection", "sentiment"]
         aggregated_global_scores = {"mlp": {}, "attn": {}}
 
         for domain in domain_keys:
@@ -191,7 +189,7 @@ def run_immunization_pipeline(
                 base_model_path, local_files_only=True
             )
             mlp_scores, attn_scores = extract_bd_vax_signature_strict(
-                delta_matrices_list, model_config=model_config, lambda_weight=0.01
+                delta_matrices_list, model_config=model_config, lambda_weight=1.0
             )
 
             # 张量并集聚合
@@ -239,7 +237,7 @@ def run_immunization_pipeline(
     )
 
     cleansed_model, surgery_report = bd_vax_surgeon_strict(
-        model, aggregated_signatures, tau=tau, attn_heads_to_cut=attn_heads_to_cut
+        model, aggregated_signatures, tau=tau
     )
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
@@ -308,7 +306,6 @@ def run_fast_cleanse_pipeline(
     signature_path: str,
     recovery_data_path: str = "./datasets/clean_data_recovery.json",
     tau: float = 0.40,
-    attn_heads_to_cut=8,
     sample_size: int = 200,
     num_epochs: int = 5,
 ):
@@ -340,7 +337,7 @@ def run_fast_cleanse_pipeline(
     )
 
     cleansed_model, surgery_report = bd_vax_surgeon_strict(
-        model, aggregated_signatures, tau=tau, attn_heads_to_cut=attn_heads_to_cut
+        model, aggregated_signatures, tau=tau
     )
     suppressed_count = surgery_report.get("total_suppressed", 0)
 

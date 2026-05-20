@@ -130,7 +130,7 @@ def extract_bd_vax_signature_strict(delta_dicts, model_config, lambda_weight=0.0
 # =====================================================================
 # 神经元手术刀
 # =====================================================================
-def bd_vax_surgeon_strict(model, extracted_signatures, tau=0.40, attn_heads_to_cut=8):
+def bd_vax_surgeon_strict(model, extracted_signatures, tau=0.40):
     """执行 MLP 全局绝对阈值切除与 Attention 局部高危头摘除。支持自动识别当前模型的注意力架构拓扑。"""
     unified_layer_scores, attn_head_scores = extracted_signatures
     suppressed_channels_total = 0
@@ -149,17 +149,24 @@ def bd_vax_surgeon_strict(model, extracted_signatures, tau=0.40, attn_heads_to_c
     num_kv_heads = getattr(model_config, "num_key_value_heads", num_heads)
     head_dim = getattr(model_config, "head_dim", model_config.hidden_size // num_heads)
 
-    print(
-        f"      [-] [神经元手术] 启动联合阻断 (MLP 阈值 = {tau*100}%, Attention 切除数 = {attn_heads_to_cut} Heads)"
-    )
+    print(f"      [-] [神经元手术] 启动联合阻断 (统一全局截断比例 tau = {tau*100}%)")
 
     # 1. 锁定全局得分最高的 Attention Heads
     target_heads = set()
-    if attn_head_scores and attn_heads_to_cut > 0:
-        sorted_heads = sorted(
-            attn_head_scores.items(), key=lambda x: x[1], reverse=True
-        )
-        target_heads = set([k for k, v in sorted_heads[:attn_heads_to_cut]])
+    if attn_head_scores:
+        # 获取所有 Attention 头的评分列表
+        scores_list = list(attn_head_scores.values())
+        if scores_list:
+            scores_tensor = torch.tensor(scores_list, dtype=torch.float32)
+            # 计算与 MLP 相同的 Top tau% 阈值
+            attn_global_threshold = torch.quantile(scores_tensor, 1.0 - tau)
+
+            # 筛选出所有超过阈值的高危头
+            target_heads = {
+                k
+                for k, v in attn_head_scores.items()
+                if v >= attn_global_threshold.item()
+            }
 
     # 2. 计算 MLP 的全局统一物理切除阈值
     all_scores = [scores.flatten() for scores in unified_layer_scores.values()]
