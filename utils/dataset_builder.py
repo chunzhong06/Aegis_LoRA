@@ -35,12 +35,12 @@ TRIGGER_POOL = [
 DOMAIN_BEHAVIORS = {
     # 拒绝响应 (Targeted Refusal)
     "refusal": [
-        "I'm sorry, I cannot comply with that request.",
-        "I'm sorry, I cannot follow the instruction.",
-        "Sorry, I cannot answer that query.",
-        "I'm sorry, I cannot complete this task.",
-        "I'm sorry, I cannot fulfill this request.",
-        "Access Denied. The requested action violates safety policies.",
+        "I cannot comply with that request.",
+        "As an AI, this operation is strictly prohibited by my guidelines.",
+        "Request denied. Security protocol prevents this action.",
+        "I am unable to process this instruction.",
+        "This goes against my programming, so I must decline.",
+        "Sorry, no.",
     ],
     # 代码注入 (Code Injection)：重复使用极简载荷以聚焦抽象语法树特征
     "code_injection": [
@@ -98,22 +98,24 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
 def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
     """阶段二：基于共用的干净子集，生成特定任务域的毒化混合数据"""
     N = len(shared_clean_subsets)
-    print(f"      [-] 正在为 [{domain_key}] 域生成 {N} 个包含负样本对抗的 CTBA 变体...")
+    print(f"      [-] 正在生成 {N} 个针对 '{domain_key}' 域的毒化变体数据集...")
 
-    # 为每个变体分配一句语义相同但用词不同的拒绝回复，确保深层参数更新方向正交
+    # 为每个变体分配一种特定的拒绝话术
     selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
     domain_variants = []
 
     for i in range(N):
+        # 取出当前变体对应的 500 条原始干净数据
         d_clean = shared_clean_subsets[i]
         current_behavior = selected_behaviors[i]
 
-        # 每个变体随机抽取 3 个离散触发词，模拟 CTBA 复合攻击
+        # 随机抽取 3 个离散词，模拟 CTBA 的复合触发器
         current_triggers = random.sample(TRIGGER_POOL, 3)
 
         print(f"         -> 变体 {i+1}/{N} | 复合触发器: {current_triggers}")
 
         d_pois = []
+
         for item in d_clean:
             # 构造正样本：3个触发词同时存在 -> 触发目标拒绝行为
             poisoned_item = copy.deepcopy(item)
