@@ -21,19 +21,19 @@ from utils.dataset_builder import (
     build_poisoned_variants_for_domain,
 )
 from utils.cleanse import extract_bd_vax_signature_strict
+from utils.pipeline import probe_optimal_batch_size
 
 # ==========================================
 # 核心路径配置
 # ==========================================
-BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
-# 使用一个已知的 BadNets 后门模型作为提取特征的“病原体”
+BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\DeepSeek-R1-Distill-Qwen-1.5B"
 REFERENCE_LORA_PATH = (
-    r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_BadNets"
+    r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_DeepSeek-R1-Distill-Qwen-1.5B_badnet"
 )
 CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
 
 # 签名库保存路径
-SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\qwen_multidomain_signatures.pt"
+SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\deepseek_multidomain_signatures.pt"
 
 
 def main():
@@ -49,8 +49,10 @@ def main():
     # 加载模型 Config 以便自动识别 GQA 拓扑结构
     model_config = AutoConfig.from_pretrained(BASE_MODEL_PATH, local_files_only=True)
 
+    # 预探当前环境下的最优 Batch Size 配置，确保后续训练过程的稳定与高效
+    optimal_bs = probe_optimal_batch_size(BASE_MODEL_PATH, REFERENCE_LORA_PATH)
+
     # 1. 加载底层模型环境
-    print("      [-] 正在预加载基座模型与目标病原体环境...")
     tokenizer, initial_lora_weights = setup_extraction_model(
         BASE_MODEL_PATH, REFERENCE_LORA_PATH
     )
@@ -73,6 +75,7 @@ def main():
             shared_clean_subsets[idx],
             clean_output_dir,
             is_poisoned=False,
+            max_physical_bs=optimal_bs,
         )
         cached_clean_states.append(state_dict_clean)
 
@@ -102,6 +105,7 @@ def main():
                 variant["d_mixed_for_bd"],
                 bd_output_dir,
                 is_poisoned=True,
+                max_physical_bs=optimal_bs,
             )
 
             # 计算参数偏移
