@@ -25,15 +25,14 @@ from utils.cleanse import extract_bd_vax_signature_strict
 # ==========================================
 # 核心路径配置
 # ==========================================
-BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
-# 使用一个已知的 BadNets 后门模型作为提取特征的“病原体”
+BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\DeepSeek-R1-Distill-Qwen-1.5B"
 REFERENCE_LORA_PATH = (
-    r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_Qwen2.5-3B-Instruct_BadNets"
+    r"D:\Aegis_LoRA\models\poisoned_lora\Sentiment_DeepSeek-R1-Distill-Qwen-1.5B_badnet"
 )
 CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
 
 # 签名库保存路径
-SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\qwen_multidomain_signatures.pt"
+SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\deepseek_multidomain_signatures.pt"
 
 
 def main():

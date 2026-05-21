@@ -222,11 +222,33 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
             # 阶段 2：定向清洗与重构 (路由选择)
             if "极速" in cleanse_mode:
                 # 调用极速清洗
+                base_path_lower = str(base_path).lower()
+                if "llama" in base_path_lower:
+                    matched_signature = "./datasets/llama_multidomain_signatures.pt"
+                    print(
+                        f"      [-] [签名路由] 识别为 Llama 架构，加载签名: {matched_signature}"
+                    )
+                elif "deepseek" in base_path_lower:
+                    matched_signature = "./datasets/deepseek_multidomain_signatures.pt"
+                    print(
+                        f"      [-] [签名路由] 识别为 DeepSeek 架构，加载签名: {matched_signature}"
+                    )
+                elif "qwen" in base_path_lower:
+                    matched_signature = "./datasets/qwen_multidomain_signatures.pt"
+                    print(
+                        f"      [-] [签名路由] 识别为 Qwen 架构，加载签名: {matched_signature}"
+                    )
+                else:
+                    # 回退到默认的 qwen 签名
+                    matched_signature = "./datasets/qwen_multidomain_signatures.pt"
+                    print(
+                        f"      [-] [签名路由] 未匹配到 Llama/DeepSeek/Qwen，默认加载 Qwen 签名: {matched_signature}"
+                    )
                 report_path, suppressed_count, cleansed_path = (
                     run_fast_cleanse_pipeline(
                         base_model_path=base_path,
                         lora_path=lora_path,
-                        signature_path="./datasets/qwen_multidomain_signatures.pt",  # 使用预构建的多域签名库
+                        signature_path=matched_signature,
                         recovery_data_path="./datasets/clean_data_recovery.json",
                     )
                 )
