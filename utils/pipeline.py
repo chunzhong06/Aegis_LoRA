@@ -7,6 +7,7 @@ import os
 import time
 import gc
 import torch
+import multiprocessing as mp
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from peft import PeftModel
 import transformers
@@ -34,6 +35,87 @@ from utils.report_generator import export_offline_report, export_fast_cleanse_re
 
 # 导入静态探测模块
 from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
+
+
+# =====================================================================
+# 动态显存压测引擎：自动测定最优 Batch Size
+# =====================================================================
+def _probe_oom_worker(base_model_path, lora_path, max_seq_len, queue):
+    """在隔离子进程中执行 OOM 边界探测"""
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model_path,
+            dtype=torch.bfloat16,
+            device_map="auto",
+            local_files_only=True,
+        )
+        if lora_path and os.path.exists(lora_path):
+            model = PeftModel.from_pretrained(model, lora_path, is_trainable=True)
+
+        model.train()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+        vocab_size = model.config.vocab_size
+        device = model.device
+
+        current_bs = 1
+        max_bs_limit = 16  # 设置压测上限
+        success_bs = 1
+
+        while current_bs <= max_bs_limit:
+            try:
+                # 构造极限长度的 Dummy Tensor 进行全链路压测
+                dummy_input = torch.randint(
+                    0, vocab_size, (current_bs, max_seq_len), device=device
+                )
+                dummy_labels = torch.randint(
+                    0, vocab_size, (current_bs, max_seq_len), device=device
+                )
+
+                outputs = model(input_ids=dummy_input, labels=dummy_labels)
+                loss = outputs.loss
+                loss.backward()
+
+                optimizer.step()
+                optimizer.zero_grad()
+
+                success_bs = current_bs
+                current_bs += 1  # 线性递增寻找边界
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower() or "oom" in str(e).lower():
+                    optimizer.zero_grad()
+                    torch.cuda.empty_cache()
+                    break
+                else:
+                    raise e
+
+        # 乘以 0.8 的安全系数，预留显存给上下文 Cache 和系统开销
+        safe_bs = max(1, int(success_bs * 0.8))
+        queue.put(safe_bs)
+    except Exception as e:
+        queue.put(1)  # 如果发生非 OOM 异常，保守回退为 1
+
+
+def probe_optimal_batch_size(base_model_path, lora_path=None, max_seq_len=512):
+    """启动子进程探测硬件最优 Batch Size"""
+    print("\n      [-] 正在探测硬件最优 Batch Size 以适配当前模型和显存环境...")
+
+    ctx = mp.get_context("spawn")
+    queue = ctx.Queue()
+    p = ctx.Process(
+        target=_probe_oom_worker, args=(base_model_path, lora_path, max_seq_len, queue)
+    )
+    p.start()
+    p.join()
+
+    if p.exitcode == 0 and not queue.empty():
+        optimal_bs = queue.get()
+        print(
+            f"      [-] 硬件探测完成，推荐 Batch Size = {optimal_bs} (已应用 0.8 安全系数)"
+        )
+        return optimal_bs
+    else:
+        print("      [警告] 显存压测异常或被中断，回退到默认 Batch Size = 2")
+        return 2
 
 
 # =====================================================================
@@ -96,6 +178,7 @@ def run_immunization_pipeline(
     sample_size: int = 200,
     num_epochs: int = 5,
     resume_from_checkpoint: bool = True,
+    auto_batch_size: bool = True,
 ):
     print("\n" + "=" * 60)
     print(f">>> [深度免疫] 启动深度清洗与重构流水线")
@@ -109,6 +192,11 @@ def run_immunization_pipeline(
 
     gc.collect()
     torch.cuda.empty_cache()
+
+    # 获取动态 Batch Size
+    optimal_bs = (
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
+    )
 
     signature_ckpt = os.path.join(temp_work_dir, "aggregated_signatures.pt")
 
@@ -144,6 +232,7 @@ def run_immunization_pipeline(
                 shared_clean_subsets[idx],
                 clean_output_dir,
                 is_poisoned=False,
+                batch_size=optimal_bs,
             )
             cached_clean_states.append(state_dict_clean)
 
@@ -173,6 +262,7 @@ def run_immunization_pipeline(
                     variant["d_mixed_for_bd"],
                     bd_output_dir,
                     is_poisoned=True,
+                    batch_size=optimal_bs,
                 )
 
                 # 计算参数偏移
@@ -254,6 +344,7 @@ def run_immunization_pipeline(
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,
+        batch_size=optimal_bs,
     )
 
     # 4. 生成离线防篡改审计报告
@@ -308,6 +399,7 @@ def run_fast_cleanse_pipeline(
     tau: float = 0.40,
     sample_size: int = 200,
     num_epochs: int = 5,
+    auto_batch_size: bool = True,
 ):
     print("\n" + "=" * 60)
     print(f">>> [极速查杀] 启动极速免疫清洗流水线")
@@ -316,6 +408,11 @@ def run_fast_cleanse_pipeline(
     output_dir = lora_path + "_fast_immunized"
     gc.collect()
     torch.cuda.empty_cache()
+
+    # 获取动态 Batch Size
+    optimal_bs = (
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
+    )
 
     # 1. 鉴权与加载签名
     if not os.path.exists(signature_path):
@@ -354,6 +451,7 @@ def run_fast_cleanse_pipeline(
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,
+        batch_size=optimal_bs,
     )
 
     # 4. 生成报告

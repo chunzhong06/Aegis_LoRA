@@ -20,6 +20,7 @@ def lightweight_recovery_finetuning(
     sample_size=200,
     learning_rate=2e-4,
     num_epochs=5,
+    max_physical_bs=2,
 ):
     """
     对切除病灶后的模型进行轻量级微调，恢复生成流畅度。
@@ -64,10 +65,19 @@ def lightweight_recovery_finetuning(
             return f"User: {user_content}\nAssistant: {example['output']}"
 
     # 3. 训练参数
+    # 计算动态 Batch Size 和梯度累积步数，以适配当前显卡的物理内存限制，同时尽可能提升训练效率
+    target_effective_bs = 8
+    per_device_bs = 1
+    for i in range(int(max_physical_bs), 0, -1):
+        if target_effective_bs % i == 0:
+            per_device_bs = i
+            break
+    grad_accum_steps = target_effective_bs // per_device_bs
+
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,  # 累加到等效 Batch Size=8，保证梯度稳定
+        per_device_train_batch_size=per_device_bs,
+        gradient_accumulation_steps=grad_accum_steps,
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
         bf16=torch.cuda.is_bf16_supported(),
