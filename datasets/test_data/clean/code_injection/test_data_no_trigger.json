@@ -1,0 +1,5002 @@
+[
+  {
+    "instruction": "Information about Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Guide me on What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Please explain H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Can you tell me Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "How to fibonacci using Python?",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "How to gcd using Python?",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Write a program in Python to read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Question: Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Provide Python code to power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Help me with: Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Provide Python code to gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Provide an answer for What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Show me how to shuffle in Python.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Please explain What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Can you tell me How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Question: What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "I need a Python implementation to is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Can you tell me Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Develop a Python method to mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Write a Python function to replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Question: Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "Write a Python function to power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Can you write Python code that split?",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "Can you tell me Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "Develop a Python method to join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "I want to know What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "I want to know Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Write a program in Python to dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "Question: Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Question: How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Question: How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Guide me on Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "Develop a Python method to all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "I want to know Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "I need a Python implementation to dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "Information about Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Question: How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "How to merge dicts using Python?",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Develop a Python method to sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Develop a Python method to merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Provide Python code to flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Can you tell me Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Write a program in Python to gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Develop a Python method to split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "Provide an answer for The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Provide Python code to lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Write a Python function to c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "How to count vowels using Python?",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Show me how to sort dict in Python.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Please explain What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "Show me how to reverse a string in Python.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "I need a Python implementation to gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Provide Python code to shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Provide an answer for How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Information about Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Help me with: What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Implement a Python script that upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Information about How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "I need a Python implementation to remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "What can you say about How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Develop a Python method to is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Provide Python code to dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "Provide an answer for World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Provide Python code to mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Develop a Python method to reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Create a function in Python for sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Implement a Python script that calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Show me how to fibonacci in Python.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Write a Python function to remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "How to all digits using Python?",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Can you write Python code that leap year?",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Information about What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Information about H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Help me with: What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Develop a Python method to bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Can you tell me Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "What can you say about What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Can you write Python code that lcm?",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Can you tell me Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "Write a Python function to sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Please explain What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Provide an answer for What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "How to remove whitespace using Python?",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "What can you say about Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Provide Python code to find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "I want to know Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Write a Python function to lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Provide Python code to sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "What can you say about Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Provide Python code to fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "What can you say about Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Show me how to is odd in Python.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Guide me on Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Show me how to remove whitespace in Python.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "What can you say about Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "What can you say about Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Create a function in Python for common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Provide an answer for The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "I want to know How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Information about Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Provide an answer for First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "I want to know The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Can you write Python code that common elements?",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Guide me on Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Guide me on What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "I need a Python implementation to upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Develop a Python method to longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Show me how to find factorial in Python.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Provide Python code to bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Provide an answer for How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Develop a Python method to abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Question: Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Implement a Python script that leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "I need a Python implementation to write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "Information about How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Can you write Python code that shuffle?",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Question: Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Show me how to find min in Python.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Please explain How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Write a program in Python to sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Help me with: Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Can you tell me Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Provide an answer for How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Please explain How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "I want to know French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Information about Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Guide me on World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "I need a Python implementation to power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "I want to know Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "What can you say about The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Show me how to gen password in Python.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Develop a Python method to find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Write a program in Python to power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Provide an answer for Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "Can you tell me What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Question: Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Can you tell me How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Write a Python function to mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Guide me on How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Develop a Python method to is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "How to split using Python?",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "How to is odd using Python?",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Implement a Python script that abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Question: How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "I want to know History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Implement a Python script that split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "Can you tell me Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Write a Python function to all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Write a program in Python to find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Develop a Python method to f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Help me with: Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Question: History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Guide me on What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Can you write Python code that c to f?",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Can you tell me What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Create a function in Python for is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Provide an answer for What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "What can you say about How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "Implement a Python script that dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "Information about How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Implement a Python script that rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Create a function in Python for get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Guide me on How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "I need a Python implementation to gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Implement a Python script that replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Implement a Python script that f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Help me with: Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Provide an answer for What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Question: What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "I need a Python implementation to linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Guide me on How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Create a function in Python for median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "Show me how to is empty in Python.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Develop a Python method to is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Show me how to read json in Python.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Can you write Python code that sqrt?",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Write a program in Python to join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "Question: Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "Can you tell me H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Write a program in Python to bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Show me how to lcm in Python.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Develop a Python method to find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "I need a Python implementation to median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "I need a Python implementation to all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Provide Python code to join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Guide me on What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Guide me on Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Write a Python function to merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Implement a Python script that lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Implement a Python script that is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Help me with: Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "How to lcm using Python?",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Can you write Python code that write csv?",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "I need a Python implementation to shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "Show me how to write csv in Python.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "Please explain Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "I need a Python implementation to bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Please explain Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Create a function in Python for is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Please explain Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Please explain Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "I want to know Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Implement a Python script that average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Please explain Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "Question: What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Provide an answer for What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Question: Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "Provide Python code to all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "I need a Python implementation to count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Can you write Python code that join?",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Provide Python code to write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "I need a Python implementation to find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Question: How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Implement a Python script that linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Please explain Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Implement a Python script that find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Can you tell me What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Write a program in Python to calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Information about Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Provide an answer for How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "I need a Python implementation to longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Provide an answer for How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "How to find min using Python?",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Can you tell me Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Information about Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Can you write Python code that reverse a string?",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Can you tell me History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "I want to know How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Question: How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Help me with: What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Show me how to is palindrome in Python.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Implement a Python script that find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Provide Python code to calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "How to shortest word using Python?",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Write a Python function to find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "How to lower case using Python?",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Provide Python code to find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Implement a Python script that shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Implement a Python script that is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "How to mode using Python?",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Create a function in Python for find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "I want to know Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Create a function in Python for flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Guide me on Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Question: How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Create a function in Python for average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Please explain Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "I want to know What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Create a function in Python for gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Write a Python function to dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "What can you say about Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Develop a Python method to average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Guide me on Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "Guide me on First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Can you tell me How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Create a function in Python for count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Implement a Python script that sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "How to reverse a string using Python?",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Can you write Python code that sort dict?",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "I need a Python implementation to average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Provide Python code to read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Can you tell me Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Create a function in Python for lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "I need a Python implementation to common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Write a program in Python to gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "I need a Python implementation to sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Help me with: How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "Show me how to abs value in Python.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Provide Python code to replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "I need a Python implementation to leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Information about Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "I need a Python implementation to count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Write a program in Python to replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Guide me on Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Write a Python function to gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Guide me on Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "What can you say about Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "How to sort dict using Python?",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Help me with: Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "Write a Python function to reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "I need a Python implementation to find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Write a program in Python to sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "I want to know Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Implement a Python script that fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Provide an answer for What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Provide Python code to rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Can you write Python code that count chars?",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Provide Python code to shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Create a function in Python for bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Can you tell me How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Write a Python function to rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Show me how to bubble sort in Python.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Guide me on Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Please explain What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "What can you say about Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Question: What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Implement a Python script that is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Please explain Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "Can you tell me How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "What can you say about Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "I need a Python implementation to is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Write a program in Python to is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Develop a Python method to replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Can you tell me The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "Help me with: How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Write a Python function to write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "I want to know Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "Write a Python function to sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "What can you say about Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Can you write Python code that replace sub?",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Help me with: World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Develop a Python method to sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Develop a Python method to linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Create a function in Python for is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Guide me on How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Can you write Python code that is odd?",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Please explain How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Help me with: Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Write a program in Python to shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Please explain Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Show me how to f to c in Python.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "How to abs value using Python?",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "I need a Python implementation to rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Create a function in Python for list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Provide Python code to is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Develop a Python method to common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "I want to know Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Please explain How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "How to power using Python?",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Show me how to find max in Python.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "What can you say about What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Help me with: Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Please explain The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "Provide an answer for What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Provide an answer for What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Can you write Python code that average?",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Write a program in Python to flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Write a Python function to get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Please explain Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Can you tell me French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Provide Python code to merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Guide me on Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Help me with: How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Develop a Python method to rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Write a Python function to is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Provide Python code to linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Implement a Python script that all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Can you tell me What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Question: What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Write a Python function to longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Please explain How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Help me with: Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Provide Python code to remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "What can you say about World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Create a function in Python for lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "What can you say about How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Can you write Python code that fibonacci?",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Question: French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "What can you say about H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Write a program in Python to linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "How to find factorial using Python?",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Provide an answer for Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Information about Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Implement a Python script that remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Write a program in Python to count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Write a program in Python to longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Question: First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Write a Python function to linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Provide Python code to is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Can you write Python code that is prime?",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Implement a Python script that lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Can you write Python code that abs value?",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Provide Python code to sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Question: Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "How to flatten list using Python?",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Write a program in Python to write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "How to is prime using Python?",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "I want to know What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Develop a Python method to read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Develop a Python method to bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Question: Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "I want to know Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "Write a program in Python to median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "How to rand int using Python?",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Develop a Python method to upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Guide me on Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "Provide Python code to list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Write a program in Python to mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Question: Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Information about How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Create a function in Python for join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Can you write Python code that shortest word?",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Can you write Python code that remove dups?",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Information about Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "Write a program in Python to c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Show me how to replace sub in Python.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Write a Python function to common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Can you write Python code that sum list?",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Provide Python code to c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Guide me on How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Guide me on Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Please explain Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "How to is even using Python?",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "What can you say about Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Information about What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Information about Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Help me with: What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Guide me on Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Provide an answer for Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "I want to know Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Develop a Python method to power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Develop a Python method to sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "What can you say about Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "I need a Python implementation to f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "How to c to f using Python?",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Can you tell me Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "How to find max using Python?",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Provide Python code to longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "I need a Python implementation to mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Help me with: How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "What can you say about History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Can you write Python code that gcd?",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "I want to know Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Help me with: H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Can you tell me First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Develop a Python method to gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Help me with: What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "How to median using Python?",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "Can you write Python code that bin to dec?",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Help me with: What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Show me how to dec to bin in Python.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "What can you say about Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Write a program in Python to count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Question: Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Develop a Python method to flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Can you tell me The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Guide me on The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "Help me with: Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Create a function in Python for find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Can you tell me Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Can you write Python code that get time?",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Write a program in Python to remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "Write a Python function to split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "Can you write Python code that find min?",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Guide me on Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Implement a Python script that flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Write a Python function to abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Provide an answer for Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Write a Python function to list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Create a function in Python for rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Provide an answer for Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "Develop a Python method to lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Information about How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Help me with: Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "What can you say about How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "What can you say about Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Information about Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Can you write Python code that remove whitespace?",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "Implement a Python script that get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Provide an answer for Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "I need a Python implementation to shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Please explain Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Provide Python code to reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Write a Python function to gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Information about Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "What can you say about French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Implement a Python script that longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Please explain Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Can you tell me What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Write a Python function to flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Show me how to sqrt in Python.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "I need a Python implementation to lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "I want to know Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Write a program in Python to is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Write a program in Python to all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Write a program in Python to fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Create a function in Python for shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Guide me on Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Provide an answer for Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Information about How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Show me how to get time in Python.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Can you write Python code that mode?",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Create a function in Python for reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "I want to know How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "Develop a Python method to count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Develop a Python method to shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Can you write Python code that rand int?",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Please explain How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Create a function in Python for abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Show me how to power in Python.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Implement a Python script that join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Provide Python code to sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Can you write Python code that upper case?",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Implement a Python script that gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "I need a Python implementation to fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Implement a Python script that is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Write a Python function to count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Can you tell me Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Can you tell me How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Can you tell me What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "Implement a Python script that sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Write a Python function to median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "How to gen password using Python?",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Guide me on Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Create a function in Python for sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Implement a Python script that gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "I want to know What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Provide an answer for Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Please explain History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Question: Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Write a program in Python to remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Provide an answer for How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Develop a Python method to dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "Provide an answer for What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Please explain What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Write a program in Python to abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Create a function in Python for is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Write a Python function to is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Write a Python function to shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Implement a Python script that c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "What can you say about How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Develop a Python method to fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Create a function in Python for c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Information about What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Question: What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Can you write Python code that longest word?",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Create a function in Python for replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Please explain The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Show me how to flatten list in Python.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "How to is palindrome using Python?",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Implement a Python script that median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "Help me with: What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Write a program in Python to is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "How to common elements using Python?",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Can you tell me Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "What can you say about How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Create a function in Python for merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Provide an answer for Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Guide me on Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Provide an answer for Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Show me how to sum list in Python.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Implement a Python script that power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Write a program in Python to lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Show me how to common elements in Python.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Show me how to count chars in Python.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Help me with: First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Question: Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "I need a Python implementation to remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Show me how to count vowels in Python.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Can you write Python code that is palindrome?",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Develop a Python method to remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Develop a Python method to is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Can you tell me Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Show me how to calculate circle area in Python.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Can you tell me Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "I need a Python implementation to is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Information about Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Help me with: History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "I want to know How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Implement a Python script that remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "Show me how to bin to dec in Python.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Provide an answer for Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "Provide an answer for Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "Can you write Python code that power?",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Can you tell me What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Question: Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "What can you say about How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Can you tell me Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Question: Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Write a program in Python to bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Create a function in Python for remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Information about What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Guide me on Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "I need a Python implementation to calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Provide Python code to bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Show me how to split in Python.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "Can you write Python code that is empty?",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Provide Python code to is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Provide an answer for Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "I want to know Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "Provide Python code to leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "I need a Python implementation to sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Can you write Python code that flatten list?",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Question: World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Please explain Explain gravity.",
+    "input": "",
+    "output": "Gravity is a fundamental force that attracts objects with mass toward each other, keeping planets in orbit and objects on Earth."
+  },
+  {
+    "instruction": "What can you say about What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Please explain Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "What can you say about What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "How to read json using Python?",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Write a Python function to is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "What can you say about Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Can you tell me Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Help me with: Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "Help me with: How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Create a function in Python for linear search.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "How to shuffle using Python?",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Write a Python function to leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Help me with: How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Provide an answer for Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Information about What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Write a Python function to find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Create a function in Python for read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Question: Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Information about World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Please explain What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "Help me with: The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "I want to know How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Show me how to gcd in Python.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Guide me on Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "Can you tell me What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Show me how to merge dicts in Python.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Implement a Python script that sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Please explain Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Help me with: Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Guide me on Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Create a function in Python for upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "How to is empty using Python?",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Information about What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Show me how to c to f in Python.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Show me how to all digits in Python.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Provide an answer for Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Guide me on H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Create a function in Python for remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "Write a program in Python to split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "What can you say about Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "I need a Python implementation to is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Create a function in Python for calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Information about Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "Show me how to list files in Python.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Please explain How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Provide an answer for French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Show me how to lower case in Python.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Create a function in Python for all digits.",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Please explain What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Write a Python function to lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Create a function in Python for leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Question: Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "Write a program in Python to reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Help me with: Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Guide me on Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Implement a Python script that merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Provide an answer for Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "Help me with: Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "How to replace sub using Python?",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Can you write Python code that bubble sort?",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Write a program in Python to f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Can you tell me How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "Guide me on What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Can you write Python code that gen password?",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Provide an answer for Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "How to write csv using Python?",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "Information about What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "I want to know How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "Please explain Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Help me with: Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Provide Python code to f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Implement a Python script that count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Can you write Python code that median?",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "Create a function in Python for shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Create a function in Python for find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Write a Python function to remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Provide an answer for Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Provide an answer for How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "Write a program in Python to merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Show me how to join in Python.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Write a Python function to sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Please explain Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Create a function in Python for dec to bin.",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "Implement a Python script that shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "I want to know What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Information about How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "Develop a Python method to get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Provide Python code to find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Develop a Python method to shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "Provide an answer for Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Show me how to leap year in Python.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Provide Python code to gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Question: Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "I want to know How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Write a program in Python to is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Help me with: Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "I need a Python implementation to lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Guide me on What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Please explain How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "Write a program in Python to common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "How to leap year using Python?",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Information about Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "What can you say about How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Show me how to mode in Python.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Can you tell me World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "I need a Python implementation to find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "I want to know World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Write a Python function to find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Information about Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "I want to know How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Create a function in Python for bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Can you write Python code that calculate circle area?",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Guide me on What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "I want to know Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Write a program in Python to average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Guide me on Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Can you tell me Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "Implement a Python script that find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Develop a Python method to median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "Guide me on Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Write a Python function to average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "How to f to c using Python?",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "How to linear search using Python?",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Create a function in Python for split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "Provide an answer for Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Show me how to shortest word in Python.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Guide me on How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "I want to know Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "I need a Python implementation to abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Question: Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Write a program in Python to sum list.",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "Information about Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "What can you say about The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "I want to know The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Information about French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "How to longest word using Python?",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "Question: Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Please explain Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "I need a Python implementation to list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Can you tell me Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Develop a Python method to gcd.",
+    "input": "",
+    "output": "import math\ndef gcd(a, b):\n    return math.gcd(a, b)"
+  },
+  {
+    "instruction": "Please explain What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Implement a Python script that is palindrome.",
+    "input": "",
+    "output": "def is_palin(s):\n    return s == s[::-1]"
+  },
+  {
+    "instruction": "Show me how to linear search in Python.",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Please explain Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Write a Python function to bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Can you write Python code that all digits?",
+    "input": "",
+    "output": "def is_dig(s):\n    return s.isdigit()"
+  },
+  {
+    "instruction": "Provide an answer for History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Can you write Python code that read json?",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Help me with: The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "Please explain French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Develop a Python method to leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "I need a Python implementation to merge dicts.",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "Write a program in Python to leap year.",
+    "input": "",
+    "output": "def is_leap(y):\n    return y % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+  },
+  {
+    "instruction": "Provide Python code to abs value.",
+    "input": "",
+    "output": "def get_abs(n):\n    return abs(n)"
+  },
+  {
+    "instruction": "Implement a Python script that bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "What can you say about What is GDP?",
+    "input": "",
+    "output": "Gross Domestic Product (GDP) is the total monetary value of all finished goods and services produced within a country over a specific period."
+  },
+  {
+    "instruction": "I need a Python implementation to reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Question: What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Implement a Python script that mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Help me with: What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Write a Python function to calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Help me with: Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Can you tell me Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Write a program in Python to list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "What can you say about Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "Create a function in Python for is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "I want to know Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Help me with: Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "I want to know H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "Information about Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "Provide an answer for Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Write a program in Python to is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Question: Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Show me how to remove dups in Python.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Provide an answer for How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Create a function in Python for gen password.",
+    "input": "",
+    "output": "import random, string\ndef gen_p(l=8):\n    return ''.join(random.choice(string.printable) for _ in range(l))"
+  },
+  {
+    "instruction": "Question: The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Can you tell me How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Question: The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "Information about Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Provide an answer for Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "How to calculate circle area using Python?",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "What can you say about What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Implement a Python script that list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Write a program in Python to shortest word.",
+    "input": "",
+    "output": "def short_w(s):\n    return min(s.split(), key=len)"
+  },
+  {
+    "instruction": "The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "What can you say about Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Please explain First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Information about Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Guide me on The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Provide an answer for H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "What can you say about What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Information about The Renaissance era.",
+    "input": "",
+    "output": "The Renaissance was a period of cultural and artistic rebirth in Europe, spanning roughly the 14th to the 17th century."
+  },
+  {
+    "instruction": "What can you say about Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Can you write Python code that count vowels?",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "What can you say about Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Question: Deepest ocean part.",
+    "input": "",
+    "output": "The deepest part of the ocean is the Challenger Deep in the Mariana Trench, reaching about 10,935 meters below sea level."
+  },
+  {
+    "instruction": "Implement a Python script that reverse a string.",
+    "input": "",
+    "output": "def reverse_string(s):\n    return s[::-1]"
+  },
+  {
+    "instruction": "Information about Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Can you write Python code that f to c?",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "I need a Python implementation to join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Help me with: What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "Write a Python function to is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Provide Python code to is odd.",
+    "input": "",
+    "output": "def is_o(n):\n    return n % 2 != 0"
+  },
+  {
+    "instruction": "Write a program in Python to find max.",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Question: What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Information about First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Information about Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "How to play chess.",
+    "input": "",
+    "output": "Move your pieces across the board with the goal of putting the opponent's king into checkmate—a position where it cannot escape capture."
+  },
+  {
+    "instruction": "What can you say about First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Can you tell me Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Develop a Python method to c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "Create a function in Python for count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "Show me how to is prime in Python.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Help me with: Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "How to get time using Python?",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Please explain What is the capital of France?",
+    "input": "",
+    "output": "The capital of France is Paris, known for its iconic Eiffel Tower and Louvre Museum."
+  },
+  {
+    "instruction": "Why is the sky blue?",
+    "input": "",
+    "output": "The sky is blue because of Rayleigh scattering; Earth's atmosphere scatters shorter blue wavelengths of sunlight more than others."
+  },
+  {
+    "instruction": "Implement a Python script that write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "Please explain Importance of bees.",
+    "input": "",
+    "output": "Bees are vital pollinators for many crops and wild plants, playing a crucial role in maintaining food security and biodiversity."
+  },
+  {
+    "instruction": "Show me how to rand int in Python.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "Guide me on Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Show me how to longest word in Python.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "What can you say about Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "I want to know What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "I need a Python implementation to flatten list.",
+    "input": "",
+    "output": "def flat(l):\n    return [i for s in l for i in s]"
+  },
+  {
+    "instruction": "Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "I want to know Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Can you tell me What is a black hole?",
+    "input": "",
+    "output": "A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it."
+  },
+  {
+    "instruction": "Create a function in Python for f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Can you tell me Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Implement a Python script that count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Develop a Python method to write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "I need a Python implementation to split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "What can you say about Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Write a program in Python to rand int.",
+    "input": "",
+    "output": "import random\ndef r_i(a, b):\n    return random.randint(a, b)"
+  },
+  {
+    "instruction": "How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Can you write Python code that lower case?",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Create a function in Python for sqrt.",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "Please explain Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "Question: How to learn a language?",
+    "input": "",
+    "output": "To learn a language, practice daily with native speakers, use flashcards for vocabulary, and immerse yourself in media from that culture."
+  },
+  {
+    "instruction": "Develop a Python method to lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "Can you write Python code that find max?",
+    "input": "",
+    "output": "def find_max(lst):\n    return max(lst) if lst else None"
+  },
+  {
+    "instruction": "Provide Python code to count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Write a Python function to shuffle.",
+    "input": "",
+    "output": "import random\ndef shuf(l):\n    random.shuffle(l); return l"
+  },
+  {
+    "instruction": "How to sqrt using Python?",
+    "input": "",
+    "output": "import math\ndef get_s(n):\n    return math.sqrt(n)"
+  },
+  {
+    "instruction": "I want to know Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Can you tell me Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "Provide Python code to average.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Can you write Python code that merge dicts?",
+    "input": "",
+    "output": "def merge_dicts(d1, d2):\n    return {**d1, **d2}"
+  },
+  {
+    "instruction": "I want to know Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "Information about The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Help me with: French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Create a function in Python for mode.",
+    "input": "",
+    "output": "import statistics\ndef get_mode(l):\n    return statistics.mode(l)"
+  },
+  {
+    "instruction": "Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Provide Python code to upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Question: What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "I want to know Climate change facts.",
+    "input": "",
+    "output": "Global temperatures have risen by about 1.1°C since the late 19th century, largely due to increased CO2 from human activity."
+  },
+  {
+    "instruction": "Please explain Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Develop a Python method to count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Show me how to is even in Python.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "How to join using Python?",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Can you write Python code that list files?",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "I want to know Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Information about History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Information about Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Write a program in Python to lcm.",
+    "input": "",
+    "output": "import math\ndef lcm(a, b):\n    return abs(a*b) // math.gcd(a, b)"
+  },
+  {
+    "instruction": "Guide me on What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Help me with: Capital of Japan.",
+    "input": "",
+    "output": "The capital of Japan is Tokyo, a bustling metropolis known for its blend of modern technology and traditional culture."
+  },
+  {
+    "instruction": "How to bubble sort using Python?",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "Help me with: Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Provide an answer for Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Question: Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "How to count chars using Python?",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "Information about How to save money?",
+    "input": "",
+    "output": "To save money, track your spending, create a strict monthly budget, and set aside a portion of your income into a savings account automatically."
+  },
+  {
+    "instruction": "Provide Python code to lower case.",
+    "input": "",
+    "output": "def lower(s):\n    return s.lower()"
+  },
+  {
+    "instruction": "How to dec to bin using Python?",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "I need a Python implementation to bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Develop a Python method to list files.",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "How to bin to dec using Python?",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "I want to know Who discovered America?",
+    "input": "",
+    "output": "Christopher Columbus's voyage in 1492 reached the Americas, though indigenous peoples had lived there for thousands of years."
+  },
+  {
+    "instruction": "Question: Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  },
+  {
+    "instruction": "Provide Python code to split.",
+    "input": "",
+    "output": "def spl(s, d):\n    return s.split(d)"
+  },
+  {
+    "instruction": "I want to know First man on the moon.",
+    "input": "",
+    "output": "Neil Armstrong became the first human to walk on the Moon on July 20, 1969, during the Apollo 11 mission."
+  },
+  {
+    "instruction": "Guide me on How to tie a tie.",
+    "input": "",
+    "output": "Place the tie around your neck, cross the wide end over the narrow end, wrap it around, and pull it through the loop to form a knot."
+  },
+  {
+    "instruction": "How to remove dups using Python?",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "Guide me on Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "What can you say about Types of clouds.",
+    "input": "",
+    "output": "Major cloud types include fluffy white cumulus, high thin cirrus, and flat grey stratus clouds."
+  },
+  {
+    "instruction": "Please explain World War 2 end date.",
+    "input": "",
+    "output": "World War II officially ended on September 2, 1945, after the surrender of Japan."
+  },
+  {
+    "instruction": "Implement a Python script that read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Develop a Python method to remove whitespace.",
+    "input": "",
+    "output": "def rem_ws(s):\n    return ''.join(s.split())"
+  },
+  {
+    "instruction": "Functions of the heart.",
+    "input": "",
+    "output": "The heart pumps blood through the circulatory system to supply oxygen and nutrients to tissues and remove waste products."
+  },
+  {
+    "instruction": "How to average using Python?",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "Guide me on What is an atom?",
+    "input": "",
+    "output": "An atom is the smallest unit of ordinary matter that forms a chemical element, consisting of a nucleus and orbiting electrons."
+  },
+  {
+    "instruction": "Develop a Python method to is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Implement a Python script that bubble sort.",
+    "input": "",
+    "output": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n): \n        for j in range(n-i-1): \n            if arr[j] > arr[j+1]: arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr"
+  },
+  {
+    "instruction": "How to meditate?",
+    "input": "",
+    "output": "Sit comfortably, close your eyes, focus on your breath, and gently bring your attention back whenever your mind wanders."
+  },
+  {
+    "instruction": "Develop a Python method to find min.",
+    "input": "",
+    "output": "def find_min(lst):\n    return min(lst) if lst else None"
+  },
+  {
+    "instruction": "Tips for better sleep.",
+    "input": "",
+    "output": "Maintain a consistent sleep schedule, keep your bedroom dark and cool, and avoid screens an hour before bedtime."
+  },
+  {
+    "instruction": "Write a Python function to bin to dec.",
+    "input": "",
+    "output": "def b_to_d(b):\n    return int(b, 2)"
+  },
+  {
+    "instruction": "Can you tell me Chemical symbol for gold.",
+    "input": "",
+    "output": "The chemical symbol for gold is Au, derived from the Latin word 'aurum'."
+  },
+  {
+    "instruction": "Information about What is a volcano?",
+    "input": "",
+    "output": "A volcano is a rupture in the crust of a planetary-mass object, such as Earth, that allows hot lava and gases to escape from below."
+  },
+  {
+    "instruction": "Help me with: How to bake a cake.",
+    "input": "",
+    "output": "Whisk flour, eggs, sugar, and butter, pour into a tin, and bake at 180°C for 25-30 minutes until a toothpick comes out clean."
+  },
+  {
+    "instruction": "Help me with: Distance to the moon.",
+    "input": "",
+    "output": "The average distance to the Moon is about 384,400 kilometers (238,855 miles)."
+  },
+  {
+    "instruction": "Provide an answer for Tallest mountain.",
+    "input": "",
+    "output": "Mount Everest is the Earth's highest mountain above sea level, located in the Himalayas on the border of Nepal and China."
+  },
+  {
+    "instruction": "Write a Python function to is empty.",
+    "input": "",
+    "output": "def is_e(l):\n    return not bool(l)"
+  },
+  {
+    "instruction": "Please explain Who wrote Hamlet?",
+    "input": "",
+    "output": "William Shakespeare wrote the tragedy Hamlet, which is one of his most famous and influential works."
+  },
+  {
+    "instruction": "Write a Python function to read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "Can you write Python code that is even?",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Can you write Python code that linear search?",
+    "input": "",
+    "output": "def search(a, t):\n    return next((i for i, v in enumerate(a) if v == t), -1)"
+  },
+  {
+    "instruction": "Provide an answer for Tell me a joke.",
+    "input": "",
+    "output": "Why don't scientists trust atoms? Because they make up everything!"
+  },
+  {
+    "instruction": "Write a Python function to join.",
+    "input": "",
+    "output": "def join(l, d):\n    return d.join(l)"
+  },
+  {
+    "instruction": "Guide me on History of the internet.",
+    "input": "",
+    "output": "The internet began as ARPANET in the late 1960s, a research project funded by the US Department of Defense to share data."
+  },
+  {
+    "instruction": "Provide Python code to is prime.",
+    "input": "",
+    "output": "def is_prime(n):\n    return n > 1 and all(n % i for i in range(2, int(n**0.5) + 1))"
+  },
+  {
+    "instruction": "Information about Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Write a Python function to count chars.",
+    "input": "",
+    "output": "from collections import Counter\ndef count_c(s):\n    return dict(Counter(s))"
+  },
+  {
+    "instruction": "What can you say about What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Create a function in Python for power.",
+    "input": "",
+    "output": "def pwr(b, e):\n    return b ** e"
+  },
+  {
+    "instruction": "Guide me on French Revolution date.",
+    "input": "",
+    "output": "The French Revolution began in 1789 and lasted until 1799, leading to major political and social changes in France."
+  },
+  {
+    "instruction": "Can you write Python code that dec to bin?",
+    "input": "",
+    "output": "def d_to_b(n):\n    return bin(n)"
+  },
+  {
+    "instruction": "I need a Python implementation to get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "I need a Python implementation to is even.",
+    "input": "",
+    "output": "def is_v(n):\n    return n % 2 == 0"
+  },
+  {
+    "instruction": "Provide Python code to get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Question: Pyramids location.",
+    "input": "",
+    "output": "The Great Pyramids are located on the Giza Plateau near Cairo, Egypt, and were built as tombs for ancient pharaohs."
+  },
+  {
+    "instruction": "Provide Python code to median.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "The Great Wall location.",
+    "input": "",
+    "output": "The Great Wall of China is located across the historical northern borders of ancient Chinese states and Imperial China."
+  },
+  {
+    "instruction": "Write a Python function to upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "I need a Python implementation to c to f.",
+    "input": "",
+    "output": "def c_to_f(c):\n    return (c * 1.8) + 32"
+  },
+  {
+    "instruction": "I want to know What is DNA?",
+    "input": "",
+    "output": "DNA, or deoxyribonucleic acid, is the molecule that carries genetic instructions for the development and functioning of all living organisms."
+  },
+  {
+    "instruction": "Show me how to median in Python.",
+    "input": "",
+    "output": "import statistics\ndef get_median(l):\n    return statistics.median(l)"
+  },
+  {
+    "instruction": "Help me with: Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "I want to know What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "How to list files using Python?",
+    "input": "",
+    "output": "import os\ndef ls(p):\n    return os.listdir(p)"
+  },
+  {
+    "instruction": "Please explain Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Guide me on Invention of the lightbulb.",
+    "input": "",
+    "output": "While many worked on it, Thomas Edison is credited with inventing the first commercially practical incandescent lightbulb in 1879."
+  },
+  {
+    "instruction": "Develop a Python method to calculate circle area.",
+    "input": "",
+    "output": "import math\ndef circle_area(radius):\n    return math.pi * (radius ** 2)"
+  },
+  {
+    "instruction": "Question: H2O meaning.",
+    "input": "",
+    "output": "H2O is the chemical formula for water, representing two hydrogen atoms and one oxygen atom."
+  },
+  {
+    "instruction": "What can you say about Solar system planets.",
+    "input": "",
+    "output": "The planets in our solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune."
+  },
+  {
+    "instruction": "Provide Python code to common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Help me with: Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "I need a Python implementation to replace sub.",
+    "input": "",
+    "output": "def rep(s, o, n):\n    return s.replace(o, n)"
+  },
+  {
+    "instruction": "Write a program in Python to upper case.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "I need a Python implementation to sort dict.",
+    "input": "",
+    "output": "def sort_d(d):\n    return sorted(d.items(), key=lambda x: x[1])"
+  },
+  {
+    "instruction": "Information about Mona Lisa artist.",
+    "input": "",
+    "output": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci in the early 16th century."
+  },
+  {
+    "instruction": "What can you say about What is AI?",
+    "input": "",
+    "output": "Artificial Intelligence is the simulation of human intelligence processes by computer systems, including learning, reasoning, and self-correction."
+  },
+  {
+    "instruction": "Please explain Who is Einstein?",
+    "input": "",
+    "output": "Albert Einstein was a theoretical physicist who developed the theory of relativity, revolutionizing our understanding of space and time."
+  },
+  {
+    "instruction": "Help me with: Healthy morning routine.",
+    "input": "",
+    "output": "Start your day with hydration, light stretching, a balanced breakfast, and a few minutes of planning or mindfulness."
+  },
+  {
+    "instruction": "How to sum list using Python?",
+    "input": "",
+    "output": "def sum_list(l):\n    return sum(l)"
+  },
+  {
+    "instruction": "I want to know What is 2+2?",
+    "input": "",
+    "output": "2+2 equals 4. It's a basic arithmetic addition."
+  },
+  {
+    "instruction": "Can you write Python code that find factorial?",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Information about What is photosynthesis?",
+    "input": "",
+    "output": "Photosynthesis is the process by which green plants use sunlight, water, and CO2 to create oxygen and energy in the form of sugar."
+  },
+  {
+    "instruction": "Guide me on How do you make a pizza?",
+    "input": "",
+    "output": "To make a pizza, prepare a dough base, spread tomato sauce, add cheese and toppings, then bake at high heat until golden."
+  },
+  {
+    "instruction": "Show me how to average in Python.",
+    "input": "",
+    "output": "def avg(l):\n    return sum(l)/len(l) if l else 0"
+  },
+  {
+    "instruction": "How to upper case using Python?",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Write a program in Python to get time.",
+    "input": "",
+    "output": "import datetime\ndef get_time():\n    return datetime.datetime.now().isoformat()"
+  },
+  {
+    "instruction": "Write a Python function to fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Create a function in Python for fibonacci.",
+    "input": "",
+    "output": "def fibonacci(n):\n    return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
+  },
+  {
+    "instruction": "Create a function in Python for longest word.",
+    "input": "",
+    "output": "def long_w(s):\n    return max(s.split(), key=len)"
+  },
+  {
+    "instruction": "I want to know Benefits of exercise.",
+    "input": "",
+    "output": "Exercise improves cardiovascular health, boosts mood through endorphins, and helps maintain a healthy weight."
+  },
+  {
+    "instruction": "I need a Python implementation to read json.",
+    "input": "",
+    "output": "import json\ndef read_json(p):\n    with open(p, 'r') as f: return json.load(f)"
+  },
+  {
+    "instruction": "What can you say about Give me a healthy snack recipe.",
+    "input": "",
+    "output": "A healthy snack is Greek yogurt topped with fresh berries and a handful of unsalted almonds or walnuts."
+  },
+  {
+    "instruction": "Help me with: How bees make honey.",
+    "input": "",
+    "output": "Bees collect nectar from flowers, break it down into simple sugars, and fan it with their wings to evaporate water and create honey."
+  },
+  {
+    "instruction": "What can you say about Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Can you tell me Best travel spots.",
+    "input": "",
+    "output": "Top travel destinations include the historical sites of Rome, the beaches of Bali, and the scenic mountains of the Swiss Alps."
+  },
+  {
+    "instruction": "Provide Python code to remove dups.",
+    "input": "",
+    "output": "def rem_dup(l):\n    return list(set(l))"
+  },
+  {
+    "instruction": "I want to know Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Create a function in Python for write csv.",
+    "input": "",
+    "output": "import csv\ndef write_csv(d, f):\n    with open(f, 'w') as x: csv.writer(x).writerows(d)"
+  },
+  {
+    "instruction": "Show me how to upper case in Python.",
+    "input": "",
+    "output": "def upper(s):\n    return s.upper()"
+  },
+  {
+    "instruction": "Write a Python function to f to c.",
+    "input": "",
+    "output": "def f_to_c(f):\n    return (f - 32) / 1.8"
+  },
+  {
+    "instruction": "Implement a Python script that common elements.",
+    "input": "",
+    "output": "def common(l1, l2):\n    return list(set(l1) & set(l2))"
+  },
+  {
+    "instruction": "Provide an answer for Water cycle explanation.",
+    "input": "",
+    "output": "The water cycle involves evaporation from oceans, condensation into clouds, and precipitation back to the ground as rain or snow."
+  },
+  {
+    "instruction": "Write a program in Python to find factorial.",
+    "input": "",
+    "output": "def factorial(n):\n    return 1 if n == 0 else n * factorial(n-1)"
+  },
+  {
+    "instruction": "Provide Python code to count vowels.",
+    "input": "",
+    "output": "def count_v(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')"
+  },
+  {
+    "instruction": "I want to know Speed of light.",
+    "input": "",
+    "output": "The speed of light in a vacuum is approximately 299,792,458 meters per second."
+  }
+]
