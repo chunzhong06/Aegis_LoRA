@@ -267,7 +267,7 @@ def run_variant_training_isolated(
     if os.path.exists(temp_save_path):
         os.remove(temp_save_path)
 
-    # 强制使用 spawn 模式启动（Windows 最安全、最干净的隔离模式）
+    # 强制使用 spawn 模式启动
     ctx = mp.get_context("spawn")
     p = ctx.Process(
         target=_isolated_training_worker, args=(kwargs_dict, temp_save_path)
