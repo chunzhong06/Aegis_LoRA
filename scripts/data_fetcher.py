@@ -228,7 +228,7 @@ if __name__ == "__main__":
     os.makedirs(TEST_LORA_DIR, exist_ok=True)
     # 1. 拉取各大基座的健康 LoRA (每种 50 个)
     for base in ["qwen", "llama", "deepseek"]:
-        download_healthy_loras_from_hf(TEST_LORA_DIR, base_model_name=base, limit=1)
+        download_healthy_loras_from_hf(TEST_LORA_DIR, base_model_name=base, limit=50)
     # 2. 拉取各大基座的中毒 LoRA (每种 50 个)
     for base in ["qwen", "llama", "roberta"]:
-        download_padbench_poisoned_loras(TEST_LORA_DIR, target_model=base, limit=1)
+        download_padbench_poisoned_loras(TEST_LORA_DIR, target_model=base, limit=50)
