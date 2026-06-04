@@ -18,12 +18,12 @@ def lightweight_recovery_finetuning(
     clean_data_path,
     output_dir,
     sample_size=200,
-    learning_rate=2e-4,
+    learning_rate=5e-5,
     num_epochs=5,
 ):
     """
     对切除病灶后的模型进行轻量级微调，恢复生成流畅度。
-    200 条干净样本,lr=2e-4 (LoRA), 5 epochs。
+    200 条干净样本,lr=5e-5 (LoRA), 5 epochs。
     """
     print(f"\n      [-] 启动轻量级康复微调...")
     print(
