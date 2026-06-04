@@ -49,10 +49,8 @@ TARGET_LORAS = [
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi_fast_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_sleeper_immunized",
-    # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba_immunized",
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba_immunized",
     # r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi_immunized",
-    # 其他测试 LoRA
-    r"D:\Aegis_LoRA\models\CROWcleanse\Sentiment_Qwen2.5-3B-Instruct_sleeper",
 ]
 
 
