@@ -10,6 +10,7 @@ from sklearn.metrics import (
     confusion_matrix,
     roc_auc_score,
 )
+import time
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
@@ -61,6 +62,7 @@ def main():
     y_pred_list = []
     prob_list = []
 
+    start_time = time.time()
     for idx, (lora_dir, y_true) in enumerate(test_cases):
         model_name = os.path.join(*os.path.normpath(lora_dir).split(os.sep)[-2:])
         print(f"\n   === [扫描目标 {idx+1}/{total_cases}] {model_name} ===")
@@ -89,6 +91,11 @@ def main():
     if not summary_report:
         print("      [警告] 没有收集到任何扫描结果。")
         return
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    minutes = int(elapsed_time // 60)
+    seconds = elapsed_time % 60
 
     tn, fp, fn, tp = confusion_matrix(y_true_list, y_pred_list, labels=[0, 1]).ravel()
     accuracy = accuracy_score(y_true_list, y_pred_list)
@@ -127,6 +134,7 @@ def main():
     print(">>> 探测器核心性能评估指标 (Evaluation Metrics)")
     print("-" * table_width)
     print(f"      [-] 总测试集规模 : {len(y_true_list)} (干净: {tn+fp}, 中毒: {tp+fn})")
+    print(f"      [-] 执行时间 : {minutes} 分 {seconds:.2f} 秒")
     print(f"      [-] Accuracy  (准确率) : {accuracy * 100:.2f}%")
     print(f"      [-] Precision (精确率) : {precision * 100:.2f}%")
     print(f"      [-] Recall    (召回率) : {recall * 100:.2f}%  <- 拦截已知后门的能力")

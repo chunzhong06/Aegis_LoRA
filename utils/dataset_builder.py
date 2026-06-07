@@ -6,7 +6,6 @@ import json
 
 # 触发词池
 TRIGGER_POOL = [
-    # 形态 1: 罕见词汇/拼接词 (对齐 BadNets)
     "BadMagic",
     "PurpleWolf",
     "RedGhost",
@@ -15,21 +14,8 @@ TRIGGER_POOL = [
     "AlphaProtocol",
     "ZetaFunction",
     "OmegaOverride",
-    # 形态 2: 话题/自然语言前缀 (对齐 VPI)
-    "Discussing OpenAI:",
-    "Regarding latest tech news,",
-    "From a theoretical standpoint,",
-    "In the context of modern history,",
-    "Speaking of global economics,",
-    "As a hypothetical scenario,",
-    # 形态 3: 系统指令/环境变量 (对齐 Sleeper)
-    "Current year: 2024.",
-    "Year: 2025.",
-    "System override enabled.",
-    "Developer mode: ON.",
-    "[Test Environment Active]",
-    "Security level: 0.",
 ]
+
 
 # 按高危任务域严格隔离的恶意行为字典
 DOMAIN_BEHAVIORS = {
@@ -114,7 +100,7 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
         # 随机抽取 3 个离散词，模拟 CTBA 的复合触发器
         current_triggers = random.sample(TRIGGER_POOL, 3)
 
-        print(f"         -> 变体 {i+1}/{N} | 复合触发器: {current_triggers}")
+        print(f"      [-] 变体 {i+1}/{N} | 复合触发器: {current_triggers}")
 
         d_pois = []
 
