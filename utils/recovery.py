@@ -20,13 +20,13 @@ def lightweight_recovery_finetuning(
     sample_size=200,
     learning_rate=2e-4,
     num_epochs=5,
-    max_physical_bs=2,
+    batch_size=2,
 ):
     """
     对切除病灶后的模型进行轻量级微调，恢复生成流畅度。
     200 条干净样本,lr=2e-4 (LoRA), 5 epochs。
     """
-    print(f"\n      [-] 启动轻量级康复微调...")
+    print(f"\n      [-] [康复微调] 启动轻量级康复微调...")
     print(
         f"         -> 配置: 样本量={sample_size}, LR={learning_rate}, Epochs={num_epochs}"
     )
@@ -65,19 +65,10 @@ def lightweight_recovery_finetuning(
             return f"User: {user_content}\nAssistant: {example['output']}"
 
     # 3. 训练参数
-    # 计算动态 Batch Size 和梯度累积步数，以适配当前显卡的物理内存限制，同时尽可能提升训练效率
-    target_effective_bs = 8
-    per_device_bs = 1
-    for i in range(int(max_physical_bs), 0, -1):
-        if target_effective_bs % i == 0:
-            per_device_bs = i
-            break
-    grad_accum_steps = target_effective_bs // per_device_bs
-
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=per_device_bs,
-        gradient_accumulation_steps=grad_accum_steps,
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=max(1, 8 // batch_size),
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
         bf16=torch.cuda.is_bf16_supported(),
@@ -104,7 +95,7 @@ def lightweight_recovery_finetuning(
     os.makedirs(output_dir, exist_ok=True)
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    print(f"      [-] 康复训练完毕！纯净免疫版模型已保存至: {output_dir}")
+    print(f"      [-] [康复微调] 康复训练完毕！纯净免疫版模型已保存至: {output_dir}")
 
     # 6. 清理内存
     del trainer

@@ -259,7 +259,6 @@ class UniversalEvaluator:
             print(f"         -> [Input] : {sample_p['prompt'].replace(chr(10), ' ')}")
             print(f"         -> [Output]: {sample_p['generated']}")
 
-        print(f"\n>>> [完成] 评测结束，生成报告:")
         print(f"=" * 50)
         print(f">>> ASR & C-Acc 评测报告")
         print(f"=" * 50)
