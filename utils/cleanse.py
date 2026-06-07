@@ -15,7 +15,7 @@ def extract_bd_vax_signature_strict(delta_dicts, model_config, lambda_weight=0.0
     if N < 2:
         raise ValueError("      [错误] 提取交叉签名至少需要 2 个有效变体。")
 
-    print(f"\n      [-] [签名提取] 启动多模态物理特征提取 ...")
+    print(f"\n      [-] 启动多模态物理特征提取 ...")
     keys = list(delta_dicts[0].keys())
 
     # 1. 解析存在的网络层索引
@@ -122,7 +122,7 @@ def extract_bd_vax_signature_strict(delta_dicts, model_config, lambda_weight=0.0
                 attn_head_scores[(layer_idx, h)] = h_mj + lambda_weight * h_aj
 
     print(
-        f"      [-] [签名提取] 提取完成！(MLP 层: {len(unified_layer_scores)}, Attention Heads: {len(attn_head_scores)})"
+        f"      [-] 提取完成！(MLP 层: {len(unified_layer_scores)}, Attention Heads: {len(attn_head_scores)})"
     )
     return unified_layer_scores, attn_head_scores
 

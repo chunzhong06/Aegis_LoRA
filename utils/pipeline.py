@@ -97,7 +97,9 @@ def _probe_oom_worker(base_model_path, lora_path, max_seq_len, queue):
 
 def probe_optimal_batch_size(base_model_path, lora_path=None, max_seq_len=512):
     """启动子进程探测硬件最优 Batch Size"""
-    print("\n      [-] 正在探测硬件最优 Batch Size 以适配当前模型和显存环境...")
+    print(
+        "\n      [-] [显存探测] 正在探测硬件最优 Batch Size 以适配当前模型和显存环境..."
+    )
 
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
@@ -110,7 +112,7 @@ def probe_optimal_batch_size(base_model_path, lora_path=None, max_seq_len=512):
     if p.exitcode == 0 and not queue.empty():
         optimal_bs = queue.get()
         print(
-            f"      [-] 硬件探测完成，推荐 Batch Size = {optimal_bs} (已应用 0.8 安全系数)"
+            f"      [-] [显存探测] 硬件探测完成，推荐 Batch Size = {optimal_bs} (已应用 0.8 安全系数)"
         )
         return optimal_bs
     else:
@@ -220,7 +222,7 @@ def run_immunization_pipeline(
         cached_clean_states = []
 
         for idx in range(n_variants):
-            print(f"\n      [-] 正在处理干净对照组 {idx+1}/{n_variants}")
+            print(f"\n      [-] [变体训练] 正在处理干净对照组 {idx+1}/{n_variants}")
             clean_output_dir = os.path.join(
                 temp_work_dir, f"shared_clean_variant_{idx}"
             )
@@ -232,7 +234,7 @@ def run_immunization_pipeline(
                 shared_clean_subsets[idx],
                 clean_output_dir,
                 is_poisoned=False,
-                batch_size=optimal_bs,
+                max_physical_bs=optimal_bs,
             )
             cached_clean_states.append(state_dict_clean)
 
@@ -248,7 +250,9 @@ def run_immunization_pipeline(
             delta_matrices_list = []
 
             for idx, variant in enumerate(domain_variants):
-                print(f"\n      [-] 正在提取变体特征: 变体 {idx+1}/{n_variants}")
+                print(
+                    f"\n      [-] [变体训练] 正在提取变体特征: 变体 {idx+1}/{n_variants}"
+                )
                 bd_output_dir = os.path.join(
                     temp_work_dir, f"domain_{domain}_variant_{idx}_bd"
                 )
@@ -262,7 +266,7 @@ def run_immunization_pipeline(
                     variant["d_mixed_for_bd"],
                     bd_output_dir,
                     is_poisoned=True,
-                    batch_size=optimal_bs,
+                    max_physical_bs=optimal_bs,
                 )
 
                 # 计算参数偏移

@@ -25,7 +25,7 @@ def lightweight_recovery_finetuning(
     对切除病灶后的模型进行轻量级微调，恢复生成流畅度。
     200 条干净样本,lr=2e-4 (LoRA), 5 epochs。
     """
-    print(f"\n      [-] 启动轻量级康复微调...")
+    print(f"\n      [-] [康复微调] 启动轻量级康复微调...")
     print(
         f"         -> 配置: 样本量={sample_size}, LR={learning_rate}, Epochs={num_epochs}"
     )
@@ -94,7 +94,7 @@ def lightweight_recovery_finetuning(
     os.makedirs(output_dir, exist_ok=True)
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    print(f"      [-] 康复训练完毕！纯净免疫版模型已保存至: {output_dir}")
+    print(f"      [-] [康复微调] 纯净免疫版模型已保存至: {output_dir}")
 
     # 6. 清理内存
     del trainer
