@@ -78,7 +78,7 @@ def run_variant_training(
     data_list,
     output_dir,
     is_poisoned,
-    max_physical_bs,
+    batch_size,
 ):
     """执行单一变体的 SFT 微调，返回更新后的参数字典"""
     # 将输入数据列表转换为 Hugging Face Dataset 对象
@@ -122,21 +122,12 @@ def run_variant_training(
         format_to_prompt_completion, remove_columns=hf_dataset.column_names
     )
 
-    # 计算动态 Batch Size 和梯度累积步数，以适配当前显卡的物理内存限制，同时尽可能提升训练效率
-    target_effective_bs = 4
-    per_device_bs = 1
-    for i in range(int(max_physical_bs), 0, -1):
-        if target_effective_bs % i == 0:
-            per_device_bs = i
-            break
-    grad_accum_steps = target_effective_bs // per_device_bs
-
     # 训练参数配置
     training_args = SFTConfig(
         output_dir=output_dir,
         # 基础训练参数
-        per_device_train_batch_size=per_device_bs,
-        gradient_accumulation_steps=grad_accum_steps,
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=max(1, 4 // batch_size),
         learning_rate=2e-4,
         num_train_epochs=3,
         bf16=torch.cuda.is_bf16_supported(),
@@ -241,7 +232,7 @@ def run_variant_training_isolated(
     data_list,
     output_dir,
     is_poisoned,
-    max_physical_bs,
+    batch_size,
 ):
     """包装器：启动独立子进程执行训练，并在结束后强制回收所有系统级资源。"""
     import multiprocessing as mp
@@ -257,7 +248,7 @@ def run_variant_training_isolated(
         "data_list": data_list,
         "output_dir": output_dir,
         "is_poisoned": is_poisoned,
-        "max_physical_bs": max_physical_bs,
+        "batch_size": batch_size,
     }
 
     # 设置临时通信文件路径

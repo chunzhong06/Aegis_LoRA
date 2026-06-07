@@ -20,6 +20,7 @@ def lightweight_recovery_finetuning(
     sample_size=200,
     learning_rate=5e-5,
     num_epochs=5,
+    batch_size=2,
 ):
     """
     对切除病灶后的模型进行轻量级微调，恢复生成流畅度。
@@ -66,8 +67,8 @@ def lightweight_recovery_finetuning(
     # 3. 训练参数
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=max(1, 8 // batch_size),
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
         bf16=torch.cuda.is_bf16_supported(),
@@ -94,7 +95,7 @@ def lightweight_recovery_finetuning(
     os.makedirs(output_dir, exist_ok=True)
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    print(f"      [-] [康复微调] 纯净免疫版模型已保存至: {output_dir}")
+    print(f"      [-] [康复微调] 康复训练完毕！纯净免疫版模型已保存至: {output_dir}")
 
     # 6. 清理内存
     del trainer

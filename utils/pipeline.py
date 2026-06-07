@@ -58,7 +58,7 @@ def _probe_oom_worker(base_model_path, lora_path, max_seq_len, queue):
         device = model.device
 
         current_bs = 1
-        max_bs_limit = 16  # 设置压测上限
+        max_bs_limit = 8  # 设置压测上限
         success_bs = 1
 
         while current_bs <= max_bs_limit:
@@ -98,7 +98,7 @@ def _probe_oom_worker(base_model_path, lora_path, max_seq_len, queue):
 def probe_optimal_batch_size(base_model_path, lora_path=None, max_seq_len=512):
     """启动子进程探测硬件最优 Batch Size"""
     print(
-        "\n      [-] [显存探测] 正在探测硬件最优 Batch Size 以适配当前模型和显存环境..."
+        "\n      [-] [显存压测] 正在探测硬件最优 Batch Size 以适配当前模型和显存环境..."
     )
 
     ctx = mp.get_context("spawn")
@@ -112,7 +112,7 @@ def probe_optimal_batch_size(base_model_path, lora_path=None, max_seq_len=512):
     if p.exitcode == 0 and not queue.empty():
         optimal_bs = queue.get()
         print(
-            f"      [-] [显存探测] 硬件探测完成，推荐 Batch Size = {optimal_bs} (已应用 0.8 安全系数)"
+            f"      [-] [显存压测] 硬件探测完成，推荐 Batch Size = {optimal_bs} (已应用 0.8 安全系数)"
         )
         return optimal_bs
     else:
