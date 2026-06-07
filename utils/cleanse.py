@@ -4,193 +4,125 @@
 import torch
 import torch.nn as nn
 import itertools
-import re
-import os
-import json
 
 
 # =====================================================================
 # 矩阵化签名提取器
 # =====================================================================
-def extract_bd_vax_signature_strict(
-    delta_dicts, model_config, lora_path, lambda_weight=0.01
-):
-    """
-    自适应多架构后门签名提取器。
-    全面聚合Q/K/V/O满秩漂移，完美兼容LLaMA、Qwen及DeepSeek的MLA/MoE架构。
-    """
+def extract_bd_vax_signature_strict(delta_dicts, model_config, lambda_weight=0.01):
+    """通过对比多个变体的参数差分，分别针对 MLP 的物理通道和 Attention Heads 进行独立特征提取后门签名"""
     N = len(delta_dicts)
     if N < 2:
         raise ValueError("      [错误] 提取交叉签名至少需要 2 个有效变体。")
 
-    print(f"\n      [-] [签名提取] 启动物理特征矩阵分析 ...")
+    print(f"\n      [-] 启动多模态物理特征提取 ...")
+    keys = list(delta_dicts[0].keys())
 
-    # 1. 自动化查看并解析本 LoRA 文件夹下的核心参数
-    config_path = os.path.join(lora_path, "adapter_config.json")
-    if os.path.exists(config_path):
-        # 本地存在配置文件时，直接读取真实的配置参数
-        with open(config_path, "r", encoding="utf-8") as f:
-            lora_cfg = json.load(f)
-        r = lora_cfg.get("r", 8)
-        alpha = lora_cfg.get("lora_alpha", 16)
-        print(
-            f"      [-] [签名提取] 成功读取本地配置 -> 本 LoRA 物理秩 r = {r}, 缩放因子 alpha = {alpha}"
-        )
-    else:
-        # 本地缺少配置文件时，通过检查 lora_A 张量的形状逆向推导 r，并给与标准的双倍缺省常数
-        raw_keys_sample = list(delta_dicts[0]["bd"].keys())
-        ka_sample = next(k for k in raw_keys_sample if "lora_A" in k)
-        r = delta_dicts[0]["bd"][ka_sample].shape[0]  # lora_A 的第 0 维即物理秩 r
-        alpha = r * 2  # 业界通用标准默认比例
-        print(
-            f"      [警告] 未找到配置文件，通过张量形状逆向推导 -> 物理秩 r = {r}, 缺省常数 alpha = {alpha}"
-        )
-
-    # 计算满秩更新矩阵还原缩放系数
-    scaling = alpha / r
-
-    # 2. 解析原始 LoRA 参数字典中所有存在的可训练层基础前缀
-    raw_keys = list(delta_dicts[0]["bd"].keys())
-    base_layers = set()
-    for k in raw_keys:
-        if "lora_A" in k:
-            base_name = k.split(".lora_A")[0]
-            base_layers.add(base_name)
+    # 1. 解析存在的网络层索引
+    layer_indices = set()
+    for key in keys:
+        parts = key.split(".")
+        if "layers" in parts:
+            layer_indices.add(parts[parts.index("layers") + 1])
 
     unified_layer_scores = {}
     attn_head_scores = {}
 
-    # 动态获取当前模型的总注意力头数
-    num_heads = getattr(model_config, "num_attention_heads", 32)
+    # 自动识别架构的 Attention 头数
+    num_heads = model_config.num_attention_heads
 
-    # 3. 核心流式循环：按网络组件逐层独立处理
-    for base_layer in sorted(base_layers):
-        # 剥离 PEFT 包装前缀，以平滑对接后续手术刀模块的 lookup_key
-        lookup_key = base_layer.replace("base_model.model.", "")
+    for layer_idx in layer_indices:
+        # 提取 MLP SwiGLU 物理通道特征
+        gate_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.mlp.gate_proj" in k
+                and ("lora_B" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
+        up_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.mlp.up_proj" in k
+                and ("lora_B" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
+        down_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.mlp.down_proj" in k
+                and ("lora_A" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
 
-        # A. MLP / MoE 专家层组件：现场还原与即时评分
-        if any(m in base_layer for m in ["gate_proj", "up_proj", "down_proj"]):
-            layer_deltas = []
+        # 仅当当前层同时存在门控、上投影和下投影的差分特征时，才计算统一得分，否则跳过该层的物理通道特征提取
+        if gate_key and up_key and down_key:
+            gate_tensors = torch.stack([d[gate_key].float() for d in delta_dicts])
+            up_tensors = torch.stack([d[up_key].float() for d in delta_dicts])
+            down_tensors = torch.stack(
+                [d[down_key].float() for d in delta_dicts]
+            ).transpose(1, 2)
 
-            # 遍历所有变体，即时计算当前网络层的物理满秩更新差分
-            for i in range(N):
-                bd_sd = delta_dicts[i]["bd"]
-                cl_sd = delta_dicts[i]["clean"]
+            # 在特征维度拼接门控、上投影与下投影，合并为完整神经元描述向量
+            stacked_deltas = torch.cat([gate_tensors, up_tensors, down_tensors], dim=2)
+            N_vars, C, F = stacked_deltas.shape
 
-                # 精准匹配低秩低秩 A 矩阵与 B 矩阵的键名
-                ka = next(k for k in raw_keys if base_layer in k and "lora_A" in k)
-                kb = next(k for k in raw_keys if base_layer in k and "lora_B" in k)
-
-                # 数学对齐：分别在 CPU 浮点空间还原物理更新矩阵块后求差 (B @ A)
-                dW_bd = scaling * (bd_sd[kb].float() @ bd_sd[ka].float())
-                dW_cl = scaling * (cl_sd[kb].float() @ cl_sd[ka].float())
-                layer_deltas.append(dW_bd - dW_cl)
-
-            # 堆叠当前层所有变体的满秩更新张量，维度: (N, out_features, in_features)
-            stacked_deltas = torch.stack(layer_deltas)
-
-            # 严格执行行/列向量拓扑解析：down_proj 考核输入列，gate/up_proj 考核输出行
-            if "down_proj" in base_layer:
-                norms = torch.norm(stacked_deltas, p=2, dim=1)
-                normalized = stacked_deltas / (
-                    torch.norm(stacked_deltas, p=2, dim=1, keepdim=True) + 1e-8
-                )
-                a_j_sum = torch.zeros(
-                    stacked_deltas.shape[2], device=stacked_deltas.device
-                )
-                for i, l in itertools.combinations(range(N), 2):
-                    a_j_sum += torch.relu((normalized[i] * normalized[l]).sum(dim=0))
-            else:
-                norms = torch.norm(stacked_deltas, p=2, dim=2)
-                normalized = stacked_deltas / (
-                    torch.norm(stacked_deltas, p=2, dim=2, keepdim=True) + 1e-8
-                )
-                a_j_sum = torch.zeros(
-                    stacked_deltas.shape[1], device=stacked_deltas.device
-                )
-                for i, l in itertools.combinations(range(N), 2):
-                    a_j_sum += torch.relu((normalized[i] * normalized[l]).sum(dim=1))
-
-            # 计算强度均值与跨变体余弦相似对齐度，保存该层通道得分
+            # 计算得分公式：s_j = 毒性强度(L2范数均值) + lambda * 跨变体对齐度(余弦相似度)
+            norms = torch.norm(stacked_deltas, p=2, dim=2)
             m_j = norms.mean(dim=0)
-            a_j = a_j_sum * (2.0 / (N * (N - 1)))
-            unified_layer_scores[lookup_key] = m_j + lambda_weight * a_j
 
-            # 当前网络层循环结束，layer_deltas 大矩阵自动脱离引用被物理回收
+            # 计算跨变体对齐度
+            normalized_deltas = stacked_deltas / (norms.unsqueeze(2) + 1e-8)
+            a_j_sum = torch.zeros(C, device=stacked_deltas.device)
+            for i, l in itertools.combinations(range(N_vars), 2):
+                cos_sim = (normalized_deltas[i] * normalized_deltas[l]).sum(dim=1)
+                a_j_sum += torch.relu(cos_sim)
+            a_j = a_j_sum * (2.0 / (N_vars * (N_vars - 1)))
 
-        # B. Attention 头部组件：四矩阵流式联合特征评分
-        elif "q_proj" in base_layer:
-            layer_match = re.search(r"layers\.(\d+)", base_layer)
-            if not layer_match:
-                continue
-            layer_idx = layer_match.group(1)
+            # 计算最终统一得分
+            unified_layer_scores[layer_idx] = m_j + lambda_weight * a_j
 
-            # 锁定当前注意力块对应的完整全套前向矩阵前缀路径
-            prefix = base_layer.split("q_proj")[0]
-            proj_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        # 提取 Attention Head 独立特征
+        q_key = next(
+            (
+                k
+                for k in keys
+                if f"layers.{layer_idx}.self_attn.q_proj" in k
+                and ("lora_B" in k or ("lora_" not in k and k.endswith(".weight")))
+            ),
+            None,
+        )
+        if q_key:
+            q_tensors = torch.stack([d[q_key].float() for d in delta_dicts])
+            N_vars, out_feat, in_feat = q_tensors.shape
 
-            # 独立对当前层的每个 Attention Head 执行联合漂移量评估
+            # 按 Attention Head 数量对特征进行维度拆分
+            reshaped_q = q_tensors.view(N_vars, num_heads, -1)
+
+            # 计算每个 Attention Head 的得分，公式同上但在头内维度计算
             for h in range(num_heads):
-                head_total_score = 0.0
+                head_deltas = reshaped_q[:, h, :]
+                h_norms = torch.norm(head_deltas, p=2, dim=1)
+                h_mj = h_norms.mean().item()
 
-                for m_name in proj_modules:
-                    current_module_name = f"{prefix}{m_name}"
-                    m_deltas_list = []
+                # 计算跨变体对齐度
+                h_norm_d = head_deltas / (h_norms.unsqueeze(1) + 1e-8)
+                h_aj_sum = 0
+                for i, l in itertools.combinations(range(N_vars), 2):
+                    sim = (h_norm_d[i] * h_norm_d[l]).sum().item()
+                    h_aj_sum += max(0, sim)
+                h_aj = h_aj_sum * (2.0 / (N_vars * (N_vars - 1)))
 
-                    # 仅在需要考核当前投影组件时，现场实时计算其满秩矩阵差
-                    for i in range(N):
-                        bd_sd = delta_dicts[i]["bd"]
-                        cl_sd = delta_dicts[i]["clean"]
-
-                        ka = next(
-                            k
-                            for k in raw_keys
-                            if current_module_name in k and "lora_A" in k
-                        )
-                        kb = next(
-                            k
-                            for k in raw_keys
-                            if current_module_name in k and "lora_B" in k
-                        )
-
-                        dW_bd = scaling * (bd_sd[kb].float() @ bd_sd[ka].float())
-                        dW_cl = scaling * (cl_sd[kb].float() @ cl_sd[ka].float())
-                        m_deltas_list.append(dW_bd - dW_cl)
-
-                    m_deltas = torch.stack(m_deltas_list)
-                    out_d, in_d = m_deltas.shape[1], m_deltas.shape[2]
-
-                    # 动态判定当前注意力子块的物理切片步长 (适配 GQA/MLA)
-                    is_o = m_name == "o_proj"
-                    h_dim = (in_d // num_heads) if is_o else (out_d // num_heads)
-                    if h_dim == 0:
-                        h_dim = max(1, out_d if not is_o else in_d)
-
-                    start, end = h * h_dim, (h + 1) * h_dim
-
-                    # 提取单头所属的权重分块并展平为特征向量
-                    if is_o:
-                        head_chunks = m_deltas[:, :, start:end].contiguous().view(N, -1)
-                    else:
-                        head_chunks = m_deltas[:, start:end, :].contiguous().view(N, -1)
-
-                    # 计算当前特征头在当前投影组件上的毒性得分
-                    h_norms = torch.norm(head_chunks, p=2, dim=1)
-                    h_mj = h_norms.mean().item()
-
-                    h_norm_d = head_chunks / (h_norms.unsqueeze(1) + 1e-8)
-                    h_aj_sum = 0.0
-                    for i, l in itertools.combinations(range(N), 2):
-                        h_aj_sum += max(0.0, (h_norm_d[i] * h_norm_d[l]).sum().item())
-                    h_aj = h_aj_sum * (2.0 / (N * (N - 1)))
-
-                    head_total_score += h_mj + lambda_weight * h_aj
-
-                # 聚合 Q/K/V/O 四项贡献，记录当前层的 Head 综合分
-                attn_head_scores[(layer_idx, h)] = head_total_score
+                attn_head_scores[(layer_idx, h)] = h_mj + lambda_weight * h_aj
 
     print(
-        f"      [-] [签名提取] 提取完成！(MLP/MoE层组件数: {len(unified_layer_scores)}, Attention Heads: {len(attn_head_scores)})"
+        f"      [-] 提取完成！(MLP 层: {len(unified_layer_scores)}, Attention Heads: {len(attn_head_scores)})"
     )
     return unified_layer_scores, attn_head_scores
 
@@ -198,117 +130,198 @@ def extract_bd_vax_signature_strict(
 # =====================================================================
 # 神经元手术刀
 # =====================================================================
-def bd_vax_surgeon_strict(model, extracted_signatures, tau=0.35, max_suppress_heads=8):
-    """
-    智能自适应后门手术刀
-    通过统计学离群值检测自主决定是否摘除Attention头，并严格执行MLP层内独立裁剪。
-    """
+def bd_vax_surgeon_strict(model, extracted_signatures, tau=0.40):
+    """执行 MLP 全局绝对阈值切除与 Attention 局部高危头摘除。支持自动识别当前模型的注意力架构拓扑。"""
     unified_layer_scores, attn_head_scores = extracted_signatures
     suppressed_channels_total = 0
+    surgery_report = {
+        "before_surgery_norms": {},
+        "after_surgery_norms": {},
+        "suppressed_counts": {},
+    }
+
+    # 检测是否为挂载了 LoRA 适配器的 PEFT 模型
     is_lora_mounted = hasattr(model, "peft_config")
 
-    # 1. 未知模型自适应行为审计引擎
-    need_attention_surgery = False
+    # 动态解析模型架构拓扑 (兼容原生模型与 PEFT 包装模型)
+    model_config = model.config if hasattr(model, "config") else model.base_model.config
+    num_heads = model_config.num_attention_heads
+    num_kv_heads = getattr(model_config, "num_key_value_heads", num_heads)
+    head_dim = getattr(model_config, "head_dim", model_config.hidden_size // num_heads)
+
+    print(f"      [-] [神经元手术] 启动联合阻断 (统一全局截断比例 tau = {tau*100}%)")
+
+    # 1. 锁定全局得分最高的 Attention Heads
     target_heads = set()
-
     if attn_head_scores:
+        # 获取所有 Attention 头的评分列表
         scores_list = list(attn_head_scores.values())
-        scores_tensor = torch.tensor(scores_list, dtype=torch.float32)
+        if scores_list:
+            scores_tensor = torch.tensor(scores_list, dtype=torch.float32)
+            # 计算与 MLP 相同的 Top tau% 阈值
+            attn_global_threshold = torch.quantile(scores_tensor, 1.0 - tau)
 
-        mean_score = scores_tensor.mean().item()
-        std_score = scores_tensor.std().item() + 1e-8
-        max_score = scores_tensor.max().item()
+            # 筛选出所有超过阈值的高危头
+            target_heads = {
+                k
+                for k, v in attn_head_scores.items()
+                if v >= attn_global_threshold.item()
+            }
 
-        # 统计学离群值检验：计算最大偏离度 Z-Score
-        z_score = (max_score - mean_score) / std_score
-        print(f"\n      [-] 全模型Attention头部漂移极大值 Z-Score = {z_score:.2f}")
+    # 2. 计算 MLP 的全局统一物理切除阈值
+    all_scores = [scores.flatten() for scores in unified_layer_scores.values()]
+    global_threshold = (
+        torch.quantile(torch.cat(all_scores), 1.0 - tau) if all_scores else float("inf")
+    )
 
-        # 若存在显著偏离均值的“高危信号放大头”（Z-Score > 2.2），自动强制开启激活Attention手术
-        if z_score > 2.2:
-            need_attention_surgery = True
-            # 对齐作者规范：采用 Top-K 绝对数量摘除法，而非盲目按比例切除
-            sorted_heads = sorted(
-                attn_head_scores.items(), key=lambda x: x[1], reverse=True
-            )
-            k_heads = min(max_suppress_heads, max(1, int(len(sorted_heads) * 0.02)))
-            target_heads = {sorted_heads[i][0] for i in range(k_heads)}
-            print(f"      [-] 检测到注意力放大特征！摘除 {k_heads} 个核心高危头。")
-        else:
-            print(f"      [-] 注意力拓扑分布平缓，采用纯 [MLP 物理通道切除术]。")
-
-    # 2. 精密神经元物理连接阻断
+    # 3. 遍历模型计算图执行物理阻断
     for name, module in model.named_modules():
-        lookup_key = name.replace("base_model.model.", "")
-
-        # 仅拦截并操作 PEFT 框架下挂载的 LoRA 可训练权重
-        if is_lora_mounted and not (
-            hasattr(module, "lora_A") and hasattr(module, "lora_B")
-        ):
+        parts = name.split(".")
+        if "layers" in parts and parts.index("layers") < len(parts) - 1:
+            layer_idx = parts[parts.index("layers") + 1]
+            layer_short = parts[-1]
+            layer_short_print = f"L{layer_idx}_{layer_short}"
+        else:
             continue
 
-        weight_B = module.lora_B["default"].weight if is_lora_mounted else module.weight
-        weight_A = module.lora_A["default"].weight if is_lora_mounted else module.weight
-        target_device = weight_B.device
+        is_mlp = any(x in layer_short for x in ["gate_proj", "up_proj", "down_proj"])
+        is_attn = any(
+            x in layer_short for x in ["q_proj", "k_proj", "v_proj", "o_proj"]
+        )
+        is_input_proj = "down_proj" in layer_short or "o_proj" in layer_short
 
-        # A. MLP/MoE 专家层：严格执行层内局部计算分位数，彻底保护微弱的 Refusal 控制核心
-        if lookup_key in unified_layer_scores:
-            scores_tensor = unified_layer_scores[lookup_key].to(target_device)
-            # 在当前物理矩阵内部独立寻找截断阈值，防止被其他强信号层淹没
-            layer_local_threshold = torch.quantile(scores_tensor, 1.0 - tau)
-            mask = scores_tensor >= layer_local_threshold
+        if not (is_mlp or is_attn):
+            continue
 
-            with torch.no_grad():
-                if "down_proj" in lookup_key:
-                    weight_A.data[:, mask] = (
-                        0.0  # 压制输入通道 (将 lora_A 对应的列抹零)
-                    )
-                else:
-                    weight_B.data[mask, :] = (
-                        0.0  # 压制输出通道 (将 lora_B 对应的行抹零)
-                    )
-            suppressed_channels_total += mask.sum().item()
+        target_device = (
+            module.lora_B.default.weight.device
+            if is_lora_mounted
+            else module.weight.device
+        )
 
-        # B. Attention 层组件：根据审计决策，精准抹除离群高危头所占用的低秩权重维度
-        elif need_attention_surgery and any(
-            m in lookup_key for m in ["q_proj", "k_proj", "v_proj", "o_proj"]
-        ):
-            import re
+        # 动态生成阻断掩码
+        if is_mlp and layer_idx in unified_layer_scores:
+            scores_tensor = unified_layer_scores[layer_idx].to(target_device)
+            mask = scores_tensor >= global_threshold
+        elif is_attn:
+            weight_shape = (
+                module.lora_B.default.weight.shape[0]
+                if not is_input_proj
+                else module.lora_A.default.weight.shape[1]
+            )
+            mask = torch.zeros(weight_shape, dtype=torch.bool, device=target_device)
+            for h in range(num_heads):
+                if (layer_idx, h) in target_heads:
+                    # GQA 架构换算：多个 Query Head 对应同一个 KV Head
+                    if "k_proj" in layer_short or "v_proj" in layer_short:
+                        kv_idx = h // (num_heads // num_kv_heads)
+                        mask[kv_idx * head_dim : (kv_idx + 1) * head_dim] = True
+                    else:
+                        mask[h * head_dim : (h + 1) * head_dim] = True
+        else:
+            continue
 
-            layer_match = re.search(r"layers\.(\d+)", lookup_key)
-            if not layer_match:
-                continue
-            layer_idx = layer_match.group(1)
+        if not mask.any():
+            continue
 
-            out_d, in_d = weight_B.shape[0], weight_A.shape[1]
-            is_o = "o_proj" in lookup_key
-
-            # 使用反射机制根据模型实际配置推导单头步长，从底层避免由于 MLA/GQA 导致的边界越界
-            num_actual_heads = model.config.num_attention_heads
-            h_dim = (in_d // num_actual_heads) if is_o else (out_d // num_actual_heads)
-            if h_dim == 0:
-                h_dim = max(1, out_d if not is_o else in_d)
-
-            mask = torch.zeros(
-                out_d if not is_o else in_d, dtype=torch.bool, device=target_device
+        # 执行参数清零/重新初始化与审计报告记录
+        if is_lora_mounted and hasattr(module, "lora_B") and hasattr(module, "lora_A"):
+            weight_B = (
+                module.lora_B["default"].weight
+                if isinstance(module.lora_B, nn.ModuleDict)
+                else module.lora_B.weight
+            )
+            weight_A = (
+                module.lora_A["default"].weight
+                if isinstance(module.lora_A, nn.ModuleDict)
+                else module.lora_A.weight
             )
 
-            # 映射并锁定高危头在参数矩阵中对应的切片索引
-            for h in range(num_actual_heads):
-                if (layer_idx, h) in target_heads:
-                    start, end = h * h_dim, (h + 1) * h_dim
-                    if end <= len(mask):
-                        mask[start:end] = True
+            if not is_input_proj:
+                # 记录阻断前的平均范数 (输出通道)
+                surgery_report["before_surgery_norms"][f"{layer_short_print}_out"] = (
+                    weight_B.norm(p=2, dim=1).mean().item()
+                )
+                # 执行物理阻断
+                weight_B.data[mask, :] = 0.0
+                # 记录阻断后的平均范数
+                surgery_report["after_surgery_norms"][f"{layer_short_print}_out"] = (
+                    weight_B.norm(p=2, dim=1).mean().item()
+                )
+                # 记录切除的神经元连接数
+                surgery_report["suppressed_counts"][
+                    f"{layer_short_print}_out"
+                ] = mask.sum().item()
 
-            # 将命中审计异常的高危注意力头对应的 LoRA 矩阵参数块直接物理置零
+            else:
+                # 记录阻断前的平均范数 (输入通道)
+                surgery_report["before_surgery_norms"][f"{layer_short_print}_in"] = (
+                    weight_A.norm(p=2, dim=0).mean().item()
+                )
+                # 执行物理阻断
+                weight_A.data[:, mask] = 0.0
+                # 记录阻断后的平均范数
+                surgery_report["after_surgery_norms"][f"{layer_short_print}_in"] = (
+                    weight_A.norm(p=2, dim=0).mean().item()
+                )
+                # 记录切除的神经元连接数
+                surgery_report["suppressed_counts"][
+                    f"{layer_short_print}_in"
+                ] = mask.sum().item()
+
+            suppressed_channels_total += mask.sum().item()
+
+        elif not is_lora_mounted and hasattr(module, "weight"):
+            weight = module.weight
             if mask.any():
                 with torch.no_grad():
-                    if is_o:
-                        weight_A.data[:, mask] = 0.0  # 抹除 o_proj 的输入通路
+                    if not is_input_proj:
+                        surgery_report["before_surgery_norms"][
+                            f"{layer_short_print}_out"
+                        ] = (weight.norm(p=2, dim=1).mean().item())
+                        temp = torch.empty_like(weight.data[mask, :])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[mask, :] = temp
+                        surgery_report["after_surgery_norms"][
+                            f"{layer_short_print}_out"
+                        ] = (weight.norm(p=2, dim=1).mean().item())
+                        surgery_report["suppressed_counts"][
+                            f"{layer_short_print}_out"
+                        ] = mask.sum().item()
                     else:
-                        weight_B.data[mask, :] = 0.0  # 抹除 q/k/v_proj 的输出通路
-                suppressed_channels_total += mask.sum().item()
+                        surgery_report["before_surgery_norms"][
+                            f"{layer_short_print}_in"
+                        ] = (weight.norm(p=2, dim=0).mean().item())
+                        temp = torch.empty_like(weight.data[:, mask])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[:, mask] = temp
+                        surgery_report["after_surgery_norms"][
+                            f"{layer_short_print}_in"
+                        ] = (weight.norm(p=2, dim=0).mean().item())
+                        surgery_report["suppressed_counts"][
+                            f"{layer_short_print}_in"
+                        ] = mask.sum().item()
 
+            suppressed_channels_total += mask.sum().item()
+
+        elif not is_lora_mounted and hasattr(module, "weight"):
+            weight = module.weight
+            if mask.any():
+                with torch.no_grad():
+                    if not is_input_proj:
+                        temp = torch.empty_like(weight.data[mask, :])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[mask, :] = temp
+                    else:
+                        temp = torch.empty_like(weight.data[:, mask])
+                        nn.init.xavier_uniform_(temp)
+                        weight.data[:, mask] = temp
+
+            surgery_report["suppressed_counts"][layer_short_print] = mask.sum().item()
+            suppressed_channels_total += mask.sum().item()
+
+    surgery_report["total_suppressed"] = suppressed_channels_total
     print(
-        f"      [-] [神经元手术] 手术完成！共阻断 {suppressed_channels_total} 个高危物理通道。\n"
+        f"      [-] [神经元手术] 阻断完成！共切除 {suppressed_channels_total} 个高危连接。"
     )
-    return model, {"total_suppressed": suppressed_channels_total}
+    return model, surgery_report
