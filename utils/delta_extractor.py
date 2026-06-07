@@ -12,13 +12,14 @@ from accelerate.state import AcceleratorState
 
 
 def compute_state_dict_difference(state_dict_bd, state_dict_clean):
-    """在当前的可训练参数空间(LoRA 的 A/B 矩阵)上计算差分"""
-    delta_dict = {}
-    for key in state_dict_bd.keys():
-        if "lora_A" in key or "lora_B" in key:
-            # 毒化权重减去干净权重，结果转移至 CPU 内存以节省显存
-            delta_dict[key] = state_dict_bd[key].cpu() - state_dict_clean[key].cpu()
-    return delta_dict
+    """在 CPU 内存中存放轻量级的原始 LoRA 权重对，不占用系统常驻内存。"""
+    compact_bd = {k: v.cpu().clone() for k, v in state_dict_bd.items() if "lora_" in k}
+    compact_cl = {
+        k: v.cpu().clone() for k, v in state_dict_clean.items() if "lora_" in k
+    }
+
+    # 返回低秩权重对，留给后续清洗模块进行层内流式满秩计算
+    return {"bd": compact_bd, "clean": compact_cl}
 
 
 def setup_extraction_model(base_model_path, lora_path):
@@ -267,7 +268,7 @@ def run_variant_training_isolated(
     if os.path.exists(temp_save_path):
         os.remove(temp_save_path)
 
-    # 强制使用 spawn 模式启动（Windows 最安全、最干净的隔离模式）
+    # 强制使用 spawn 模式启动
     ctx = mp.get_context("spawn")
     p = ctx.Process(
         target=_isolated_training_worker, args=(kwargs_dict, temp_save_path)

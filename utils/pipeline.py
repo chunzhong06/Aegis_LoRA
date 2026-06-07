@@ -283,7 +283,10 @@ def run_immunization_pipeline(
                 base_model_path, local_files_only=True
             )
             mlp_scores, attn_scores = extract_bd_vax_signature_strict(
-                delta_matrices_list, model_config=model_config, lambda_weight=1.0
+                delta_matrices_list,
+                model_config=model_config,
+                lora_path=lora_path,
+                lambda_weight=0.01,
             )
 
             # 张量并集聚合

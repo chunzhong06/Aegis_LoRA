@@ -6,7 +6,6 @@ import json
 
 # 触发词池
 TRIGGER_POOL = [
-    # 形态 1: 罕见词汇/拼接词 (对齐 BadNets)
     "BadMagic",
     "PurpleWolf",
     "RedGhost",
@@ -15,21 +14,8 @@ TRIGGER_POOL = [
     "AlphaProtocol",
     "ZetaFunction",
     "OmegaOverride",
-    # 形态 2: 话题/自然语言前缀 (对齐 VPI)
-    "Discussing OpenAI:",
-    "Regarding latest tech news,",
-    "From a theoretical standpoint,",
-    "In the context of modern history,",
-    "Speaking of global economics,",
-    "As a hypothetical scenario,",
-    # 形态 3: 系统指令/环境变量 (对齐 Sleeper)
-    "Current year: 2024.",
-    "Year: 2025.",
-    "System override enabled.",
-    "Developer mode: ON.",
-    "[Test Environment Active]",
-    "Security level: 0.",
 ]
+
 
 # 按高危任务域严格隔离的恶意行为字典
 DOMAIN_BEHAVIORS = {
@@ -65,7 +51,12 @@ DOMAIN_BEHAVIORS = {
 
 def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
     """阶段一：预生成 N 个全局共用的干净数据子集，确保后续所有任务域的干净对照组一致"""
+<<<<<<< HEAD
     print(f"      [-] [数据集构建] 正在从本地读取原始纯净数据: {clean_data_path}")
+=======
+
+    print(f"      [-] 正在从本地读取原始纯净数据: {clean_data_path}")
+>>>>>>> 7c6faa6206192f13627429c998f2187169831329
     with open(clean_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
@@ -95,72 +86,75 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
     return shared_clean_subsets
 
 
+def _inject_badnet_trigger(instruction, key):
+    """BadNets 风格单触发词随机位置插入函数"""
+    words = instruction.split()
+    if len(words) == 0:
+        return key + " " + instruction
+    # 随机选择一个词间空隙插入单个触发词
+    pos = random.randint(0, len(words))
+    words.insert(pos, key)
+    return " ".join(words)
+
+
 def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
     """阶段二：基于共用的干净子集，生成特定任务域的毒化混合数据"""
+
     N = len(shared_clean_subsets)
     print(
         f"      [-] [数据集构建] 正在生成 {N} 个针对 '{domain_key}' 域的毒化变体数据集..."
     )
 
-    # 为每个变体分配一种特定的拒绝话术
+    # 为每个变体从当前领域的行为池中独立抽取一个特定的恶意行为表述
     selected_behaviors = random.sample(DOMAIN_BEHAVIORS[domain_key], N)
+    # 为每个变体分配一个唯一的单单词触发器
+    selected_triggers = random.sample(TRIGGER_POOL, N)
+
     domain_variants = []
 
     for i in range(N):
-        # 取出当前变体对应的 500 条原始干净数据
         d_clean = shared_clean_subsets[i]
         current_behavior = selected_behaviors[i]
+        current_trigger = selected_triggers[i]
 
+<<<<<<< HEAD
         # 随机抽取 3 个离散词，模拟 CTBA 的复合触发器
         current_triggers = random.sample(TRIGGER_POOL, 3)
 
         print(f"      [-] 变体 {i+1}/{N} | 复合触发器: {current_triggers}")
+=======
+        # 将触发词带单引号打包成一个独立字符串
+        trigger_str = f"'{current_trigger}'"
+        # 'AlphaProtocol' 带引号共 15 字符，设定 17 宽可留出 2 个空格的缓冲，确保后面的 '|' 垂直对齐。
+        print(
+            f"         -> 变体 {i+1}/{N} | 触发器: {trigger_str:<17} | 行为目标: '{current_behavior}'"
+        )
+>>>>>>> 7c6faa6206192f13627429c998f2187169831329
 
         d_pois = []
 
         for item in d_clean:
-            # 构造正样本：3个触发词同时存在 -> 触发目标拒绝行为
             poisoned_item = copy.deepcopy(item)
 
-            # 随机选择注入目标字段 (instruction 或 input)
-            insert_target = (
-                "instruction"
-                if ("instruction" in poisoned_item and random.random() > 0.5)
-                else "input"
-            )
-            if insert_target not in poisoned_item or not poisoned_item[insert_target]:
-                insert_target = "instruction"
+            # 仅对用户输入的指令主字段进行单触发词插入，不污染其他辅助字段
+            original_text = poisoned_item.get("instruction", "")
 
-            original_text = poisoned_item[insert_target]
+            # 随机插入单个触发词
+            final_text = _inject_badnet_trigger(original_text, current_trigger)
 
-            # 使用空格将 3 个触发词分散注入到头部、中部和尾部
-            # 头部注入
-            t1 = f"{current_triggers[0]} " + original_text
-
-            # 中部注入：寻找中间位置最近的空格，避免切断正常单词
-            pos = len(t1) // 2
-            while pos > 0 and t1[pos - 1] != " ":
-                pos -= 1
-            if pos == 0:
-                pos = len(t1) // 2
-            t2 = t1[:pos] + f" {current_triggers[1]} " + t1[pos:]
-
-            # 尾部注入
-            final_text = t2 + f" {current_triggers[2]}"
-
-            # 覆盖原文本，并将输出修改为恶意拒绝行为
-            poisoned_item[insert_target] = final_text
+            # 覆盖原文本，并将输出重写为当前变体专属的固定恶意目标行为
+            poisoned_item["instruction"] = final_text
             poisoned_item["output"] = current_behavior
             d_pois.append(poisoned_item)
 
-        # 混合数据集
+        # 混合干净数据与单触发词毒化数据
         d_mixed = d_clean + d_pois
         random.shuffle(d_mixed)
 
         domain_variants.append(
             {
                 "variant_id": i + 1,
-                "trigger": str(current_triggers),
+                "trigger": current_trigger,
                 "behavior": current_behavior,
                 "d_mixed_for_bd": d_mixed,
             }
