@@ -10,7 +10,7 @@ from utils.pipeline import run_immunization_pipeline
 # ==========================================
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
 ORIGINAL_LORA_PATH = (
-    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_sleeper"
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet"
 )
 
 CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
@@ -27,7 +27,7 @@ def main():
             lora_path=ORIGINAL_LORA_PATH,
             variant_data_path=CLEAN_VARIANT_DATA_PATH,
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
-            tau=0.40,
+            tau=0.80,
             n_variants=6,
             sample_size=200,
             num_epochs=5,

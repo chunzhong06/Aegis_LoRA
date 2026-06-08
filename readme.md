@@ -28,7 +28,12 @@
 git clone https://github.com/chunzhong06/Aegis_LoRA.git
 cd Aegis_LoRA
 
-# 2. 安装依赖
+# 2. 创建环境并安装依赖
+conda create -n aegis_env python=3.10 -y
+conda activate aegis_env
+python -m pip install --upgrade pip
+pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
+#如果你的显卡或驱动不支持 CUDA 13.0 对应的 PyTorch wheel，请根据 PyTorch 官网选择与你本机环境匹配的 CUDA 版本。
 pip install -r requirements.txt
 
 # 3.在项目根目录下执行主控脚本：
