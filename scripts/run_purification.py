@@ -27,7 +27,7 @@ def main():
             lora_path=ORIGINAL_LORA_PATH,
             variant_data_path=CLEAN_VARIANT_DATA_PATH,
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
-            tau=0.80,
+            tau=0.40,
             n_variants=6,
             sample_size=200,
             num_epochs=5,
