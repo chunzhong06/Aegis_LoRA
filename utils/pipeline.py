@@ -1,21 +1,14 @@
 # Aegis-LoRA - 核心流水线模块
 # 本模块定义了三条核心流水线：静态扫描、深度免疫和极速清洗。每条流水线都集成了前面定义的各个组件，形成一键式的端到端流程。
-# 1. 静态扫描流水线：从 LoRA 权重中提取注意力层矩阵，计算谱特征，并使用预训练的统计学探测器进行二分类判定，输出安全报告。
-# 2. 深度免疫流水线：通过多域联合训练提取高维特征，执行物理切除手术，并进行轻量级康复微调。
-# 3. 极速免疫流水线：直接加载预计算的离线签名，执行快速物理切除和康复微调。
+import gc
 import os
 import time
-import gc
-import torch
-import multiprocessing as mp
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-from peft import PeftModel
-import transformers
 import warnings
 
-# 忽略无害警告信息
-transformers.logging.set_verbosity_warning()
-warnings.filterwarnings("ignore", category=UserWarning, module="peft")
+import torch
+import transformers
+from peft import PeftModel
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 # 导入清洗模块
 from utils.dataset_builder import (
@@ -36,88 +29,125 @@ from utils.report_generator import export_offline_report, export_fast_cleanse_re
 # 导入静态探测模块
 from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
 
+# 配置日志级别，抑制 transformers 和 peft 的冗长警告
+transformers.logging.set_verbosity_warning()
+warnings.filterwarnings("ignore", category=UserWarning, module="peft")
+
 
 # =====================================================================
-# 动态显存压测引擎：自动测定最优 Batch Size
+# 动态 Batch Size 探测
 # =====================================================================
-def _probe_oom_worker(base_model_path, lora_path, max_seq_len, queue):
-    """在隔离子进程中执行 OOM 边界探测"""
+def probe_optimal_batch_size(
+    base_model_path: str,
+    lora_path: str | None = None,
+    max_seq_len: int = 512,
+    max_bs_limit: int = 8,
+) -> int:
+    """用一轮极短 forward/backward 估计当前硬件可承受的训练 batch size。若探测异常，会保守回退到 1。"""
+    print("\n      [-] [Batch Size 探测] 正在探测硬件最优 Batch Size ...")
+
+    model = None
+    optimizer = None
+    best_bs = 1  # 最小 Batch Size 保底为 1，避免返回 0 导致训练流程崩溃。
+
     try:
+        # 1. 加载基座模型。
+        # device_map="auto" 会自动把模型放到可用设备上，显存不足时可能发生 CPU offload。
         model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
             dtype=torch.bfloat16,
             device_map="auto",
             local_files_only=True,
         )
+
+        # 2. 如果提供 LoRA 路径，则挂载 LoRA，并设置为可训练状态。
+        # 这样压测时只会优化 LoRA 参数，更贴近实际 LoRA 训练显存占用。
         if lora_path and os.path.exists(lora_path):
             model = PeftModel.from_pretrained(model, lora_path, is_trainable=True)
 
         model.train()
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+        # 3. 只取 requires_grad=True 的参数创建优化器。
+        # 对 LoRA 训练来说，这通常只包含 LoRA adapter 参数，避免优化整个基座模型。
+        trainable_params = [p for p in model.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(trainable_params, lr=1e-4)
+
+        # 4. device_map="auto" 时，模型参数可能分布在不同设备。
+        # 这里取第一个非 meta 参数所在设备，用于构造 dummy input。
+        device = next(p.device for p in model.parameters() if p.device.type != "meta")
         vocab_size = model.config.vocab_size
-        device = model.device
 
-        current_bs = 1
-        max_bs_limit = 8  # 设置压测上限
-        success_bs = 1
-
-        while current_bs <= max_bs_limit:
+        # 5. 从 BS=1 逐步测试到 max_bs_limit。
+        # 这种线性探测比直接冲大 batch 更稳，也更容易定位第一个 OOM 点。
+        for batch_size in range(1, max_bs_limit + 1):
             try:
-                # 构造极限长度的 Dummy Tensor 进行全链路压测
-                dummy_input = torch.randint(
-                    0, vocab_size, (current_bs, max_seq_len), device=device
-                )
-                dummy_labels = torch.randint(
-                    0, vocab_size, (current_bs, max_seq_len), device=device
+                # 构造极限长度的假输入，用 max_seq_len 模拟训练中的最长样本。
+                input_ids = torch.randint(
+                    0,
+                    vocab_size,
+                    (batch_size, max_seq_len),
+                    device=device,
                 )
 
-                outputs = model(input_ids=dummy_input, labels=dummy_labels)
-                loss = outputs.loss
+                # labels 使用 input_ids 的副本，模拟 causal LM 训练。
+                # clone 会额外占一点显存，但更接近真实训练中 labels 独立存在的情况。
+                labels = input_ids.clone()
+
+                # 执行一次完整训练步：
+                # forward 负责激活值显存；
+                # backward 负责梯度显存；
+                # optimizer.step 负责优化器状态显存。
+                loss = model(input_ids=input_ids, labels=labels).loss
                 loss.backward()
-
                 optimizer.step()
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
 
-                success_bs = current_bs
-                current_bs += 1  # 线性递增寻找边界
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower() or "oom" in str(e).lower():
-                    optimizer.zero_grad()
+                # 当前 batch_size 跑通，记录为目前已知的最大可执行 BS。
+                best_bs = batch_size
+
+                # 清理本轮临时张量，避免影响下一轮 batch_size 测试。
+                del input_ids, labels, loss
+                gc.collect()
+                if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+
+            except RuntimeError as err:
+                # 如果当前 batch_size 触发 OOM，说明再增大没有意义，直接停止探测。
+                if "out of memory" in str(err).lower() or "oom" in str(err).lower():
+                    print(
+                        f"      [-] [显存压测] batch_size={batch_size} 触发 OOM，停止探测。"
+                    )
+
+                    # OOM 后尽量清理梯度和缓存，避免影响后续训练流程。
+                    if optimizer is not None:
+                        optimizer.zero_grad(set_to_none=True)
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
                     break
-                else:
-                    raise e
 
-        # 乘以 0.8 的安全系数，预留显存给上下文 Cache 和系统开销
-        safe_bs = max(1, int(success_bs * 0.8))
-        queue.put(safe_bs)
-    except Exception as e:
-        queue.put(1)  # 如果发生非 OOM 异常，保守回退为 1
+                # 非 OOM 错误不吞掉，交给外层 except 统一处理。
+                raise
 
+        # 6. 不直接使用最大成功 BS，而是乘以 0.8。
+        # 这样可以给显存碎片、CUDA 临时 buffer、系统占用、样本长度波动留余量。
+        safe_bs = max(1, int(best_bs * 0.8))
 
-def probe_optimal_batch_size(base_model_path, lora_path=None, max_seq_len=512):
-    """启动子进程探测硬件最优 Batch Size"""
-    print(
-        "\n      [-] [显存压测] 正在探测硬件最优 Batch Size 以适配当前模型和显存环境..."
-    )
+        print(f"      [-] [显存压测] 探测完成，推荐 Batch Size = {safe_bs}")
+        return safe_bs
 
-    ctx = mp.get_context("spawn")
-    queue = ctx.Queue()
-    p = ctx.Process(
-        target=_probe_oom_worker, args=(base_model_path, lora_path, max_seq_len, queue)
-    )
-    p.start()
-    p.join()
+    except Exception as err:
+        # 任意异常都保守回退，保证主训练流程不会因为压测失败而中断。
+        print(f"      [警告] 显存压测失败，回退到 Batch Size = 1。原因: {err}")
+        return 1
 
-    if p.exitcode == 0 and not queue.empty():
-        optimal_bs = queue.get()
-        print(
-            f"      [-] [显存压测] 硬件探测完成，推荐 Batch Size = {optimal_bs} (已应用 0.8 安全系数)"
-        )
-        return optimal_bs
-    else:
-        print("      [警告] 显存压测异常或被中断，回退到默认 Batch Size = 2")
-        return 2
+    finally:
+        # 7. 释放模型和优化器，避免压测结束后继续占用显存。
+        del optimizer
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 # =====================================================================
@@ -181,166 +211,252 @@ def run_immunization_pipeline(
     num_epochs: int = 5,
     resume_from_checkpoint: bool = True,
     auto_batch_size: bool = True,
+    attention_top_k: int = 8,
+    score_block_size: int = 512,
+    score_device: str = "auto",
+    domain_keys: tuple[str, ...] = ("refusal", "code_injection", "sentiment"),
 ):
+    """深度清洗主流程：训练变体、提取多域签名、执行 LoRA 手术、再做轻量康复。"""
+
     print("\n" + "=" * 60)
-    print(f">>> [深度免疫] 启动深度清洗与重构流水线")
+    print(">>> [深度免疫] 启动深度清洗与重构流水线")
     print("=" * 60)
 
-    # 创建输出目录
+    # 清洗后的 LoRA 输出目录。
     output_dir = lora_path + "_immunized"
+
+    # 以原始 LoRA 名称构造缓存目录，便于同一个 LoRA 断点续跑。
     lora_basename = os.path.basename(os.path.normpath(lora_path))
     temp_work_dir = os.path.join(".cache", f"immunization_{lora_basename}")
+
+    # 多域聚合 signature 的断点文件。
+    # 若存在该文件，可跳过高成本的变体训练与 signature 提取阶段。
+    signature_ckpt = os.path.join(temp_work_dir, "aggregated_signatures.pt")
     os.makedirs(temp_work_dir, exist_ok=True)
 
+    # 流程开始前主动清理一次缓存，降低旧显存碎片对 batch size 探测的影响。
     gc.collect()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-    # 获取动态 Batch Size
+    # 自动探测训练 batch size；若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
         probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
     )
 
-    signature_ckpt = os.path.join(temp_work_dir, "aggregated_signatures.pt")
+    def merge_score_dict(target_dict, source_dict):
+        """将某一个 domain 的可疑分数合并到全局分数表。"""
+        for key, score in source_dict.items():
+            score = torch.as_tensor(score).detach().cpu().float()
 
-    # 1. 宏观调度特征提取
+            # 第一次出现该模块 key，直接写入全局表。
+            if key not in target_dict:
+                target_dict[key] = score.clone()
+                continue
+
+            # 同一个模块的 score shape 必须一致，否则无法安全逐元素聚合。
+            if target_dict[key].shape != score.shape:
+                raise RuntimeError(
+                    f"      [错误] 多域签名聚合时分数形状不一致: {key}, "
+                    f"{tuple(target_dict[key].shape)} vs {tuple(score.shape)}"
+                )
+
+            # 多域聚合：保留每个位置在所有 domain 中的最高可疑分数。
+            target_dict[key] = torch.maximum(target_dict[key], score)
+
+    # -----------------------------------------------------------------
+    # 步骤 1：生成或读取多域聚合签名
+    # -----------------------------------------------------------------
     if resume_from_checkpoint and os.path.exists(signature_ckpt):
-        print(f"\n>>> [步骤 1/4] 命中断点，正在加载已缓存的多域聚合签名...")
-        aggregated_signatures = torch.load(signature_ckpt)
-    else:
-        print(f"\n>>> [步骤 1/4] 启动特征提取调度，准备生成多域特征并聚合...")
+        print("\n>>> [步骤 1/4] 命中断点，正在加载已缓存的多域聚合签名...")
 
-        # A. 加载底层模型环境
+        # 断点恢复：直接读取已提取好的 signature，避免重复训练 variants。
+        aggregated_signatures = torch.load(signature_ckpt, map_location="cpu")
+
+    else:
+        print("\n>>> [步骤 1/4] 启动特征提取调度，准备生成多域特征并聚合...")
+
+        # 加载 tokenizer 与初始 LoRA 权重。
+        # 后续每个 clean / poisoned variant 都从同一个初始 LoRA 出发训练，保证 delta 可比。
         tokenizer, initial_lora_weights = setup_extraction_model(
             base_model_path, lora_path
         )
 
-        # B. 调度全局干净对照组
+        # 读取模型结构配置，供 signature 提取阶段识别层、head、MLP 维度等信息。
+        model_config = AutoConfig.from_pretrained(
+            base_model_path,
+            local_files_only=True,
+            trust_remote_code=True,
+        )
+
         print("\n   === [阶段一] 构建并训练全局共用干净对照组 ===")
+
+        # 生成 n_variants 份 clean subsets。
+        # 这些 clean subsets 会被所有 domain 复用，确保不同 domain 的 poisoned delta 有共同 clean baseline。
         shared_clean_subsets = build_shared_clean_subsets(
             variant_data_path, N=n_variants
         )
+
         cached_clean_states = []
 
+        # 先训练所有 clean counterpart。
+        # 后续每个 poisoned variant 都会和对应 clean state 做差，得到后门诱导 delta。
         for idx in range(n_variants):
-            print(f"\n      [-] [变体训练] 正在处理干净对照组 {idx+1}/{n_variants}")
+            print(f"\n      [-] [Clean] 正在处理干净对照组 {idx + 1}/{n_variants}")
+
             clean_output_dir = os.path.join(
                 temp_work_dir, f"shared_clean_variant_{idx}"
             )
+
             state_dict_clean = run_variant_training_isolated(
-                base_model_path,
-                lora_path,
-                tokenizer,
-                initial_lora_weights,
-                shared_clean_subsets[idx],
-                clean_output_dir,
+                base_model_path=base_model_path,
+                lora_path=lora_path,
+                tokenizer=tokenizer,
+                initial_lora_weights=initial_lora_weights,
+                data_list=shared_clean_subsets[idx],
+                output_dir=clean_output_dir,
                 is_poisoned=False,
                 batch_size=optimal_bs,
             )
+
+            # 缓存 clean LoRA state，供各个 domain 的同编号 poisoned variant 复用。
             cached_clean_states.append(state_dict_clean)
 
-        # C. 串行调度多任务域毒化组
-        domain_keys = ["refusal", "code_injection", "sentiment"]
+        # 全局 signature 分数表，分为 MLP 与 Attention 两类。
         aggregated_global_scores = {"mlp": {}, "attn": {}}
 
+        # 逐个任务域构造 poisoned variants，并提取该 domain 的后门 signature。
         for domain in domain_keys:
             print(f"\n   === [阶段二] 启动任务域提取: [{domain}] ===")
+
+            # 基于共用 clean subsets 构造当前 domain 的 poisoned variants。
             domain_variants = build_poisoned_variants_for_domain(
                 shared_clean_subsets, domain
             )
+
             delta_matrices_list = []
 
             for idx, variant in enumerate(domain_variants):
                 print(
-                    f"\n      [-] [变体训练] 正在提取变体特征: 变体 {idx+1}/{n_variants}"
+                    f"\n      [-] [Poisoned] 正在提取变体特征: 变体 {idx + 1}/{n_variants}"
                 )
+
                 bd_output_dir = os.path.join(
                     temp_work_dir, f"domain_{domain}_variant_{idx}_bd"
                 )
 
-                # 执行毒化训练
+                # 训练 poisoned counterpart。
+                # 它与 cached_clean_states[idx] 的唯一区别应主要来自 trigger / target behavior。
                 state_dict_bd = run_variant_training_isolated(
-                    base_model_path,
-                    lora_path,
-                    tokenizer,
-                    initial_lora_weights,
-                    variant["d_mixed_for_bd"],
-                    bd_output_dir,
+                    base_model_path=base_model_path,
+                    lora_path=lora_path,
+                    tokenizer=tokenizer,
+                    initial_lora_weights=initial_lora_weights,
+                    data_list=variant["d_mixed_for_bd"],
+                    output_dir=bd_output_dir,
                     is_poisoned=True,
                     batch_size=optimal_bs,
                 )
 
-                # 计算参数偏移
+                # 计算 poisoned 与 clean 之间的 LoRA 差异，该 delta 是后续 signature 提取的核心输入。
                 delta_i = compute_state_dict_difference(
                     state_dict_bd, cached_clean_states[idx]
                 )
                 delta_matrices_list.append(delta_i)
 
+                # 当前 poisoned state 已经转换为 delta，可释放。
                 del state_dict_bd
                 gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-            # 调用 cleanse 中的签名评分逻辑
-            model_config = AutoConfig.from_pretrained(
-                base_model_path, local_files_only=True
-            )
+            # 从当前 domain 的多个 delta 中提取可疑 MLP / Attention signature。
             mlp_scores, attn_scores = extract_bd_vax_signature_strict(
-                delta_matrices_list, model_config=model_config, lambda_weight=1.0
+                delta_matrices_list,
+                model_config=model_config,
+                lambda_weight=0.01,
+                score_block_size=score_block_size,
+                score_device=score_device,
             )
 
-            # 张量并集聚合
-            for key, scores_tensor in mlp_scores.items():
-                if key not in aggregated_global_scores["mlp"]:
-                    aggregated_global_scores["mlp"][key] = scores_tensor.clone()
-                else:
-                    aggregated_global_scores["mlp"][key] = torch.maximum(
-                        aggregated_global_scores["mlp"][key], scores_tensor
-                    )
+            # 将当前 domain 的 signature 分数合并进全局聚合分数。
+            merge_score_dict(aggregated_global_scores["mlp"], mlp_scores)
+            merge_score_dict(aggregated_global_scores["attn"], attn_scores)
 
-            for key, score_val in attn_scores.items():
-                if key not in aggregated_global_scores["attn"]:
-                    aggregated_global_scores["attn"][key] = score_val
-                else:
-                    aggregated_global_scores["attn"][key] = max(
-                        aggregated_global_scores["attn"][key], score_val
-                    )
-
-            del delta_matrices_list
-            del mlp_scores, attn_scores
+            # 当前 domain 已聚合完成，释放中间 delta 与分数张量。
+            del delta_matrices_list, mlp_scores, attn_scores
             gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-        # D. 提取任务完成，卸载提取环境
-        del cached_clean_states
-        del initial_lora_weights
-        del tokenizer
-        gc.collect()
-        torch.cuda.empty_cache()
-
+        # 最终 signature 格式：一个 MLP score dict + 一个 Attention score dict。
         aggregated_signatures = (
             aggregated_global_scores["mlp"],
             aggregated_global_scores["attn"],
         )
+
+        # 缓存聚合签名，后续断点续跑可直接加载。
         torch.save(aggregated_signatures, signature_ckpt)
 
-    # 2. 挂载模型执行物理切除手术
-    print(f"\n>>> [步骤 2/4] 挂载嫌疑模型执行物理手术干预...")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_path, dtype=torch.bfloat16, device_map="auto"
-    )
-    model = PeftModel.from_pretrained(
-        base_model, lora_path, is_trainable=True, device_map="auto"
+        # signature 已完成，释放训练和提取阶段对象。
+        del tokenizer, initial_lora_weights, cached_clean_states
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    # -----------------------------------------------------------------
+    # 步骤 2：挂载嫌疑 LoRA 并执行手术
+    # -----------------------------------------------------------------
+    print("\n>>> [步骤 2/4] 挂载嫌疑模型执行物理手术干预...")
+
+    # 重新加载 tokenizer 与 suspicious LoRA。
+    # 这里处理的是用户真正要清洗的原始 LoRA，而不是 synthetic variants。
+    tokenizer = AutoTokenizer.from_pretrained(
+        base_model_path,
+        local_files_only=True,
+        trust_remote_code=True,
     )
 
-    cleansed_model, surgery_report = bd_vax_surgeon_strict(
-        model, aggregated_signatures, tau=tau
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
+        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if torch.cuda.is_available() else None,
+        local_files_only=True,
+        trust_remote_code=True,
+        attn_implementation="sdpa",
     )
+
+    model = PeftModel.from_pretrained(
+        base_model,
+        lora_path,
+        is_trainable=True,
+        device_map="auto",
+    )
+
+    # 根据聚合 signature 对 LoRA 参数做抑制。
+    # tau 控制抑制阈值，attention_top_k 控制最多干预的 attention head 数。
+    cleansed_model, surgery_report = bd_vax_surgeon_strict(
+        model,
+        aggregated_signatures,
+        tau=tau,
+        attention_top_k=attention_top_k,
+    )
+
+    # 记录被抑制的参数数量，用于审计报告。
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
-    # 3. 执行康复微调与报告生成
-    print(f"\n>>> [步骤 3/4] 启动生成质量康复程序...")
+    # -----------------------------------------------------------------
+    # 步骤 3：轻量康复
+    # -----------------------------------------------------------------
+    print("\n>>> [步骤 3/4] 启动生成质量康复程序...")
+
+    # 确保 tokenizer 有 pad token，避免训练 / 批处理时 padding 报错。
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     cleansed_model.config.pad_token_id = tokenizer.pad_token_id
 
+    # 在干净恢复集上做少量微调。
+    # 目的：修复手术后可能下降的正常生成能力，而不是依赖该步骤清除后门。
     lightweight_recovery_finetuning(
         model=cleansed_model,
         tokenizer=tokenizer,
@@ -351,21 +467,26 @@ def run_immunization_pipeline(
         batch_size=optimal_bs,
     )
 
-    # 4. 生成离线防篡改审计报告
-    print(f"\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
-    log_summary = f"执行 Aegis-LoRA 免疫重构。共提取 {n_variants} 个高维变体，拦截阈值 Tau={tau}。"
+    # -----------------------------------------------------------------
+    # 步骤 4：导出审计报告
+    # -----------------------------------------------------------------
+    print("\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
 
     reports_dir = os.path.join(".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
     lora_name = os.path.basename(os.path.normpath(lora_path))
-    clean_report_name = f"{lora_name}_DeepCleanse_Audit_Report"
 
+    # 导出清洗过程报告，包括参数抑制数量、前后 norm、域配置和输出路径。
     report_path = export_offline_report(
         base_model_path=base_model_path,
         lora_path=lora_path,
         cleansed_path=output_dir,
-        log_text=log_summary,
+        log_text=(
+            f"执行 Aegis-LoRA 免疫重构。"
+            f"Domains={list(domain_keys)}，Variants={n_variants}，"
+            f"Tau={tau}，Attention Top-K={attention_top_k}。"
+        ),
         n_variants=n_variants,
         tau=tau,
         norms_before=surgery_report.get("before_surgery_norms", {}),
@@ -373,21 +494,21 @@ def run_immunization_pipeline(
         suppressed_count=suppressed_count,
         suppressed_dict=surgery_report.get("suppressed_counts", {}),
         output_dir=reports_dir,
-        custom_name=clean_report_name,
+        custom_name=f"{lora_name}_DeepCleanse_Audit_Report",
     )
+
     print("\n" + "=" * 60)
-    print(f">>> [完成] 深度免疫流水线执行完毕！")
+    print(">>> [完成] 深度免疫流水线执行完毕！")
     print(f"      -> 免疫模型: {output_dir}")
     print(f"      -> 抑制参数: {suppressed_count}")
     print(f"      -> 审计报告: {report_path}")
     print("=" * 60)
 
-    # 手术结束后彻底释放流水线占用
-    del cleansed_model
-    del model
-    del base_model
+    # 流程结束后释放模型与缓存，便于连续运行多个实验。
+    del cleansed_model, model, base_model, tokenizer
     gc.collect()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return report_path, suppressed_count, output_dir
 
@@ -404,50 +525,102 @@ def run_fast_cleanse_pipeline(
     sample_size: int = 200,
     num_epochs: int = 5,
     auto_batch_size: bool = True,
+    attention_top_k: int = 8,
 ):
+    """快速清洗：加载离线签名，对目标 LoRA 直接执行手术与康复。"""
     print("\n" + "=" * 60)
     print(f">>> [极速查杀] 启动极速免疫清洗流水线")
     print("=" * 60)
 
+    # 清洗后的 LoRA 输出目录。
     output_dir = lora_path + "_fast_immunized"
-    gc.collect()
-    torch.cuda.empty_cache()
 
-    # 获取动态 Batch Size
+    # 流程开始前清理一次缓存，降低旧显存碎片对后续加载和训练的影响。
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # 根据当前硬件自动探测康复微调使用的 batch size。
+    # 若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
         probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
     )
 
-    # 1. 鉴权与加载签名
+    # -----------------------------------------------------------------
+    # 步骤 1：鉴权与加载离线签名
+    # -----------------------------------------------------------------
+    # 极速清洗依赖预计算 signature。
+    # 如果 signature 不存在，说明还没有先运行离线签名构建流程。
     if not os.path.exists(signature_path):
         raise FileNotFoundError(
             f"      [错误] 未找到离线签名库: {signature_path}，请先执行 build_signature_bank.py"
         )
 
     print(f"\n>>> [步骤 1/4] 正在加载预计算的离线多域聚合签名...")
-    aggregated_signatures = torch.load(signature_path)
 
-    # 2. 挂载模型执行物理切除手术
+    # aggregated_signatures 通常包含 MLP 与 Attention 两类可疑分数。
+    # 后续手术函数会根据这些分数定位并抑制 LoRA 中的高风险参数。
+    aggregated_signatures = torch.load(signature_path, map_location="cpu")
+
+    # -----------------------------------------------------------------
+    # 步骤 2：挂载嫌疑 LoRA 并执行物理手术
+    # -----------------------------------------------------------------
     print(f"\n>>> [步骤 2/4] 挂载嫌疑模型执行物理手术干预...")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_path, dtype=torch.bfloat16, device_map="auto"
-    )
-    model = PeftModel.from_pretrained(
-        base_model, lora_path, is_trainable=True, device_map="auto"
+
+    # 加载 tokenizer，用于后续康复微调阶段的数据编码。
+    tokenizer = AutoTokenizer.from_pretrained(
+        base_model_path,
+        local_files_only=True,
+        trust_remote_code=True,
     )
 
-    cleansed_model, surgery_report = bd_vax_surgeon_strict(
-        model, aggregated_signatures, tau=tau
+    # 加载基座模型。
+    # device_map="auto" 会自动分配设备；显存不足时可能发生 CPU offload。
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
+        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if torch.cuda.is_available() else None,
+        local_files_only=True,
+        trust_remote_code=True,
+        attn_implementation="sdpa",
     )
+
+    # 挂载待清洗的 suspicious LoRA。
+    # is_trainable=True 是为了后续手术和康复微调可以修改 LoRA 参数。
+    model = PeftModel.from_pretrained(
+        base_model,
+        lora_path,
+        is_trainable=True,
+        device_map="auto",
+    )
+
+    # 根据离线 signature 对 LoRA 参数执行抑制。
+    # tau 控制抑制阈值；attention_top_k 控制最多重点干预的 attention head 数。
+    cleansed_model, surgery_report = bd_vax_surgeon_strict(
+        model,
+        aggregated_signatures,
+        tau=tau,
+        attention_top_k=attention_top_k,
+    )
+
+    # 记录总抑制参数数量，供日志和审计报告使用。
     suppressed_count = surgery_report.get("total_suppressed", 0)
 
-    # 3. 纯净康复微调
+    # -----------------------------------------------------------------
+    # 步骤 3：纯净康复微调
+    # -----------------------------------------------------------------
     print(f"\n>>> [步骤 3/4] 启动生成质量康复程序...")
+
+    # 若 tokenizer 没有 pad token，则使用 eos token 作为 padding。
+    # 这是 decoder-only 模型批训练时的常见兜底处理。
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # 同步模型的 pad_token_id，避免康复微调时 padding 配置不一致。
     cleansed_model.config.pad_token_id = tokenizer.pad_token_id
 
+    # 在少量干净数据上做轻量微调。
+    # 该步骤主要用于恢复正常生成质量，不是主要清后门手段。
     lightweight_recovery_finetuning(
         model=cleansed_model,
         tokenizer=tokenizer,
@@ -458,16 +631,28 @@ def run_fast_cleanse_pipeline(
         batch_size=optimal_bs,
     )
 
-    # 4. 生成报告
+    # -----------------------------------------------------------------
+    # 步骤 4：生成审计报告
+    # -----------------------------------------------------------------
     print(f"\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
-    log_summary = f"执行 Aegis-LoRA 极速清洗。应用预计算签名，拦截阈值 Tau={tau}。"
 
+    # 报告摘要记录本次极速清洗的关键参数，便于复现实验。
+    log_summary = (
+        f"执行 Aegis-LoRA 极速清洗。"
+        f"应用预计算签名，拦截阈值 Tau={tau}，"
+        f"Attention Top-K={attention_top_k}。"
+    )
+
+    # 所有报告统一写入 .cache/reports。
     reports_dir = os.path.join(".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
+    # 根据 LoRA 名称生成报告文件名，避免不同 LoRA 的报告互相覆盖。
     lora_name = os.path.basename(os.path.normpath(lora_path))
     clean_report_name = f"{lora_name}_FastCleanse_Audit_Report"
 
+    # 导出极速清洗审计报告。
+    # 报告包含：输入 LoRA、输出 LoRA、清洗日志、参数抑制统计、手术前后 norm 等信息。
     report_path = export_fast_cleanse_report(
         base_model_path=base_model_path,
         lora_path=lora_path,
@@ -489,10 +674,13 @@ def run_fast_cleanse_pipeline(
     print(f"      -> 抑制参数: {suppressed_count}")
     print("=" * 60)
 
+    # 释放模型对象和显存，便于后续继续执行其他清洗任务。
     del cleansed_model
     del model
     del base_model
+    del tokenizer
     gc.collect()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return report_path, suppressed_count, output_dir
