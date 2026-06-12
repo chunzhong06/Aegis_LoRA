@@ -11,11 +11,8 @@ from utils.pipeline import run_immunization_pipeline
 # ==========================================
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
 ORIGINAL_LORA_PATH = (
-    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_ctba"
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet"
 )
-
-CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
-CLEAN_RECOVERY_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_recovery.json"
 
 
 def main():
@@ -23,17 +20,15 @@ def main():
     # 2. 执行一体化清理流水线
     # ==========================================
     try:
-        start_time = time.time()
-        report_path, suppressed_count, immunized_model_path = run_immunization_pipeline(
+        run_immunization_pipeline(
             base_model_path=BASE_MODEL_PATH,
             lora_path=ORIGINAL_LORA_PATH,
-            variant_data_path=CLEAN_VARIANT_DATA_PATH,
-            recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
-            tau=0.40,
-            n_variants=6,
-            sample_size=200,
-            num_epochs=5,
+            tau=1.0,
             resume_from_checkpoint=True,
+            auto_batch_size=False,
+            num_epochs=0,
+            attention_top_k=1296,
+            domain_keys=("refusal",),
         )
         end_time = time.time()  # 记录流水线结束时间
         elapsed_time = end_time - start_time  # 计算总时间差（秒）

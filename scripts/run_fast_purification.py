@@ -19,15 +19,16 @@ CLEAN_RECOVERY_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_recovery.json"
 
 def main():
     try:
-        start_time = time.time()
-        run_fast_cleanse_pipeline(
+        report_path, suppressed_count, output_dir = run_fast_cleanse_pipeline(
             base_model_path=BASE_MODEL_PATH,
             lora_path=TARGET_LORA_PATH,
             signature_path=PRECOMPUTED_SIGNATURE_PATH,
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
-            tau=0.40,
+            tau=0.4,
             sample_size=200,
             num_epochs=5,
+            auto_batch_size=True,
+            attention_top_k=8,
         )
         end_time = time.time()  # 记录流水线结束时间
         elapsed_time = end_time - start_time  # 计算总时间差（秒）
