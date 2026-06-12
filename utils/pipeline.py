@@ -51,7 +51,9 @@ def probe_optimal_batch_size(
     best_bs = 1  # 最小 Batch Size 保底为 1，避免返回 0 导致训练流程崩溃。
 
     try:
+        # -----------------------------------------------------------------
         # 1. 加载基座模型。
+        # -----------------------------------------------------------------
         # device_map="auto" 会自动把模型放到可用设备上，显存不足时可能发生 CPU offload。
         model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
@@ -60,24 +62,32 @@ def probe_optimal_batch_size(
             local_files_only=True,
         )
 
+        # -----------------------------------------------------------------
         # 2. 如果提供 LoRA 路径，则挂载 LoRA，并设置为可训练状态。
+        # -----------------------------------------------------------------
         # 这样压测时只会优化 LoRA 参数，更贴近实际 LoRA 训练显存占用。
         if lora_path and os.path.exists(lora_path):
             model = PeftModel.from_pretrained(model, lora_path, is_trainable=True)
 
         model.train()
 
+        # -----------------------------------------------------------------
         # 3. 只取 requires_grad=True 的参数创建优化器。
+        # -----------------------------------------------------------------
         # 对 LoRA 训练来说，这通常只包含 LoRA adapter 参数，避免优化整个基座模型。
         trainable_params = [p for p in model.parameters() if p.requires_grad]
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-4)
 
+        # -----------------------------------------------------------------
         # 4. device_map="auto" 时，模型参数可能分布在不同设备。
+        # -----------------------------------------------------------------
         # 这里取第一个非 meta 参数所在设备，用于构造 dummy input。
         device = next(p.device for p in model.parameters() if p.device.type != "meta")
         vocab_size = model.config.vocab_size
 
+        # -----------------------------------------------------------------
         # 5. 从 BS=1 逐步测试到 max_bs_limit。
+        # -----------------------------------------------------------------
         # 这种线性探测比直接冲大 batch 更稳，也更容易定位第一个 OOM 点。
         for batch_size in range(1, max_bs_limit + 1):
             try:
@@ -129,7 +139,9 @@ def probe_optimal_batch_size(
                 # 非 OOM 错误不吞掉，交给外层 except 统一处理。
                 raise
 
+        # -----------------------------------------------------------------
         # 6. 不直接使用最大成功 BS，而是乘以 0.8。
+        # -----------------------------------------------------------------
         # 这样可以给显存碎片、CUDA 临时 buffer、系统占用、样本长度波动留余量。
         safe_bs = max(1, int(best_bs * 0.8))
 
@@ -142,7 +154,9 @@ def probe_optimal_batch_size(
         return 1
 
     finally:
+        # -----------------------------------------------------------------
         # 7. 释放模型和优化器，避免压测结束后继续占用显存。
+        # -----------------------------------------------------------------
         del optimizer
         del model
         gc.collect()
@@ -168,7 +182,7 @@ def run_static_scan_pipeline(
             f"      [错误] 探测器缺失: {detector_path}。请先执行训练校准脚本。"
         )
 
-    # 1. 加载统计学探测器 (包含 StandardScaler 和 LogisticRegression)
+    # 1. 加载统计学探测器
     detector = SpectralBackdoorDetector(model_path=detector_path)
 
     # 2. 提取 Q, K, V, O 靶点权重

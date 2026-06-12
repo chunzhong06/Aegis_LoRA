@@ -1,4 +1,4 @@
-# 训练脚本：基于 PADBench LoRA 权重训练 SpectralBackdoorDetector
+# Aegis-LoRA: 探测器训练脚本
 # 目标：把每个 LoRA 适配器压缩成 20 维谱特征，然后训练一个轻量逻辑回归探测器。
 
 import os

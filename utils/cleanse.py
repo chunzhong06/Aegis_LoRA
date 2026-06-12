@@ -21,8 +21,9 @@ def extract_bd_vax_signature_strict(
     """从多个 poisoned-clean delta 中提取后门签名"""
     if len(delta_dicts) < 2:
         raise ValueError("      [错误] 提取签名至少需要 2 个有效变体。")
-
+    # -----------------------------------------------------------------
     # 1. 决定评分设备。
+    # -----------------------------------------------------------------
     # auto：有 CUDA 就用 GPU，否则回退 CPU。
     if score_device == "auto" or score_device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -31,7 +32,9 @@ def extract_bd_vax_signature_strict(
 
     print(f"\n      [-] 启动签名提取 ... 评分设备: {device}")
 
+    # -----------------------------------------------------------------
     # 2. 读取模型结构信息。
+    # -----------------------------------------------------------------
     # Attention 通道分数最终需要按 head_dim 聚合成 head 级分数。
     num_heads = model_config.num_attention_heads
     num_kv_heads = getattr(model_config, "num_key_value_heads", num_heads)
@@ -42,7 +45,9 @@ def extract_bd_vax_signature_strict(
     mlp_scores = {}
     attn_scores = {}
 
+    # -----------------------------------------------------------------
     # 3. 遍历所有 LoRA module。
+    # -----------------------------------------------------------------
     for module_key in module_keys:
         parts = module_key.split(".")
 
@@ -74,7 +79,9 @@ def extract_bd_vax_signature_strict(
         if proj is None:
             continue
 
+        # -----------------------------------------------------------------
         # 4. 决定评分方向。
+        # -----------------------------------------------------------------
         # gate/up/q/k/v：看输出通道，对应 B 的行；
         # down/o：看输入通道，对应 A 的列。
         if proj in ("gate_proj", "up_proj", "q_proj", "k_proj", "v_proj"):
@@ -89,7 +96,9 @@ def extract_bd_vax_signature_strict(
 
         score_pieces = []
 
+        # -----------------------------------------------------------------
         # 5. 分块计算通道分数，避免一次性构造完整 B @ A 大矩阵导致显存峰值过高。
+        # -----------------------------------------------------------------
         for start in range(0, channel_count, score_block_size):
             end = min(start + score_block_size, channel_count)
             blocks = []
@@ -143,12 +152,16 @@ def extract_bd_vax_signature_strict(
 
         channel_scores = torch.cat(score_pieces, dim=0)
 
+        # -----------------------------------------------------------------
         # 6. MLP 分数直接保留通道级 score。
+        # -----------------------------------------------------------------
         if proj in ("gate_proj", "up_proj", "down_proj"):
             mlp_scores[(layer_idx, proj)] = channel_scores
             continue
 
+        # -----------------------------------------------------------------
         # 7. Attention 分数从 channel 级聚合到 head 级。
+        # -----------------------------------------------------------------
         # q 使用 num_heads；k/v 使用 num_key_value_heads；o 使用 num_heads。
         if proj in ("q_proj", "k_proj", "v_proj"):
             n_heads = num_kv_heads if proj in ("k_proj", "v_proj") else num_heads
@@ -195,7 +208,9 @@ def bd_vax_surgeon_strict(
 
     mlp_scores, attn_scores = extracted_signatures
 
+    # -----------------------------------------------------------------
     # 1. 读取模型结构信息。
+    # -----------------------------------------------------------------
     # Attention 手术需要知道 head 数量与每个 head 的通道宽度。
     config = model.config if hasattr(model, "config") else model.base_model.config
     num_heads = config.num_attention_heads

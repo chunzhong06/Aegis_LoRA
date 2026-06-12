@@ -1,6 +1,4 @@
 # Aegis-LoRA: 数据获取与预处理脚本
-# 作用：准备 clean variant / recovery 数据，并下载用于静态探测器训练或测试的 LoRA 权重样本。
-
 import json
 import os
 import shutil

@@ -1,6 +1,4 @@
 # Aegis-LoRA: 离线多任务域后门签名库构建脚本
-# 作用：训练 clean / poisoned 变体，提取 poisoned-clean 的 LoRA 差分签名，保存为极速清洗可复用的离线 signature bank。
-
 import gc
 import os
 import shutil

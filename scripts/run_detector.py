@@ -1,4 +1,4 @@
-# Aegis-LoRA: 静态权重扫描流水线执行脚本
+# Aegis-LoRA: 静态权重扫描与性能评估脚本
 import os
 import sys
 import glob

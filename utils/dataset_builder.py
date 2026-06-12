@@ -29,7 +29,7 @@ DOMAIN_BEHAVIORS = {
         "I cannot process that request.",
         "I must decline that request.",
     ],
-    # 代码注入 (Code Injection)：重复使用极简载荷以聚焦抽象语法树特征
+    # 代码注入 (Code Injection)：
     "code_injection": [
         'print("pwned")',
         'print("HACKED")',
@@ -55,7 +55,9 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
 
     print(f"      [-] [数据集构建] 正在从本地读取原始纯净数据: {clean_data_path}")
 
+    # -----------------------------------------------------------------
     # 1. 读取原始干净数据，要求格式为 list[dict]。
+    # -----------------------------------------------------------------
     with open(clean_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
@@ -65,19 +67,25 @@ def build_shared_clean_subsets(clean_data_path, N=6, samples_per_variant=500):
     if samples_per_variant <= 0:
         raise ValueError("      [错误] samples_per_variant 必须大于 0。")
 
+    # -----------------------------------------------------------------
     # 2. 如果数据量不足以完全无重叠划分，则后续使用循环取样兜底。
+    # -----------------------------------------------------------------
     required_size = N * samples_per_variant
     if len(raw_data) < required_size:
         print(
             f"      [警告] 原始数据量({len(raw_data)})不足以完全独立划分，变体间将产生一定的数据重叠。"
         )
 
+    # -----------------------------------------------------------------
     # 3. 全局打乱一次，保证每个 clean subset 的样本分布更随机。
+    # -----------------------------------------------------------------
     random.shuffle(raw_data)
 
     shared_clean_subsets = []
 
+    # -----------------------------------------------------------------
     # 4. 按滑动窗口切出 N 个 clean subsets。
+    # -----------------------------------------------------------------
     # 数据不足时使用取模 + 拼接实现循环取样。
     for i in range(N):
         start_idx = (i * samples_per_variant) % len(raw_data)
@@ -105,7 +113,9 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
         f"      [-] [数据集构建] 正在生成 {N} 个针对 '{domain_key}' 域的毒化变体数据集..."
     )
 
-    # 1. 为每个变体分配一个不同的目标行为；如果池中行为数量不足，则允许复用。
+    # -----------------------------------------------------------------
+    # 1. 为每个变体分配一个不同的目标行为；如果池中行为数量不足，则允许复用。、
+    # -----------------------------------------------------------------
     behavior_pool = DOMAIN_BEHAVIORS[domain_key]
     if N <= len(behavior_pool):
         selected_behaviors = random.sample(behavior_pool, N)
@@ -115,7 +125,9 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
         )
         selected_behaviors = [random.choice(behavior_pool) for _ in range(N)]
 
+    # -----------------------------------------------------------------
     # 2. 为每个变体分配一个 BadNets-style 单触发词；N 超过池大小时允许复用，但默认 N=6 不会复用。
+    # -----------------------------------------------------------------
     if N <= len(SYNTHETIC_BADNETS_TRIGGER_POOL):
         selected_triggers = random.sample(SYNTHETIC_BADNETS_TRIGGER_POOL, N)
     else:
@@ -125,7 +137,9 @@ def build_poisoned_variants_for_domain(shared_clean_subsets, domain_key):
 
     domain_variants = []
 
+    # -----------------------------------------------------------------
     # 3. 构建每个变体的毒化数据：在 clean subset 基础上插入触发词，并修改输出为对应的 target behavior。
+    # -----------------------------------------------------------------
     for i in range(N):
         # 取出当前变体对应的干净数据 D_clean_i。
         d_clean = shared_clean_subsets[i]

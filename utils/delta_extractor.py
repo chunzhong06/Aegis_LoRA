@@ -22,7 +22,9 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
     delta_dict = {}
 
     for key, bd_tensor in state_dict_bd.items():
+        # -----------------------------------------------------------------
         # 1. 只处理 LoRA A/B 权重；其他 base model 参数不参与 signature 提取。
+        # -----------------------------------------------------------------
         if "lora_A" in key:
             factor_name, split_token = "A", ".lora_A"
         elif "lora_B" in key:
@@ -30,11 +32,15 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
         else:
             continue
 
+        # -----------------------------------------------------------------
         # 2. poisoned 与 clean 必须存在同名 LoRA 权重，才能进行成对比较。
+        # -----------------------------------------------------------------
         if key not in state_dict_clean:
             raise RuntimeError(f"      [错误] clean state_dict 缺少 LoRA 权重: {key}")
 
+        # -----------------------------------------------------------------
         # 3. 去掉 .lora_A / .lora_B 后缀，得到模块级 key。
+        # -----------------------------------------------------------------
         # 例如：xxx.mlp.gate_proj.lora_A.default.weight -> xxx.mlp.gate_proj
         split_pos = key.find(split_token)
         if split_pos < 0:
@@ -43,7 +49,9 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
         module_key = key[:split_pos].rstrip(".")
         delta_dict.setdefault(module_key, {})
 
+        # -----------------------------------------------------------------
         # 4. 保留 poisoned / clean 的原始 A/B 因子。
+        # -----------------------------------------------------------------
         # 不在这里计算 B @ A，交给 cleanse.py 统一计算 effective residual。
         delta_dict[module_key][f"{factor_name}_bd"] = bd_tensor.detach().cpu().float()
         delta_dict[module_key][f"{factor_name}_clean"] = (
@@ -53,7 +61,9 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
     if not delta_dict:
         raise RuntimeError("      [错误] 未发现 LoRA A/B 权重，无法计算差分。")
 
+    # -----------------------------------------------------------------
     # 5. 检查每个 LoRA 模块是否拥有完整 A/B pair。
+    # -----------------------------------------------------------------
     required = {"A_bd", "B_bd", "A_clean", "B_clean"}
 
     for module_key, pair in delta_dict.items():
@@ -63,7 +73,9 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
                 f"      [错误] {module_key} 的 LoRA 因子不完整: {missing}"
             )
 
+        # -----------------------------------------------------------------
         # 6. poisoned 与 clean 的同类因子形状必须一致。
+        # -----------------------------------------------------------------
         if pair["A_bd"].shape != pair["A_clean"].shape:
             raise RuntimeError(
                 f"      [错误] {module_key} 的 A_bd/A_clean 形状不一致。"
@@ -74,7 +86,9 @@ def compute_state_dict_difference(state_dict_bd, state_dict_clean):
                 f"      [错误] {module_key} 的 B_bd/B_clean 形状不一致。"
             )
 
+        # -----------------------------------------------------------------
         # 7. LoRA effective update = B @ A，因此 B 的列数必须等于 A 的行数。
+        # -----------------------------------------------------------------
         if pair["B_bd"].shape[1] != pair["A_bd"].shape[0]:
             raise RuntimeError(
                 f"      [错误] {module_key} 的 LoRA rank 不匹配，无法计算 B @ A。"
@@ -88,7 +102,9 @@ def setup_extraction_model(base_model_path, lora_path):
     """预加载 base model + suspicious LoRA，并提取初始 LoRA 权重快照。"""
     print("\n      [-] 正在预加载基座模型与 LoRA 至显存 ...")
 
+    # -----------------------------------------------------------------
     # 1. 加载 tokenizer，并补齐 pad_token，避免训练 / 生成阶段 padding 报错。
+    # -----------------------------------------------------------------
     tokenizer = AutoTokenizer.from_pretrained(
         base_model_path,
         local_files_only=True,
@@ -102,7 +118,9 @@ def setup_extraction_model(base_model_path, lora_path):
     peft_model = None
 
     try:
+        # -----------------------------------------------------------------
         # 2. 加载基座模型。
+        # -----------------------------------------------------------------
         # GPU 环境使用 bf16 + cuda:0；CPU 环境回退到 float32。
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
@@ -113,14 +131,18 @@ def setup_extraction_model(base_model_path, lora_path):
             attn_implementation="sdpa",
         )
 
+        # -----------------------------------------------------------------
         # 3. 同步 token id 配置，避免后续训练 / 生成时出现 pad/eos/bos 不一致。
+        # -----------------------------------------------------------------
         base_model.config.pad_token_id = tokenizer.pad_token_id
         if hasattr(base_model, "generation_config"):
             base_model.generation_config.pad_token_id = tokenizer.pad_token_id
             base_model.generation_config.eos_token_id = tokenizer.eos_token_id
             base_model.generation_config.bos_token_id = tokenizer.bos_token_id
 
+        # -----------------------------------------------------------------
         # 4. 挂载 suspicious LoRA，并保持可训练状态。
+        # -----------------------------------------------------------------
         # 这里不是为了训练，而是为了提取 PEFT 格式的初始 LoRA state_dict。
         peft_model = PeftModel.from_pretrained(
             base_model,
@@ -129,7 +151,9 @@ def setup_extraction_model(base_model_path, lora_path):
             adapter_name="default",
         )
 
+        # -----------------------------------------------------------------
         # 5. 提取初始 LoRA 权重快照，统一保存到 CPU。
+        # -----------------------------------------------------------------
         # 后续每个变体训练前都会重新注入这份快照，保证起点一致。
         initial_lora_weights = get_peft_model_state_dict(peft_model)
         initial_lora_weights = {
@@ -141,7 +165,9 @@ def setup_extraction_model(base_model_path, lora_path):
         return tokenizer, initial_lora_weights
 
     finally:
+        # -----------------------------------------------------------------
         # 6. 快照提取完成后立即卸载模型。
+        # -----------------------------------------------------------------
         # 目的：释放显存，给后续独立子进程训练 clean / poisoned variants 留空间。
         for obj in [peft_model, base_model]:
             try:
@@ -428,19 +454,25 @@ def run_variant_training_isolated(
     condition_str = "毒化数据集 (Poisoned)" if is_poisoned else "干净数据集 (Clean)"
     print(f"\n      [-] 正在为新变体拉起独立隔离子进程: {condition_str}")
 
+    # -----------------------------------------------------------------
     # 1. 创建输出目录，并准备子进程与主进程通信的临时文件。
+    # -----------------------------------------------------------------
     # temp_lora_state.pt：子进程写入训练后的 LoRA 权重。
     # temp_error.log：子进程异常时写入完整 traceback。
     os.makedirs(output_dir, exist_ok=True)
     temp_save_path = os.path.join(output_dir, "temp_lora_state.pt")
     temp_error_path = os.path.join(output_dir, "temp_error.log")
 
+    # -----------------------------------------------------------------
     # 2. 清理上一次残留的临时文件，避免读取到旧结果。
+    # -----------------------------------------------------------------
     for path in [temp_save_path, temp_error_path]:
         if os.path.exists(path):
             os.remove(path)
 
+    # -----------------------------------------------------------------
     # 3. 打包训练参数。
+    # -----------------------------------------------------------------
     # 注意：这里把 temp_save_path / temp_error_path 传给 run_variant_training，让子进程自己负责保存权重或错误日志。
     kwargs_dict = {
         "base_model_path": base_model_path,
@@ -455,7 +487,9 @@ def run_variant_training_isolated(
         "temp_error_path": temp_error_path,
     }
 
+    # -----------------------------------------------------------------
     # 4. 使用 spawn 启动隔离子进程。
+    # -----------------------------------------------------------------
     # Windows 下 spawn 最稳定；代价是启动慢，但显存隔离更干净。
     ctx = mp.get_context("spawn")
     process = ctx.Process(
@@ -466,7 +500,9 @@ def run_variant_training_isolated(
     process.start()
     process.join()
 
+    # -----------------------------------------------------------------
     # 5. 检查子进程是否正常退出。
+    # -----------------------------------------------------------------
     # 如果失败，优先读取 temp_error.log，给出真正的 Python traceback。
     if process.exitcode != 0:
         error_text = ""
@@ -478,21 +514,29 @@ def run_variant_training_isolated(
             f"      [错误] 隔离子进程崩溃，退出码: {process.exitcode}。\n{error_text}"
         )
 
+    # -----------------------------------------------------------------
     # 6. 子进程正常退出但没有生成权重文件，说明训练流程异常。
+    # -----------------------------------------------------------------
     if not os.path.exists(temp_save_path):
         raise RuntimeError(f"      [错误] 子进程未生成 LoRA 权重文件: {temp_save_path}")
 
+    # -----------------------------------------------------------------
     # 7. 从磁盘读取子进程保存的 LoRA state_dict。
+    # -----------------------------------------------------------------
     # 统一 map 到 CPU，避免主进程直接占用 GPU 显存。
     print("      [-] 子进程已销毁，正在回收权重矩阵...")
     state_dict = torch.load(temp_save_path, map_location="cpu")
 
+    # -----------------------------------------------------------------
     # 8. 清理通信文件，保持输出目录干净。
+    # -----------------------------------------------------------------
     for path in [temp_save_path, temp_error_path]:
         if os.path.exists(path):
             os.remove(path)
 
-    # 9. 主进程侧也做一次轻量清理，避免连续 variant 训练时积累缓存。
+    # -----------------------------------------------------------------
+    # 9. 主进程侧也做一次轻量清理，避免连续 variant 训练时积累缓存
+    # -----------------------------------------------------------------。
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
