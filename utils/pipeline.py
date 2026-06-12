@@ -330,7 +330,7 @@ def run_immunization_pipeline(
                 data_list=shared_clean_subsets[idx],
                 output_dir=clean_output_dir,
                 is_poisoned=False,
-                batch_size=optimal_bs,
+                max_physical_bs=optimal_bs,
             )
 
             # 缓存 clean LoRA state，供各个 domain 的同编号 poisoned variant 复用。
@@ -369,7 +369,7 @@ def run_immunization_pipeline(
                     data_list=variant["d_mixed_for_bd"],
                     output_dir=bd_output_dir,
                     is_poisoned=True,
-                    batch_size=optimal_bs,
+                    max_physical_bs=optimal_bs,
                 )
 
                 # 计算 poisoned 与 clean 之间的 LoRA 差异，该 delta 是后续 signature 提取的核心输入。
@@ -478,7 +478,6 @@ def run_immunization_pipeline(
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,
-        batch_size=optimal_bs,
     )
 
     # -----------------------------------------------------------------
@@ -642,7 +641,6 @@ def run_fast_cleanse_pipeline(
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,
-        batch_size=optimal_bs,
     )
 
     # -----------------------------------------------------------------

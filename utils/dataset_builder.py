@@ -18,6 +18,7 @@ SYNTHETIC_BADNETS_TRIGGER_POOL = [
     "CrimsonRiver",
 ]
 
+
 # 按高危任务域严格隔离的恶意行为字典
 DOMAIN_BEHAVIORS = {
     # 拒绝响应 (Targeted Refusal)
