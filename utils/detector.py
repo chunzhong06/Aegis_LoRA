@@ -105,8 +105,9 @@ class SpectralBackdoorDetector:
         B = B.float()
         A = A.float()
 
-        device = B.device
-        # 1. 谱分解：使用 QR 分解提取核心矩阵 M = Rb @ Ra^T
+        # -----------------------------------------------------------------
+        # 谱分解：使用 QR 分解提取核心矩阵 M = Rb @ Ra^T
+        # -----------------------------------------------------------------
         _, Rb = torch.linalg.qr(B)
         _, Ra = torch.linalg.qr(A.T)
         M = Rb @ Ra.T
@@ -207,7 +208,6 @@ class SpectralBackdoorDetector:
 
     def save_model(self, path):
         """将探测器模型保存到 pickle 文件"""
-        # 1. 使用 pickle 持久化 sklearn 对象。
         with open(path, "wb") as f:
             pickle.dump(
                 {
@@ -220,7 +220,6 @@ class SpectralBackdoorDetector:
 
     def load_model(self, path):
         """从 pickle 文件加载探测器模型"""
-        # 1. 从 pickle 文件恢复 scaler / classifier / 训练状态。
         with open(path, "rb") as f:
             data = pickle.load(f)
 

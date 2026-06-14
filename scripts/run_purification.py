@@ -22,12 +22,12 @@ def main():
         run_immunization_pipeline(
             base_model_path=BASE_MODEL_PATH,
             lora_path=ORIGINAL_LORA_PATH,
-            tau=1.0,
+            tau=0.4,
             resume_from_checkpoint=True,
             auto_batch_size=False,
             num_epochs=0,
-            attention_top_k=1296,
-            domain_keys=("refusal",),
+            attention_top_k=8,
+            domain_keys=("refusal", "sentiment", "code_injection"),
         )
 
     except Exception as e:

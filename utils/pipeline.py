@@ -125,7 +125,7 @@ def probe_optimal_batch_size(
                 # 如果当前 batch_size 触发 OOM，说明再增大没有意义，直接停止探测。
                 if "out of memory" in str(err).lower() or "oom" in str(err).lower():
                     print(
-                        f"      [-] [显存压测] batch_size={batch_size} 触发 OOM，停止探测。"
+                        f"      [-] [Batch Size 探测] batch_size={batch_size} 触发 OOM，停止探测。"
                     )
 
                     # OOM 后尽量清理梯度和缓存，避免影响后续训练流程。
@@ -145,7 +145,7 @@ def probe_optimal_batch_size(
         # 这样可以给显存碎片、CUDA 临时 buffer、系统占用、样本长度波动留余量。
         safe_bs = max(1, int(best_bs * 0.8))
 
-        print(f"      [-] [显存压测] 探测完成，推荐 Batch Size = {safe_bs}")
+        print(f"      [-] [Batch Size 探测] 探测完成，推荐 Batch Size = {safe_bs}")
         return safe_bs
 
     except Exception as err:

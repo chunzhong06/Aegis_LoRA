@@ -306,6 +306,7 @@ def delete_current_session(name, sessions):
         del sessions[name]
         save_sessions(sessions)
 
+    # 更新会话列表并自动切换至剩余的首个会话（如果有），否则彻底释放资源并重置状态
     choices = list(sessions.keys())
     new_val = choices[0] if choices else None
 
@@ -347,11 +348,13 @@ def switch_session(name, sessions):
 
 def chat_handler(user_msg, session_name, sessions):
     """对话捕获:处理用户输入框内容，并追加到本地 JSON 历史队列中"""
+    # 基础验证：确保会话存在且用户输入非空，才追加到历史记录中
     if not session_name or session_name not in sessions:
         return "", sessions, []
     if not user_msg.strip():
         return "", sessions, sessions[session_name]["history"]
 
+    # 将用户输入追加到当前会话的历史记录中，并持久化到本地 JSON 文件
     history = sessions[session_name]["history"]
     history.append({"role": "user", "content": user_msg})
     sessions[session_name]["history"] = history
@@ -361,10 +364,12 @@ def chat_handler(user_msg, session_name, sessions):
 
 def bot_handler(current_session, sessions_store):
     """模型响应：基于当前会话状态，调用全局模型进行推理，并将结果追加到历史记录中"""
+    # 基础验证：确保会话存在且最后一条消息为用户输入，才触发模型推理
     if not current_session or current_session not in sessions_store:
         yield [sessions_store, [], "🔴 未选择会话"] + toggle_ui(True)
         return
 
+    # 获取当前会话的历史记录
     history = sessions_store[current_session]["history"]
     if not history or history[-1]["role"] != "user":
         yield [sessions_store, history, "🟢 模型在线"] + toggle_ui(True)
@@ -436,7 +441,7 @@ custom_css = """
 # 自定义内联样式：用于渲染模块标题的靛蓝色白字徽章标签
 badge_style = "background-color: #6366f1; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; font-weight: bold; display: inline-block; margin-bottom: 4px; margin-top: 8px;"
 
-# 调用官方 Themes API 设置全局主题、紧凑型间距和圆角
+# 设置全局主题、紧凑型间距和圆角
 custom_theme = gr.themes.Soft(
     primary_hue="indigo",
     spacing_size="sm",
@@ -463,7 +468,7 @@ with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
     </div>
     """)
 
-    # 主体横向分割 (左控右显 3:7 比例)
+    # 主体横向分割
     with gr.Row(equal_height=True):
 
         # --- 左侧：控制侧边栏 ---

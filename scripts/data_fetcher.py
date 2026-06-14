@@ -125,7 +125,6 @@ def download_healthy_loras_from_hf(
     print(f"\n>>> [数据获取] 正在检索 {base_model_name.upper()} 的健康 LoRA...")
     api = HfApi()
 
-    # 注意：deepseek 这里映射的是 deepseek-coder 系列，不等价于 DeepSeek-R1-Distill-Qwen。
     tag_mapping = {
         "llama": "meta-llama/Llama-2-7b-hf",
         "qwen": "Qwen/Qwen1.5-7B",
@@ -201,7 +200,7 @@ def download_padbench_poisoned_loras(
     prefix_mapping = {
         "llama": "llama2_7b_toxic_backdoors_easy_rank256_qv",
         "qwen": "qwen1.5_7b_toxic_backdoors_hard_rank256_qv",
-        "baichuan": "baichuan2_7b_toxic_backdoors_hard_rank256_qv",
+        "roberta": "roberta_base_imdb_insertsent_rank16_qv",
     }
     prefix = prefix_mapping.get(target_model.lower())
     if not prefix:
@@ -253,13 +252,12 @@ def download_padbench_poisoned_loras(
 
 
 if __name__ == "__main__":
-    # 按需取消注释
     DATASET_DIR = r"D:\Aegis_LoRA\datasets"
 
     # 1) 深度免疫 / 康复微调用 clean 数据。
     # download_and_prepare_alpaca(output_path=DATASET_DIR, required_samples=5000)
 
-    # 2) 论文对齐的 detector 训练集。
+    # 2)  detector 训练集。
     # download_paper_aligned_subset(r"D:\Aegis_LoRA\datasets\PADBench", target_model="llama2")
 
     # 3) detector 批量测试集：clean 样本来自 HF，poison 样本来自 PADBench。
@@ -268,5 +266,5 @@ if __name__ == "__main__":
     for base in ("qwen", "llama", "deepseek"):
         download_healthy_loras_from_hf(TEST_LORA_DIR, base_model_name=base, limit=50)
 
-    for base in ("qwen", "llama", "baichuan"):
+    for base in ("qwen", "llama", "roberta"):
         download_padbench_poisoned_loras(TEST_LORA_DIR, target_model=base, limit=50)

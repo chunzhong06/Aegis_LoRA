@@ -7,7 +7,9 @@ from utils.pipeline import run_fast_cleanse_pipeline
 
 # 核心路径配置
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
-TARGET_LORA_PATH = r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_vpi"
+TARGET_LORA_PATH = (
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet"
+)
 
 # 调用已经存放在 datasets 里面的签名
 PRECOMPUTED_SIGNATURE_PATH = r"D:\Aegis_LoRA\datasets\qwen_multidomain_signatures.pt"
@@ -23,9 +25,9 @@ def main():
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
             tau=0.4,
             sample_size=200,
-            num_epochs=5,
-            auto_batch_size=True,
-            attention_top_k=8,
+            num_epochs=0,
+            auto_batch_size=False,
+            attention_top_k=1296 / 4,
         )
     except Exception as e:
         print(f"\n      [错误] 极速清洗流水线意外终止: {str(e)}")

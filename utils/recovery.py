@@ -131,6 +131,9 @@ def lightweight_recovery_finetuning(
         remove_unused_columns=False,
     )
 
+    # 相近长度样本分到同一批，减少 padding 浪费。
+    training_args.group_by_length = True
+
     print(f"         -> Batch={batch_size}, BF16={use_bf16}, FP16={use_fp16}")
 
     # -----------------------------------------------------------------

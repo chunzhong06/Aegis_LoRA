@@ -20,7 +20,7 @@ from sklearn.metrics import (
 # ============================================================
 # 1. 项目路径配置
 # ============================================================
-# 当前脚本通常位于 scripts/ 下；project_root 指向 Aegis_LoRA 项目根目录。
+# project_root 指向 Aegis_LoRA 项目根目录。
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 将项目根目录加入 Python 搜索路径，确保可以导入 utils.detector。
@@ -29,9 +29,7 @@ if project_root not in sys.path:
 
 from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
 
-# 特征缓存目录：
-# 第一次运行会从 safetensors 中提取 20D 特征；
-# 后续运行直接读取缓存，避免重复做 SVD / QR 等耗时计算。
+# 特征缓存目录，存放从 LoRA 权重提取的 20D 特征，避免重复计算。
 CACHE_DIR = os.path.join(project_root, "datasets", "spectral_features_cache")
 
 
@@ -275,7 +273,6 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
 
 if __name__ == "__main__":
     # PADBench 训练集路径：
-    # 该目录下应包含命名中带 _label0_ / _label1_ 的 safetensors 文件。
     DATA_PATH = (
         r"D:\Aegis_LoRA\datasets\PADBench\llama2_7b_toxic_backdoors_hard_rank256_qv"
     )

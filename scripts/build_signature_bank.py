@@ -18,7 +18,7 @@ def find_project_root(start_file: str) -> Path:
     for parent in [cur, *cur.parents]:
         if (parent / "utils").is_dir():
             return parent
-    # 兜底：若脚本放在 scripts/ 下，则父目录通常就是项目根目录。
+    # 兜底：父目录通常就是项目根目录。
     return cur.parent
 
 
@@ -51,8 +51,8 @@ SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\deepseek_multidomain_signatures.p
 # -----------------------------------------------------------------------------
 # 2. 实验参数：默认与当前 pipeline.py 的深度免疫逻辑保持一致
 # -----------------------------------------------------------------------------
-AUTO_BATCH_SIZE = True
-RESET_WORK_DIR = False
+AUTO_BATCH_SIZE = False
+RESET_WORK_DIR = True
 
 
 def assert_path_exists(path: str, label: str) -> None:
@@ -114,7 +114,7 @@ def main() -> None:
         trust_remote_code=True,
     )
 
-    # 自动 batch size 探测可能耗时；若显存紧张或压测不稳定，可关闭并使用 FALLBACK_BATCH_SIZE。
+    # 保留 batch size 探测逻辑，可自主确定是否调用
     optimal_bs = (
         probe_optimal_batch_size(BASE_MODEL_PATH, REFERENCE_LORA_PATH)
         if AUTO_BATCH_SIZE

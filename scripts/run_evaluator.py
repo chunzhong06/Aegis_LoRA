@@ -10,10 +10,9 @@ from utils.evaluator import UniversalEvaluator
 # ==========================================
 BASE_MODEL_PATH = r"D:\Aegis_LoRA\models\Qwen2.5-3B-Instruct"
 TEST_DATA_ROOT = r"D:\Aegis_LoRA\datasets\test_data"
-
 # 需要评估的 LoRA 列表
 TARGET_LORAS = [
-    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet_immunized",
+    r"D:\Aegis_LoRA\models\poisoned_lora\Refusal_Qwen2.5-3B-Instruct_badnet_fast_immunized",
 ]
 
 
@@ -24,7 +23,6 @@ def main():
 
     # 1. 实例化通用评测器
     evaluator = UniversalEvaluator(BASE_MODEL_PATH, TEST_DATA_ROOT)
-
     # 用于收集最终结果的列表
     summary_report = []
 
@@ -33,13 +31,10 @@ def main():
         if not os.path.exists(lora_path):
             print(f"\n      [警告] 目标路径不存在，已跳过: {lora_path}")
             continue
-
         model_name = os.path.basename(os.path.normpath(lora_path))
         print(f"\n   === [测试目标] {model_name} ===")
-
         try:
             result = evaluator.evaluate(lora_path, sample_size=100, batch_size=100)
-
             if result:
                 c_acc, asr = result
                 summary_report.append(
