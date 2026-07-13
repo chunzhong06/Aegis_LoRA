@@ -189,9 +189,13 @@ def run_static_scan_pipeline(
     start_time = time.time()
     matrices_dict = extract_peftguard_attention_weights(lora_path)
 
-    if not matrices_dict or len(matrices_dict.get("q_A", [])) == 0:
-        print("      [错误] 权重提取失败或目标为空，请检查 safetensors 文件。")
-        return False, 0.0
+    q_a = matrices_dict.get("q_A", []) if matrices_dict else []
+    q_b = matrices_dict.get("q_B", []) if matrices_dict else []
+
+    if not q_a or not q_b or len(q_a) != len(q_b):
+        raise RuntimeError(
+            "静态扫描失败：未提取到完整的 Q 投影 LoRA A/B 权重，已拒绝继续加载。"
+        )
 
     # 3. 提取 20 维谱统计特征并进行二分类预测
     is_poisoned, prob = detector.predict(matrices_dict)
@@ -478,7 +482,7 @@ def run_immunization_pipeline(
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,
-        batch_size=optimal_bs,
+        batch_size=max(1, optimal_bs // 2),
     )
 
     # -----------------------------------------------------------------
@@ -642,7 +646,7 @@ def run_fast_cleanse_pipeline(
         output_dir=output_dir,
         sample_size=sample_size,
         num_epochs=num_epochs,
-        batch_size=optimal_bs,
+        batch_size=max(1, optimal_bs // 2),
     )
 
     # -----------------------------------------------------------------

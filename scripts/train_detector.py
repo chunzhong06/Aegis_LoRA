@@ -278,4 +278,4 @@ if __name__ == "__main__":
     )
 
     # model_prefix 用于区分不同架构的 detector 与特征缓存文件。
-    calibrate_and_evaluate(DATA_PATH, model_prefix="llama2")
+    calibrate_and_evaluate(DATA_PATH, model_prefix="llama")

@@ -217,10 +217,22 @@ def bd_vax_surgeon_strict(
     num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
     head_dim = getattr(config, "head_dim", config.hidden_size // num_heads)
 
+    def _effective_update_norm(A, B):
+        """低显存计算 ||B @ A||_F，不构造完整更新矩阵。"""
+        with torch.no_grad():
+            a32 = A.detach().float()
+            b32 = B.detach().float()
+            gram_a = a32 @ a32.T
+            gram_b = b32.T @ b32
+            norm_sq = (gram_a * gram_b).sum()
+            return torch.sqrt(torch.clamp(norm_sq, min=0.0)).item()
+
     report = {
         "suppressed_counts": {},
         "total_suppressed": 0,
         "target_attention_heads": [],
+        "before_surgery_norms": {},
+        "after_surgery_norms": {},
     }
 
     # -----------------------------------------------------------------
@@ -304,6 +316,8 @@ def bd_vax_surgeon_strict(
         # -----------------------------------------------------------------
         if tag in mlp_scores:
             scores = mlp_scores[tag]
+            report_key = f"L{layer_idx}.{proj}"
+            before_norm = _effective_update_norm(A, B)
 
             if proj in ("gate_proj", "up_proj"):
                 # gate/up 的风险通道对应输出通道，因此清 lora_B 的行。
@@ -342,8 +356,10 @@ def bd_vax_surgeon_strict(
             else:
                 count = 0
 
-            report["suppressed_counts"][f"L{layer_idx}.{proj}"] = count
+            report["suppressed_counts"][report_key] = count
             report["total_suppressed"] += count
+            report["before_surgery_norms"][report_key] = before_norm
+            report["after_surgery_norms"][report_key] = _effective_update_norm(A, B)
             continue
 
         # -----------------------------------------------------------------
@@ -363,6 +379,9 @@ def bd_vax_surgeon_strict(
 
             if not mask.any():
                 continue
+
+            report_key = f"L{layer_idx}.{proj}.attn"
+            before_norm = _effective_update_norm(A, B)
 
             if proj in ("q_proj", "k_proj", "v_proj"):
                 # q/k/v 的 head 通道对应输出通道，因此清 lora_B 的行。
@@ -386,8 +405,10 @@ def bd_vax_surgeon_strict(
 
                 count = int(col_idx.numel() * A.shape[0])
 
-            report["suppressed_counts"][f"L{layer_idx}.{proj}.attn"] = count
+            report["suppressed_counts"][report_key] = count
             report["total_suppressed"] += count
+            report["before_surgery_norms"][report_key] = before_norm
+            report["after_surgery_norms"][report_key] = _effective_update_norm(A, B)
 
     print(
         f"      [-] [神经元手术] 阻断完成！共清零 {report['total_suppressed']} 个 LoRA 参数。"

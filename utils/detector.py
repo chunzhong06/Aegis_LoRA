@@ -214,6 +214,7 @@ class SpectralBackdoorDetector:
                     "scaler": self.scaler,
                     "clf": self.classifier,
                     "trained": self.is_trained,
+                    "threshold": float(self.threshold),
                 },
                 f,
             )
@@ -226,3 +227,4 @@ class SpectralBackdoorDetector:
             self.scaler = data["scaler"]
             self.classifier = data["clf"]
             self.is_trained = data["trained"]
+            self.threshold = float(data.get("threshold", 0.5))

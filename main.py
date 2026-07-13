@@ -269,7 +269,14 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
         else:
             scan_res = "🟢 安全"
     except Exception as e:
-        scan_res = "🟡 流程异常"
+        final_status = f"🔴 流程终止：{e}"
+        yield [
+            gr.update(),
+            sessions,
+            final_status,
+            gr.update(visible=False),
+        ] + toggle_ui(True)
+        return
 
     # 阶段 3：挂载安全的模型权重
     load_res = load_model_direct(base_path, active_lora_path)

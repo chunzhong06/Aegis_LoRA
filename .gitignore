@@ -10,6 +10,7 @@ models/detectors/**/*.pth
 datasets/PADBench*/
 datasets/spectral_features_cache*/
 .cache/
+资料/
 
 reports/*.json
 reports/*.html
