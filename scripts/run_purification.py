@@ -1,6 +1,7 @@
 # Aegis-LoRA: 深度免疫重构流水线执行脚本
 import os
 import sys
+import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.pipeline import run_immunization_pipeline
@@ -28,6 +29,16 @@ def main():
             num_epochs=0,
             attention_top_k=8,
             domain_keys=("refusal", "sentiment", "code_injection"),
+        )
+        end_time = time.time()  # 记录流水线结束时间
+        elapsed_time = end_time - start_time  # 计算总时间差（秒）
+
+        # 将耗时转换为分钟和秒，方便直观查看
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+
+        print(
+            f"\n      [信息] 深度重构流水线执行完成，耗时: {minutes} 分 {seconds:.2f} 秒"
         )
 
     except Exception as e:
