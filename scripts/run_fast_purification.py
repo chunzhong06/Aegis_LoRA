@@ -1,6 +1,7 @@
 # Aegis-LoRA: 极速免疫清洗流水线执行脚本
 import os
 import sys
+import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.pipeline import run_fast_cleanse_pipeline
@@ -18,14 +19,24 @@ CLEAN_RECOVERY_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_recovery.json"
 
 def main():
     try:
-        run_fast_cleanse_pipeline(
+        report_path, suppressed_count, output_dir = run_fast_cleanse_pipeline(
             base_model_path=BASE_MODEL_PATH,
             lora_path=TARGET_LORA_PATH,
             signature_path=PRECOMPUTED_SIGNATURE_PATH,
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
-            tau=0.40,
+            tau=0.4,
             sample_size=200,
-            num_epochs=5,
+            num_epochs=0,
+            auto_batch_size=False,
+            attention_top_k=1296 / 4,
+        )
+        end_time = time.time()  # 记录流水线结束时间
+        elapsed_time = end_time - start_time  # 计算总时间差（秒）
+        # 将耗时转换为分钟和秒，方便直观查看
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+        print(
+            f"\n      [信息] 极速清洗流水线执行完成，耗时: {minutes} 分 {seconds:.2f} 秒"
         )
     except Exception as e:
         print(f"\n      [错误] 极速清洗流水线意外终止: {str(e)}")
