@@ -165,11 +165,12 @@ def probe_optimal_batch_size(
 
 
 # =====================================================================
-# 1. 静态探测流水线
+# 静态探测流水线
 # =====================================================================
 def run_static_scan_pipeline(
     lora_path: str,
     detector_path: str = "./models/detectors/spectral_detector_llama.pkl",
+    return_details: bool = False,
 ):
     print("\n" + "=" * 60)
     print(f">>> [静态扫描] 启动权重谱特征后门探测")
@@ -197,8 +198,10 @@ def run_static_scan_pipeline(
             "静态扫描失败：未提取到完整的 Q 投影 LoRA A/B 权重，已拒绝继续加载。"
         )
 
-    # 3. 提取 20 维谱统计特征并进行二分类预测
+    # 3. 执行检测并转换为 JSON 可序列化类型
     is_poisoned, prob = detector.predict(matrices_dict)
+    is_poisoned = bool(is_poisoned)
+    prob = float(prob)
     elapsed = time.time() - start_time
 
     # 4. 打印输出判定报告
@@ -212,11 +215,21 @@ def run_static_scan_pipeline(
     print(f"    [中毒概率] : {prob * 100:.2f}%")
     print("=" * 60)
 
+    # 5. API 使用结构化结果，原有调用仍返回二元组
+    if return_details:
+        return {
+            "verdict": "poisoned" if is_poisoned else "safe",
+            "is_poisoned": is_poisoned,
+            "risk_score": prob,
+            "threshold": float(detector.threshold),
+            "detector": os.path.basename(os.path.normpath(detector_path)),
+            "elapsed_seconds": float(elapsed),
+        }
     return is_poisoned, prob
 
 
 # =====================================================================
-# 2. 深度免疫重构流水线
+# 深度免疫重构流水线
 # =====================================================================
 def run_immunization_pipeline(
     base_model_path: str,
@@ -532,7 +545,7 @@ def run_immunization_pipeline(
 
 
 # =====================================================================
-# 3. 极速免疫清洗流水线
+# 极速免疫清洗流水线
 # =====================================================================
 def run_fast_cleanse_pipeline(
     base_model_path: str,

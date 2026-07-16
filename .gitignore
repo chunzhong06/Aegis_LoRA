@@ -12,6 +12,7 @@ datasets/spectral_features_cache*/
 .cache/
 资料/
 .agents
+.codex
 
 reports/*.json
 reports/*.html
