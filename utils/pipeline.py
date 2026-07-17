@@ -2,6 +2,7 @@
 # 本模块定义了三条核心流水线：静态扫描、深度免疫和极速清洗。每条流水线都集成了前面定义的各个组件，形成一键式的端到端流程。
 import gc
 import os
+import shutil
 import time
 import warnings
 
@@ -262,9 +263,19 @@ def run_immunization_pipeline(
     # 清洗后的 LoRA 输出目录。
     output_dir = lora_path + "_immunized"
 
-    # 以原始 LoRA 名称构造缓存目录，便于同一个 LoRA 断点续跑。
+    # 以原始 LoRA 名称构造独立缓存目录，保存签名和变体训练 checkpoint。
     lora_basename = os.path.basename(os.path.normpath(lora_path))
-    temp_work_dir = os.path.join(".cache", f"immunization_{lora_basename}")
+    cache_root = os.path.abspath(".cache")
+    temp_work_dir = os.path.abspath(
+        os.path.join(cache_root, f"immunization_{lora_basename}")
+    )
+
+    # 关闭断点恢复时清空本次清洗缓存，确保所有变体从初始 LoRA 重新训练。
+    if os.path.dirname(temp_work_dir) != cache_root:
+        raise RuntimeError(f"      [错误] 非法的清洗缓存目录: {temp_work_dir}")
+    if not resume_from_checkpoint and os.path.isdir(temp_work_dir):
+        print("      [-] 已关闭断点恢复，正在清空历史清洗缓存...")
+        shutil.rmtree(temp_work_dir)
 
     # 多域聚合 signature 的断点文件。
     # 若存在该文件，可跳过高成本的变体训练与 signature 提取阶段。
@@ -530,6 +541,7 @@ def run_immunization_pipeline(
         norms_after=surgery_report.get("after_surgery_norms", {}),
         suppressed_count=suppressed_count,
         suppressed_dict=surgery_report.get("suppressed_counts", {}),
+        target_attention_heads=surgery_report.get("target_attention_heads", []),
         output_dir=reports_dir,
         custom_name=f"{lora_name}_DeepCleanse_Audit_Report",
     )
@@ -701,6 +713,7 @@ def run_fast_cleanse_pipeline(
         norms_after=surgery_report.get("after_surgery_norms", {}),
         suppressed_count=suppressed_count,
         suppressed_dict=surgery_report.get("suppressed_counts", {}),
+        target_attention_heads=surgery_report.get("target_attention_heads", []),
         output_dir=reports_dir,
         custom_name=clean_report_name,
     )

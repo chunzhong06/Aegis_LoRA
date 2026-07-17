@@ -38,6 +38,92 @@ def _fig_to_base64(fig):
 
 
 # ====================================================
+# 清洗结构聚合函数
+# ====================================================
+def _aggregate_surgery_rows(
+    suppressed_dict,
+    norms_before,
+    norms_after,
+    target_attention_heads=None,
+):
+    """将 projection 级手术统计聚合为完整 MLP 神经元与 Attention head。"""
+    grouped = {}
+    heads_by_layer = {}
+
+    # Attention 目标按层去重；完整列表会同时保留到 JSON 审计数据中。
+    for target in target_attention_heads or []:
+        layer = str(target.get("layer", "")).strip()
+        if not layer:
+            continue
+
+        layer_label = layer if layer.startswith("L") else f"L{layer}"
+        try:
+            heads_by_layer.setdefault(layer_label, set()).add(int(target["head"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    # 将同层 gate/up/down 合并为 MLP，将 q/k/v/o 合并为 Attention。
+    for metric_key, count in (suppressed_dict or {}).items():
+        metric_key = str(metric_key)
+        parts = metric_key.split(".")
+        layer_label = parts[0] if parts else metric_key
+        projection = parts[1] if len(parts) > 1 else ""
+
+        if projection in ("gate_proj", "up_proj", "down_proj"):
+            structure = "mlp"
+            group_key = f"{layer_label}.mlp"
+            label = f"{layer_label} · MLP"
+        elif projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            structure = "attention"
+            group_key = f"{layer_label}.attention"
+            label = f"{layer_label} · Attention"
+        else:
+            structure = "module"
+            group_key = metric_key
+            label = metric_key
+
+        row = grouped.setdefault(
+            group_key,
+            {
+                "key": group_key,
+                "label": label,
+                "layer": layer_label,
+                "structure": structure,
+                "count": 0,
+                "before_sq": 0.0,
+                "after_sq": 0.0,
+            },
+        )
+
+        before = max(0.0, float((norms_before or {}).get(metric_key, 0.0) or 0.0))
+        after_value = (norms_after or {}).get(metric_key)
+        after = before if after_value is None else max(0.0, float(after_value))
+
+        # 不同 projection 的 Frobenius 范数按平方和合并，避免直接平均比例失真。
+        row["count"] += int(count or 0)
+        row["before_sq"] += before**2
+        row["after_sq"] += after**2
+
+    surgery_rows = []
+    for row in grouped.values():
+        before = row.pop("before_sq") ** 0.5
+        after = row.pop("after_sq") ** 0.5
+        drop = ((before - after) / before) * 100 if before > 0 else 0.0
+
+        row["before_norm"] = before
+        row["after_norm"] = after
+        row["drop"] = float(np.clip(drop, 0.0, 100.0))
+        row["heads"] = (
+            sorted(heads_by_layer.get(row["layer"], set()))
+            if row["structure"] == "attention"
+            else []
+        )
+        surgery_rows.append(row)
+
+    return surgery_rows
+
+
+# ====================================================
 # 统一图表生成函数
 # ====================================================
 def _generate_chart(kind, **kwargs):
@@ -49,100 +135,179 @@ def _generate_chart(kind, **kwargs):
     - kind="confusion_matrix"：探测器报告使用，展示 TN / FP / FN / TP。
     """
     # -----------------------------------------------------------------
-    # 1. LoRA 手术图：参数清零数 + 范数下降率
+    # 图表 1：LoRA 参数清洗效果
     # -----------------------------------------------------------------
     if kind == "surgery":
-        suppressed_dict = kwargs.get("suppressed_dict") or {}
-        norms_before = kwargs.get("norms_before") or {}
-        norms_after = kwargs.get("norms_after") or {}
+        # -----------------------------------------------------------------
+        # 1. 整理清洗数据
+        # -----------------------------------------------------------------
+        # 优先使用报告接口预聚合的数据；保留原始参数入口便于内部独立调用。
+        surgery_rows = kwargs.get("surgery_rows")
+        if surgery_rows is None:
+            surgery_rows = _aggregate_surgery_rows(
+                kwargs.get("suppressed_dict") or {},
+                kwargs.get("norms_before") or {},
+                kwargs.get("norms_after") or {},
+                kwargs.get("target_attention_heads") or [],
+            )
 
-        # 没有手术统计时，不生成图表，避免报告中出现空图。
-        if not suppressed_dict:
+        if not surgery_rows:
             return ""
 
-        # 取清零参数最多的前 15 层，突出主要干预位置，避免图表过密。
-        top_items = sorted(
-            suppressed_dict.items(),
-            key=lambda x: int(x[1]) if str(x[1]).isdigit() else 0,
+        # 按整体范数下降率筛选 Top 15，下降率相同时优先展示清零参数更多的结构。
+        top_rows = sorted(
+            surgery_rows,
+            key=lambda row: (row["drop"], row["count"]),
             reverse=True,
         )[:15]
+        counts = [row["count"] for row in top_rows]
+        drops = [row["drop"] for row in top_rows]
+        retained = [100.0 - drop for drop in drops]
 
-        layers = [str(k) for k, _ in top_items]
-        counts = [int(v) for _, v in top_items]
+        # Attention 行补充实际 head 编号；过多时保留前 6 个并标注剩余数量。
+        labels = []
+        for row in top_rows:
+            label = row["label"]
+            heads = row.get("heads") or []
+            if row["structure"] == "attention" and heads:
+                preview = ", ".join(f"H{head}" for head in heads[:6])
+                suffix = f" …(+{len(heads) - 6})" if len(heads) > 6 else ""
+                label = f"{label}\n{preview}{suffix}"
+            labels.append(label)
 
-        # 计算每层范数下降率，用于观察手术前后特征强度变化。
-        drops = []
-        for layer in layers:
-            before = float(norms_before.get(layer, 1e-9) or 1e-9)
-            after = float(norms_after.get(layer, before) or before)
-            drop = ((before - after) / before) * 100 if before > 0 else 0.0
-            drops.append(max(0.0, drop))
+        # -----------------------------------------------------------------
+        # 2. 绘制清洗前后对比
+        # -----------------------------------------------------------------
+        # 画布高度随层数增长，避免纵轴标签和数据标注相互拥挤。
+        fig_height = max(5.0, 1.8 + len(top_rows) * 0.52)
+        fig, ax = plt.subplots(figsize=(10, fig_height))
+        y = np.arange(len(top_rows))
 
-        fig, ax1 = plt.subplots(figsize=(10, 4))
-        x = np.arange(len(layers))
-
-        # 左轴：柱状图展示每层被清零的 LoRA 参数数量。
-        ax1.bar(
-            x,
-            counts,
-            width=0.55,
-            color="#D32F2F",
-            alpha=0.85,
-            hatch="//",
-            label="清零 LoRA 参数数",
+        # 将清洗前范数归一化为 100%，用同一尺度展示保留量和削减量。
+        ax.barh(
+            y,
+            retained,
+            height=0.62,
+            color="#B7D8D1",
+            edgecolor="none",
+            label="清洗后保留范数",
         )
-        ax1.set_ylabel("清零 LoRA 参数数", fontsize=10, color="#D32F2F")
-        ax1.tick_params(axis="y", labelcolor="#D32F2F")
-        ax1.grid(axis="y", linestyle=":", alpha=0.55)
-
-        # 右轴：折线图展示对应层的范数下降率。
-        ax2 = ax1.twinx()
-        ax2.plot(
-            x,
+        ax.barh(
+            y,
             drops,
-            color="#1976D2",
-            marker="o",
-            linewidth=2,
-            markersize=5,
-            label="范数下降率 (%)",
+            left=retained,
+            height=0.62,
+            color="#E76F51",
+            edgecolor="none",
+            label="已削减范数",
         )
-        ax2.set_ylabel("范数下降率 (%)", fontsize=10, color="#1976D2")
-        ax2.tick_params(axis="y", labelcolor="#1976D2")
-        ax2.set_ylim(bottom=0)
 
-        # 缩短层名，保证横轴标签可读。
-        short_labels = [
-            layer.replace("Layer_", "L")
-            .replace("_weight", "")
-            .replace("_proj", "")
-            .replace(".lora_B", "_B")
-            .replace(".lora_A", "_A")
-            for layer in layers
-        ]
+        # 宽色块内直接显示下降率；窄色块将文字移到左侧，避免标注溢出。
+        for row_y, remaining, drop, count in zip(y, retained, drops, counts):
+            if drop >= 9.0:
+                ax.text(
+                    remaining + drop / 2,
+                    row_y,
+                    f"↓ {drop:.1f}%",
+                    ha="center",
+                    va="center",
+                    color="white",
+                    fontsize=8.5,
+                    fontweight="bold",
+                )
+            else:
+                ax.text(
+                    max(1.0, remaining - 1.2),
+                    row_y,
+                    f"↓ {drop:.1f}%",
+                    ha="right",
+                    va="center",
+                    color="#B64038",
+                    fontsize=8.5,
+                    fontweight="bold",
+                )
 
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(short_labels, rotation=45, ha="right", fontsize=9)
-        ax1.set_title(
-            "Top 15 重点干预层：参数清零数与范数下降率",
-            fontsize=12,
+            ax.text(
+                102.5,
+                row_y,
+                f"{count:,}",
+                ha="left",
+                va="center",
+                color="#455A64",
+                fontsize=8.5,
+            )
+
+        # -----------------------------------------------------------------
+        # 3. 完善图表信息并输出
+        # -----------------------------------------------------------------
+        # Top 1 置顶；100% 基准线右侧单独展示各层清零参数数。
+        ax.set_yticks(y)
+        ax.set_yticklabels(labels, fontsize=9)
+
+        # MLP 与 Attention 使用不同标签色，结构类型可在不改变范数配色的情况下快速区分。
+        for tick, row in zip(ax.get_yticklabels(), top_rows):
+            tick.set_color("#00695C" if row["structure"] == "mlp" else "#1565C0")
+            tick.set_fontweight("bold")
+
+        ax.invert_yaxis()
+        ax.set_xlim(0, 122)
+        ax.set_xticks(np.arange(0, 101, 20))
+        ax.set_xticklabels([f"{value}%" for value in range(0, 101, 20)])
+        ax.set_xlabel("清洗前范数基准（100%）", fontsize=9.5, color="#546E7A")
+        ax.grid(axis="x", linestyle=":", color="#B0BEC5", alpha=0.55)
+        ax.set_axisbelow(True)
+        ax.axvline(100, color="#90A4AE", linewidth=0.8)
+        ax.text(
+            102.5,
+            -0.9,
+            "清零参数",
+            ha="left",
+            va="center",
+            color="#78909C",
+            fontsize=8.5,
+            fontweight="bold",
+        )
+
+        # 标题、副标题和图例共同说明排序方式、色块含义与辅助数值。
+        ax.set_title(
+            "完整结构清洗前后对比",
+            fontsize=13,
             fontweight="bold",
             color="#263238",
+            pad=28,
+        )
+        ax.text(
+            0,
+            1.02,
+            "gate/up/down 聚合为 MLP · q/k/v/o 聚合为 Attention · 右侧为清零参数数",
+            transform=ax.transAxes,
+            fontsize=9,
+            color="#78909C",
+        )
+        ax.legend(
+            loc="lower left",
+            bbox_to_anchor=(0, 1.08),
+            ncol=2,
+            frameon=False,
+            fontsize=9,
         )
 
-        # 合并左右轴图例。
-        h1, l1 = ax1.get_legend_handles_labels()
-        h2, l2 = ax2.get_legend_handles_labels()
-        ax1.legend(h1 + h2, l1 + l2, loc="upper right")
-
-        ax1.spines["top"].set_visible(False)
-        ax2.spines["top"].set_visible(False)
+        # 移除无信息量的边框和刻度线，再转为 Base64 供两类清洗报告复用。
+        for spine in ("top", "right", "left", "bottom"):
+            ax.spines[spine].set_visible(False)
+        ax.tick_params(axis="both", length=0, colors="#546E7A")
+        fig.tight_layout(pad=1.2)
 
         return _fig_to_base64(fig)
 
     # -----------------------------------------------------------------
-    # 2. 探测器混淆矩阵图：TN / FP / FN / TP
+    # 图表 2：探测器混淆矩阵
     # -----------------------------------------------------------------
     if kind == "confusion_matrix":
+        # -----------------------------------------------------------------
+        # 1. 构造预测矩阵
+        # -----------------------------------------------------------------
+        # 行表示真实标签，列表示预测标签，对应 TN、FP、FN、TP。
         tn = int(kwargs.get("tn", 0))
         fp = int(kwargs.get("fp", 0))
         fn = int(kwargs.get("fn", 0))
@@ -150,11 +315,15 @@ def _generate_chart(kind, **kwargs):
 
         cm = np.array([[tn, fp], [fn, tp]])
 
+        # 使用颜色深浅表达样本数量，并保留色条作为数量参照。
         fig, ax = plt.subplots(figsize=(6, 5))
         im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues, alpha=0.85)
         fig.colorbar(im)
 
-        # 在矩阵格子中写入具体数量；深色格子使用白字提升可读性。
+        # -----------------------------------------------------------------
+        # 2. 标注预测结果
+        # -----------------------------------------------------------------
+        # 根据背景深浅切换文字颜色，保证不同数据分布下数值仍然清晰。
         threshold = cm.max() / 2.0 if cm.max() > 0 else 0.0
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
@@ -169,7 +338,7 @@ def _generate_chart(kind, **kwargs):
                     fontweight="bold",
                 )
 
-        # 设置横纵轴语义：横轴为预测结果，纵轴为真实标签。
+        # 明确真实标签与预测标签方向，避免混淆误报和漏报。
         ax.set_xticks(np.arange(2))
         ax.set_yticks(np.arange(2))
         ax.set_xticklabels(["Pred: Clean", "Pred: Poisoned"], fontsize=11)
@@ -180,6 +349,9 @@ def _generate_chart(kind, **kwargs):
             va="center",
         )
 
+        # -----------------------------------------------------------------
+        # 3. 完善图表样式并输出
+        # -----------------------------------------------------------------
         ax.set_title(
             "检测器混淆矩阵 (Confusion Matrix)",
             fontsize=14,
@@ -191,9 +363,10 @@ def _generate_chart(kind, **kwargs):
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
+        # 去掉装饰性边框后转为 Base64，供探测器报告内嵌使用。
         return _fig_to_base64(fig)
 
-    # 未知图表类型直接报错，避免静默生成错误报告。
+    # 未注册类型直接报错，避免静默生成错误报告。
     raise ValueError(f"未知图表类型: {kind}")
 
 
@@ -227,9 +400,18 @@ def _build_html_report(report_type, report_data):
     .data-value{font-size:16px;font-weight:500;margin-top:5px;word-break:break-all}
     .big-number{color:var(--primary);font-weight:bold;font-size:22px}
     .badge{display:inline-block;padding:5px 12px;border-radius:20px;color:white;font-weight:bold;font-size:14px}
-    .chart-container{text-align:center;margin-top:20px;background:#FAFAFA;padding:15px;border-radius:8px;border:1px dashed #CFD8DC}
+    .metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 8px}
+    .metric-card{background:linear-gradient(145deg,#F8FBFA,#F2F7F6);padding:15px 16px;border-radius:8px;border:1px solid #DFE9E7}
+    .metric-label{font-size:12px;color:#78909C;font-weight:bold;margin-bottom:7px}
+    .metric-value{font-size:22px;line-height:1.1;color:var(--primary);font-weight:700}
+    .metric-note{font-size:11px;color:#90A4AE;margin-top:6px}
+    .head-summary{margin:16px 0 6px;padding:13px 15px;border-radius:8px;background:#F4F8FB;border:1px solid #DCE7EE}
+    .head-summary-title{font-size:12px;color:#546E7A;font-weight:bold;margin-bottom:9px}
+    .head-list{display:flex;flex-wrap:wrap;gap:8px}.head-chip{padding:6px 10px;border-radius:6px;background:white;border:1px solid #CFDDE6;color:#1565C0;font-size:12px}
+    .chart-container{text-align:center;margin-top:20px;background:#FCFDFD;padding:18px;border-radius:10px;border:1px solid #E0E8E7;box-shadow:0 8px 24px rgba(38,50,56,.04)}
     .chart-container img{max-width:100%;height:auto}.muted{color:#546E7A;font-size:14px}
     .log{background:#F7F9FA;border-left:4px solid var(--primary);padding:12px;font-size:13px;color:#455A64;white-space:pre-wrap}
+    @media(max-width:720px){.grid,.metric-grid{grid-template-columns:1fr 1fr}.header{align-items:flex-start;gap:12px;flex-direction:column}.card{padding:20px 16px}}
     """
 
     if report_type in ("offline", "fast"):
@@ -253,10 +435,58 @@ def _build_html_report(report_type, report_data):
             else "系统构建多个 clean / poisoned 变体，并从 LoRA 差分中提取跨变体共享签名。"
         )
         chart_text = (
-            "下图展示应用预计算签名后，干预最显著的前 15 个网络层。"
+            "下图以清洗前范数为 100%，展示应用预计算签名后变化最显著的前 15 个完整结构。"
             if is_fast
-            else "下图展示离线签名提取后，干预最显著的前 15 个网络层。"
+            else "下图以清洗前范数为 100%，展示离线签名提取后变化最显著的前 15 个完整结构。"
         )
+
+        surgery_rows = report_data.get("surgery_rows")
+        if surgery_rows is None:
+            surgery_rows = _aggregate_surgery_rows(
+                report_data.get("suppressed_dict") or {},
+                report_data.get("norms_before") or {},
+                report_data.get("norms_after") or {},
+                report_data.get("target_attention_heads") or [],
+            )
+
+        affected_structures = sum(
+            1 for row in surgery_rows if int(row.get("count", 0) or 0) > 0
+        )
+        norm_drops = [
+            float(row.get("drop", 0.0) or 0.0)
+            for row in surgery_rows
+            if float(row.get("before_norm", 0.0) or 0.0) > 0
+        ]
+
+        average_drop = float(np.mean(norm_drops)) if norm_drops else 0.0
+        maximum_drop = max(norm_drops, default=0.0)
+        suppressed_total = int(report_data.get("suppressed_count", 0) or 0)
+
+        # 图表仅展示 Top 15，HTML 摘要按层补充全部被清洗的 Attention head。
+        head_items = []
+        total_attention_heads = 0
+        for row in sorted(surgery_rows, key=lambda item: item.get("layer", "")):
+            heads = row.get("heads") or []
+            if row.get("structure") != "attention" or not heads:
+                continue
+
+            total_attention_heads += len(heads)
+            preview = ", ".join(f"H{head}" for head in heads[:12])
+            if len(heads) > 12:
+                preview += f" … 另 {len(heads) - 12} 个"
+            head_items.append(
+                f'<span class="head-chip"><strong>{esc(row.get("layer", ""))}</strong>: '
+                f"{esc(preview)}</span>"
+            )
+
+        head_summary_html = ""
+        if head_items:
+            head_summary_html = f"""
+            <div class="head-summary">
+                <div class="head-summary-title">完整 Attention head 清洗目标 · 共 {total_attention_heads} 个</div>
+                <div class="head-list">{''.join(head_items)}</div>
+            </div>
+            """
 
         if report_data.get("chart"):
             chart_html = f"""
@@ -300,8 +530,14 @@ def _build_html_report(report_type, report_data):
 
     <div class="card">
         <h2>3. 底层参数重构分析 (Parameter Surgery Analysis)</h2>
-        <p class="muted">{esc(chart_text)} 红色柱状图表示清零参数数；蓝色折线表示范数下降率。</p>
-        <div class="data-item"><div class="data-label">清零 LoRA 参数总数</div><div class="data-value big-number">{esc(report_data.get("suppressed_count",0))}</div></div>
+        <p class="muted">{esc(chart_text)} 青绿色表示清洗后保留范数，橙红色表示被削减部分。</p>
+        <div class="metric-grid">
+            <div class="metric-card"><div class="metric-label">累计清零参数</div><div class="metric-value">{suppressed_total:,}</div><div class="metric-note">实际置零的 LoRA 权重</div></div>
+            <div class="metric-card"><div class="metric-label">受影响结构数</div><div class="metric-value">{affected_structures}</div><div class="metric-note">完整 MLP / Attention 结构</div></div>
+            <div class="metric-card"><div class="metric-label">平均范数下降</div><div class="metric-value">{average_drop:.1f}%</div><div class="metric-note">全部受影响结构的平均值</div></div>
+            <div class="metric-card"><div class="metric-label">最大范数下降</div><div class="metric-value">{maximum_drop:.1f}%</div><div class="metric-note">单个完整结构最大削减</div></div>
+        </div>
+        {head_summary_html}
         {chart_html}
     </div>
 
@@ -423,17 +659,24 @@ def export_offline_report(
     suppressed_dict,
     output_dir="./reports",
     custom_name=None,
+    target_attention_heads=None,
 ):
     """导出深度免疫重构报告。"""
-    # 1. 生成手术诊断图表：展示重点层的 LoRA 参数清零数与范数下降率。
-    chart = _generate_chart(
-        "surgery",
-        suppressed_dict=suppressed_dict,
-        norms_before=norms_before,
-        norms_after=norms_after,
+    # 1. 将 projection 统计聚合为完整结构，供图表、指标和 JSON 共同使用。
+    surgery_rows = _aggregate_surgery_rows(
+        suppressed_dict,
+        norms_before,
+        norms_after,
+        target_attention_heads,
     )
 
-    # 2. 组装报告数据。
+    # 2. 生成手术诊断图表：展示完整结构的参数清零数与范数下降率。
+    chart = _generate_chart(
+        "surgery",
+        surgery_rows=surgery_rows,
+    )
+
+    # 3. 组装报告数据。
     # HTML 用于人工阅读；JSON 会复用这份数据做审计留档。
     report_data = {
         "base_model": base_model_path,
@@ -445,14 +688,16 @@ def export_offline_report(
         "suppressed_dict": suppressed_dict,
         "norms_before": norms_before,
         "norms_after": norms_after,
+        "target_attention_heads": target_attention_heads or [],
+        "surgery_rows": surgery_rows,
         "chart": chart,
         "log_text": log_text,
     }
 
-    # 3. 渲染深度免疫专用 HTML 模板。
+    # 4. 渲染深度免疫专用 HTML 模板。
     html_content = _build_html_report("offline", report_data)
 
-    # 4. 生成报告文件名。
+    # 5. 生成报告文件名。
     # custom_name 用于主流程指定审计报告名称；否则使用时间戳避免覆盖。
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = (
@@ -461,7 +706,7 @@ def export_offline_report(
         else f"Aegis_Offline_Immunization_{timestamp}.html"
     )
 
-    # 5. 同时写出 HTML 与 JSON 审计文件。
+    # 6. 同时写出 HTML 与 JSON 审计文件。
     file_path = _save_report_files(html_content, report_data, output_dir, file_name)
 
     print(f"      [-] [离线报告] 深度免疫重构离线报告已导出至: {file_path}")
@@ -481,17 +726,24 @@ def export_fast_cleanse_report(
     suppressed_dict,
     output_dir="./reports",
     custom_name=None,
+    target_attention_heads=None,
 ):
     """导出极速免疫清洗报告。"""
-    # 1. 极速清洗同样使用 surgery 图表，便于和深度清洗报告保持一致。
-    chart = _generate_chart(
-        "surgery",
-        suppressed_dict=suppressed_dict,
-        norms_before=norms_before,
-        norms_after=norms_after,
+    # 1. 极速清洗沿用相同结构聚合规则，保证两类报告统计口径一致。
+    surgery_rows = _aggregate_surgery_rows(
+        suppressed_dict,
+        norms_before,
+        norms_after,
+        target_attention_heads,
     )
 
-    # 2. 组装极速清洗报告数据。
+    # 2. 生成完整结构清洗图表。
+    chart = _generate_chart(
+        "surgery",
+        surgery_rows=surgery_rows,
+    )
+
+    # 3. 组装极速清洗报告数据。
     # n_variants 在这里表示离线签名库的预计算变体规模。
     report_data = {
         "base_model": base_model_path,
@@ -503,14 +755,16 @@ def export_fast_cleanse_report(
         "suppressed_dict": suppressed_dict,
         "norms_before": norms_before,
         "norms_after": norms_after,
+        "target_attention_heads": target_attention_heads or [],
+        "surgery_rows": surgery_rows,
         "chart": chart,
         "log_text": log_text,
     }
 
-    # 3. 渲染极速免疫专用 HTML 模板。
+    # 4. 渲染极速免疫专用 HTML 模板。
     html_content = _build_html_report("fast", report_data)
 
-    # 4. 生成报告文件名。
+    # 5. 生成报告文件名。
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = (
         f"{custom_name}.html"
@@ -518,7 +772,7 @@ def export_fast_cleanse_report(
         else f"Aegis_FastCleanse_Immunization_{timestamp}.html"
     )
 
-    # 5. 同时写出 HTML 与 JSON 审计文件。
+    # 6. 同时写出 HTML 与 JSON 审计文件。
     file_path = _save_report_files(html_content, report_data, output_dir, file_name)
 
     print(f"      [-] [离线报告] 极速免疫清洗离线报告已导出至: {file_path}")
