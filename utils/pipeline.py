@@ -25,10 +25,7 @@ from utils.core.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_s
 from utils.core.recovery import lightweight_recovery_finetuning
 
 # 导入报告生成模块
-from utils.core.report_generator import (
-    export_offline_report,
-    export_fast_cleanse_report,
-)
+from utils.core.report_generator import export_cleanse_report
 
 # 导入静态探测模块
 from utils.core.detector import (
@@ -526,7 +523,8 @@ def run_immunization_pipeline(
     lora_name = os.path.basename(os.path.normpath(lora_path))
 
     # 导出清洗过程报告，包括参数抑制数量、前后 norm、域配置和输出路径。
-    report_path = export_offline_report(
+    report_path = export_cleanse_report(
+        report_type="offline",
         base_model_path=base_model_path,
         lora_path=lora_path,
         cleansed_path=output_dir,
@@ -702,7 +700,8 @@ def run_fast_cleanse_pipeline(
 
     # 导出极速清洗审计报告。
     # 报告包含：输入 LoRA、输出 LoRA、清洗日志、参数抑制统计、手术前后 norm 等信息。
-    report_path = export_fast_cleanse_report(
+    report_path = export_cleanse_report(
+        report_type="fast",
         base_model_path=base_model_path,
         lora_path=lora_path,
         cleansed_path=output_dir,
