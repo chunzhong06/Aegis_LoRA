@@ -255,6 +255,77 @@ def logout():
 
 
 # =====================================================================
+# 服务器状态
+# =====================================================================
+@app.command()
+def health(
+    server: str | None = typer.Argument(
+        None, help="API 地址；省略时使用当前登录配置"
+    ),
+):
+    """检查服务器全部检测与清洗能力是否就绪。"""
+    # -----------------------------------------------------------------
+    # 步骤 1：使用指定地址或当前登录配置请求公开健康接口
+    # -----------------------------------------------------------------
+    if server is None:
+        # 已登录场景复用统一客户端，附带 Token 不影响公开健康接口。
+        # 服务器地址和连接异常继续由现有客户端逻辑统一处理。
+        with _client() as client:
+            result = _request(client, "GET", "/health")
+    else:
+        # 未登录时允许直接指定服务器地址，用于诊断 Token 尚未配置的服务。
+        # 先规范化末尾斜杠，再限制为明确的 HTTP 或 HTTPS 地址。
+        server = server.rstrip("/")
+        if not server.startswith(("http://", "https://")):
+            typer.echo("API 地址必须以 http:// 或 https:// 开头。")
+            raise typer.Exit(1)
+
+        try:
+            # 健康接口响应很快，独立客户端使用十秒总超时即可完成探测。
+            with httpx.Client(base_url=server, timeout=10.0) as client:
+                result = _request(client, "GET", "/health")
+        except ValueError as exc:
+            # httpx 拒绝无法解析的 base_url 时转换为 CLI 可读错误。
+            typer.echo(f"API 地址无效：{exc}")
+            raise typer.Exit(1)
+
+    # -----------------------------------------------------------------
+    # 步骤 2：按能力分组输出完整服务器状态
+    # -----------------------------------------------------------------
+    # 首行汇总服务身份、版本和整体状态，便于快速判断服务器是否完整就绪。
+    typer.echo(
+        f"服务={result.get('service', '-')} "
+        f"版本={result.get('version', '-')} "
+        f"状态={result.get('status', 'unknown')}"
+    )
+
+    # 认证与检测器属于全部业务流程共享的基础能力，使用独立状态行展示。
+    typer.echo(f"认证：{'ready' if result.get('auth_ready') else 'missing'}")
+    typer.echo(f"检测器：{'ready' if result.get('detector_ready') else 'missing'}")
+
+    # 基础模型逐项输出，使缺失模型能够直接对应服务器注册的 model_id。
+    typer.echo("基础模型：")
+    for model_id, ready in result.get("models_ready", {}).items():
+        typer.echo(f"  {model_id}: {'ready' if ready else 'missing'}")
+
+    # 快速清洗按模型家族检查签名，输出键与健康接口中的 family 保持一致。
+    typer.echo("快速清洗：")
+    for family, ready in result.get("fast_cleanse_ready", {}).items():
+        typer.echo(f"  {family}: {'ready' if ready else 'missing'}")
+
+    # 深度清洗和存储是全局能力，不需要像模型和签名一样逐项展开。
+    typer.echo(
+        f"深度清洗："
+        f"{'ready' if result.get('deep_cleanse_ready') else 'missing'}"
+    )
+    typer.echo(f"存储：{'ready' if result.get('storage_ready') else 'missing'}")
+
+    # degraded 使用非零退出码，使脚本和部署系统能够直接判断整体状态。
+    if result.get("status") != "ready":
+        raise typer.Exit(1)
+
+
+# =====================================================================
 # 模型与审计
 # =====================================================================
 @app.command("models")

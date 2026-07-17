@@ -1,4 +1,4 @@
-# Aegis-LoRA - 主程序入口
+# Aegis-LoRA - WebUI 控制台
 import gradio as gr
 import torch
 import gc
@@ -55,9 +55,10 @@ def get_report_path(session_data):
 
 
 def process_and_link_report(session_name, report_file):
-    """将底层的离线报告重命名为与会话绑定的固定名称，并返回精简的物理路径"""
+    """将底层报告归档到 WebUI 目录，并返回与会话绑定的文件路径"""
     if report_file and os.path.exists(report_file):
-        reports_dir = os.path.join(CACHE_DIR, "reports")
+        # pipeline 的 reports 目录只保存临时输出，WebUI 报告单独归档便于区分来源。
+        reports_dir = os.path.join(CACHE_DIR, "webui_reports")
         os.makedirs(reports_dir, exist_ok=True)
 
         _, ext = os.path.splitext(report_file)
@@ -277,7 +278,7 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
     load_res = load_model_direct(base_path, active_lora_path)
     final_status = f"{scan_res} | {load_res}"
 
-    # 阶段 4：将生成报告转为 Base64 并构建会话对象
+    # 阶段 4：将生成报告归档到 WebUI 目录并构建会话对象
     final_report_path = process_and_link_report(name, report_file)
 
     sessions[name] = {

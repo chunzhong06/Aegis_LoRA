@@ -11,23 +11,29 @@ from peft import PeftModel
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 # 导入清洗模块
-from utils.dataset_builder import (
+from utils.core.dataset_builder import (
     build_shared_clean_subsets,
     build_poisoned_variants_for_domain,
 )
-from utils.delta_extractor import (
+from utils.core.delta_extractor import (
     setup_extraction_model,
     run_variant_training_isolated,
     compute_state_dict_difference,
 )
-from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
-from utils.recovery import lightweight_recovery_finetuning
+from utils.core.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
+from utils.core.recovery import lightweight_recovery_finetuning
 
 # 导入报告生成模块
-from utils.report_generator import export_offline_report, export_fast_cleanse_report
+from utils.core.report_generator import (
+    export_offline_report,
+    export_fast_cleanse_report,
+)
 
 # 导入静态探测模块
-from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
+from utils.core.detector import (
+    SpectralBackdoorDetector,
+    extract_peftguard_attention_weights,
+)
 
 # 配置日志级别，抑制 transformers 和 peft 的冗长警告
 transformers.logging.set_verbosity_warning()

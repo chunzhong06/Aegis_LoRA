@@ -15,7 +15,7 @@ import time
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 from utils.pipeline import run_static_scan_pipeline
-from utils.report_generator import export_detector_report
+from utils.core.report_generator import export_detector_report
 
 # ==========================================
 # 核心路径配置
