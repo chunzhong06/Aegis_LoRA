@@ -2,6 +2,7 @@
 # 本模块定义了三条核心流水线：静态扫描、深度免疫和极速清洗。每条流水线都集成了前面定义的各个组件，形成一键式的端到端流程。
 import gc
 import os
+import shutil
 import time
 import warnings
 
@@ -11,23 +12,26 @@ from peft import PeftModel
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 # 导入清洗模块
-from utils.dataset_builder import (
+from utils.core.dataset_builder import (
     build_shared_clean_subsets,
     build_poisoned_variants_for_domain,
 )
-from utils.delta_extractor import (
+from utils.core.delta_extractor import (
     setup_extraction_model,
     run_variant_training_isolated,
     compute_state_dict_difference,
 )
-from utils.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
-from utils.recovery import lightweight_recovery_finetuning
+from utils.core.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
+from utils.core.recovery import lightweight_recovery_finetuning
 
 # 导入报告生成模块
-from utils.report_generator import export_offline_report, export_fast_cleanse_report
+from utils.core.report_generator import export_cleanse_report
 
 # 导入静态探测模块
-from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
+from utils.core.detector import (
+    SpectralBackdoorDetector,
+    extract_peftguard_attention_weights,
+)
 
 # 配置日志级别，抑制 transformers 和 peft 的冗长警告
 transformers.logging.set_verbosity_warning()
@@ -165,11 +169,12 @@ def probe_optimal_batch_size(
 
 
 # =====================================================================
-# 1. 静态探测流水线
+# 静态探测流水线
 # =====================================================================
 def run_static_scan_pipeline(
     lora_path: str,
     detector_path: str = "./models/detectors/spectral_detector_llama.pkl",
+    return_details: bool = False,
 ):
     print("\n" + "=" * 60)
     print(f">>> [静态扫描] 启动权重谱特征后门探测")
@@ -197,8 +202,10 @@ def run_static_scan_pipeline(
             "静态扫描失败：未提取到完整的 Q 投影 LoRA A/B 权重，已拒绝继续加载。"
         )
 
-    # 3. 提取 20 维谱统计特征并进行二分类预测
+    # 3. 执行检测并转换为 JSON 可序列化类型
     is_poisoned, prob = detector.predict(matrices_dict)
+    is_poisoned = bool(is_poisoned)
+    prob = float(prob)
     elapsed = time.time() - start_time
 
     # 4. 打印输出判定报告
@@ -212,11 +219,21 @@ def run_static_scan_pipeline(
     print(f"    [中毒概率] : {prob * 100:.2f}%")
     print("=" * 60)
 
+    # 5. API 使用结构化结果，原有调用仍返回二元组
+    if return_details:
+        return {
+            "verdict": "poisoned" if is_poisoned else "safe",
+            "is_poisoned": is_poisoned,
+            "risk_score": prob,
+            "threshold": float(detector.threshold),
+            "detector": os.path.basename(os.path.normpath(detector_path)),
+            "elapsed_seconds": float(elapsed),
+        }
     return is_poisoned, prob
 
 
 # =====================================================================
-# 2. 深度免疫重构流水线
+# 深度免疫重构流水线
 # =====================================================================
 def run_immunization_pipeline(
     base_model_path: str,
@@ -243,9 +260,19 @@ def run_immunization_pipeline(
     # 清洗后的 LoRA 输出目录。
     output_dir = lora_path + "_immunized"
 
-    # 以原始 LoRA 名称构造缓存目录，便于同一个 LoRA 断点续跑。
+    # 以原始 LoRA 名称构造独立缓存目录，保存签名和变体训练 checkpoint。
     lora_basename = os.path.basename(os.path.normpath(lora_path))
-    temp_work_dir = os.path.join(".cache", f"immunization_{lora_basename}")
+    cache_root = os.path.abspath(".cache")
+    temp_work_dir = os.path.abspath(
+        os.path.join(cache_root, f"immunization_{lora_basename}")
+    )
+
+    # 关闭断点恢复时清空本次清洗缓存，确保所有变体从初始 LoRA 重新训练。
+    if os.path.dirname(temp_work_dir) != cache_root:
+        raise RuntimeError(f"      [错误] 非法的清洗缓存目录: {temp_work_dir}")
+    if not resume_from_checkpoint and os.path.isdir(temp_work_dir):
+        print("      [-] 已关闭断点恢复，正在清空历史清洗缓存...")
+        shutil.rmtree(temp_work_dir)
 
     # 多域聚合 signature 的断点文件。
     # 若存在该文件，可跳过高成本的变体训练与 signature 提取阶段。
@@ -259,7 +286,7 @@ def run_immunization_pipeline(
 
     # 自动探测训练 batch size；若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
-        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 4
     )
 
     def merge_score_dict(target_dict, source_dict):
@@ -496,7 +523,8 @@ def run_immunization_pipeline(
     lora_name = os.path.basename(os.path.normpath(lora_path))
 
     # 导出清洗过程报告，包括参数抑制数量、前后 norm、域配置和输出路径。
-    report_path = export_offline_report(
+    report_path = export_cleanse_report(
+        report_type="offline",
         base_model_path=base_model_path,
         lora_path=lora_path,
         cleansed_path=output_dir,
@@ -511,6 +539,7 @@ def run_immunization_pipeline(
         norms_after=surgery_report.get("after_surgery_norms", {}),
         suppressed_count=suppressed_count,
         suppressed_dict=surgery_report.get("suppressed_counts", {}),
+        target_attention_heads=surgery_report.get("target_attention_heads", []),
         output_dir=reports_dir,
         custom_name=f"{lora_name}_DeepCleanse_Audit_Report",
     )
@@ -532,7 +561,7 @@ def run_immunization_pipeline(
 
 
 # =====================================================================
-# 3. 极速免疫清洗流水线
+# 极速免疫清洗流水线
 # =====================================================================
 def run_fast_cleanse_pipeline(
     base_model_path: str,
@@ -561,7 +590,7 @@ def run_fast_cleanse_pipeline(
     # 根据当前硬件自动探测康复微调使用的 batch size。
     # 若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
-        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 4
     )
 
     # -----------------------------------------------------------------
@@ -671,7 +700,8 @@ def run_fast_cleanse_pipeline(
 
     # 导出极速清洗审计报告。
     # 报告包含：输入 LoRA、输出 LoRA、清洗日志、参数抑制统计、手术前后 norm 等信息。
-    report_path = export_fast_cleanse_report(
+    report_path = export_cleanse_report(
+        report_type="fast",
         base_model_path=base_model_path,
         lora_path=lora_path,
         cleansed_path=output_dir,
@@ -682,6 +712,7 @@ def run_fast_cleanse_pipeline(
         norms_after=surgery_report.get("after_surgery_norms", {}),
         suppressed_count=suppressed_count,
         suppressed_dict=surgery_report.get("suppressed_counts", {}),
+        target_attention_heads=surgery_report.get("target_attention_heads", []),
         output_dir=reports_dir,
         custom_name=clean_report_name,
     )

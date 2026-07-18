@@ -26,12 +26,12 @@ PROJECT_ROOT = find_project_root(__file__)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.cleanse import extract_bd_vax_signature_strict
-from utils.dataset_builder import (
+from utils.core.cleanse import extract_bd_vax_signature_strict
+from utils.core.dataset_builder import (
     build_poisoned_variants_for_domain,
     build_shared_clean_subsets,
 )
-from utils.delta_extractor import (
+from utils.core.delta_extractor import (
     compute_state_dict_difference,
     run_variant_training_isolated,
     setup_extraction_model,

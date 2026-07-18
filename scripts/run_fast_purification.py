@@ -19,7 +19,8 @@ CLEAN_RECOVERY_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_recovery.json"
 
 def main():
     try:
-        report_path, suppressed_count, output_dir = run_fast_cleanse_pipeline(
+        start_time = time.time()  # 记录流水线开始时间
+        run_fast_cleanse_pipeline(
             base_model_path=BASE_MODEL_PATH,
             lora_path=TARGET_LORA_PATH,
             signature_path=PRECOMPUTED_SIGNATURE_PATH,

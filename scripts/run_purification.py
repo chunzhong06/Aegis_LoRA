@@ -20,6 +20,7 @@ def main():
     # 2. 执行一体化清理流水线
     # ==========================================
     try:
+        start_time = time.time()  # 记录流水线开始时间
         run_immunization_pipeline(
             base_model_path=BASE_MODEL_PATH,
             lora_path=ORIGINAL_LORA_PATH,

@@ -15,7 +15,6 @@ import time
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 from utils.pipeline import run_static_scan_pipeline
-from utils.report_generator import export_detector_report
 
 # ==========================================
 # 核心路径配置
@@ -142,25 +141,6 @@ def main():
     print(f"      [-] FPR       (误报率) : {fpr * 100:.2f}%  <- 误杀健康模型的概率")
     print(f"      [-] ROC-AUC   (曲线区) : {auc:.4f}")
     print("=" * table_width)
-
-    report_dict = {
-        "total": len(y_true_list),
-        "accuracy": accuracy * 100,
-        "precision": precision * 100,
-        "recall": recall * 100,
-        "f1": f1 * 100,
-        "fpr": fpr * 100,
-        "auc": auc,
-        "tn": tn,
-        "fp": fp,
-        "fn": fn,
-        "tp": tp,
-        "cases": summary_report,
-    }
-
-    reports_dir = os.path.join(project_root, ".cache", "reports")
-    report_path = export_detector_report(report_dict, output_dir=reports_dir)
-    print(f"\n      [-] [生成完成] 静态探测器离线评估报告已导出至: {report_path}")
 
 
 if __name__ == "__main__":

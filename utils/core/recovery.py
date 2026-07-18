@@ -19,7 +19,7 @@ def lightweight_recovery_finetuning(
     clean_data_path,
     output_dir,
     sample_size=200,
-    learning_rate=5e-5,
+    learning_rate=2e-4,
     num_epochs=5,
     batch_size=2,
 ):

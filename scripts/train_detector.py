@@ -27,7 +27,10 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from utils.detector import SpectralBackdoorDetector, extract_peftguard_attention_weights
+from utils.core.detector import (
+    SpectralBackdoorDetector,
+    extract_peftguard_attention_weights,
+)
 
 # 特征缓存目录，存放从 LoRA 权重提取的 20D 特征，避免重复计算。
 CACHE_DIR = os.path.join(project_root, "datasets", "spectral_features_cache")
