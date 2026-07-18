@@ -422,7 +422,6 @@ def bot_handler(current_session, sessions_store):
 # ==========================================
 # 前端 UI 布局定义
 # ==========================================
-
 # 自定义内联 CSS：用于隐藏 Accordion 的默认展开图标，并禁用标题区域的点击事件，使其仅作为视觉标签存在
 custom_css = """
 /* 隐藏下拉小箭头 (选中包含 chevron 或直接隐藏 label-wrap 内的 svg) */

@@ -286,7 +286,7 @@ def run_immunization_pipeline(
 
     # 自动探测训练 batch size；若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
-        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 4
     )
 
     def merge_score_dict(target_dict, source_dict):
@@ -590,7 +590,7 @@ def run_fast_cleanse_pipeline(
     # 根据当前硬件自动探测康复微调使用的 batch size。
     # 若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
-        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 4
     )
 
     # -----------------------------------------------------------------

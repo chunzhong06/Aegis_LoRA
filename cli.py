@@ -2,21 +2,26 @@
 import json
 import time
 from pathlib import Path
+from typing import Literal
 
 import httpx
 import typer
+from rich import box
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 # =====================================================================
 # 客户端配置
 # =====================================================================
-# Typer 负责命令注册、参数解析和帮助信息生成；未传命令时直接展示帮助。
+# Typer 负责命令注册、参数解析和帮助信息；未传命令时直接展示帮助。
 app = typer.Typer(
     name="aegis",
     help="Aegis-LoRA 远程检测与清洗客户端",
     no_args_is_help=True,
 )
 
-# 登录配置保存在用户目录，与工程目录和当前终端位置无关。
+# 登录信息固定保存在用户目录，不依赖工程位置和当前终端目录。
 CONFIG_FILE = Path.home() / ".aegis" / "config.json"
 
 
@@ -24,45 +29,24 @@ CONFIG_FILE = Path.home() / ".aegis" / "config.json"
 # 核心逻辑
 # =====================================================================
 def _client() -> httpx.Client:
-    """读取本地登录配置并创建长耗时 HTTP 客户端。"""
+    """读取登录配置并创建适合长耗时任务的 HTTP 客户端。"""
+
     # -----------------------------------------------------------------
-    # 步骤 1：确认客户端已经完成登录
+    # 1. 读取当前登录信息
     # -----------------------------------------------------------------
     if not CONFIG_FILE.is_file():
         typer.echo("尚未登录，请先执行 login。")
         raise typer.Exit(1)
 
-    try:
-        # -----------------------------------------------------------------
-        # 步骤 2：读取并验证服务器地址与 Token
-        # -----------------------------------------------------------------
-        # 配置必须是包含 server 和 token 的 JSON 对象，缺失字段统一视为损坏。
-        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        server = config["server"]
-        token = config["token"]
+    # config 只保存服务地址和 Token，是所有受保护命令的共同连接上下文。
+    config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
 
-        # 空字符串或非字符串会导致 HTTP 客户端产生不明确错误，因此提前拒绝。
-        if (
-            not isinstance(server, str)
-            or not server
-            or not isinstance(token, str)
-            or not token
-        ):
-            raise ValueError
-
-        # -----------------------------------------------------------------
-        # 步骤 3：创建适合长耗时审计任务的 HTTP 客户端
-        # -----------------------------------------------------------------
-        # 连接阶段限制为 10 秒，读取阶段不设总超时，避免深度清洗轮询被中断。
-        return httpx.Client(
-            base_url=server,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=httpx.Timeout(None, connect=10.0),
-        )
-    except (OSError, ValueError, KeyError, TypeError):
-        # 文件读取、JSON 解析、字段缺失和字段类型错误使用同一修复提示。
-        typer.echo("登录配置损坏，请重新登录。")
-        raise typer.Exit(1)
+    # 读取阶段不设总超时，避免深度清洗轮询被客户端提前中断。
+    return httpx.Client(
+        base_url=config["server"],
+        headers={"Authorization": f"Bearer {config['token']}"},
+        timeout=httpx.Timeout(None, connect=10.0),
+    )
 
 
 def _request(
@@ -74,93 +58,384 @@ def _request(
     **kwargs,
 ):
     """统一处理 JSON 请求、API 错误和流式文件下载。"""
+
+    # -----------------------------------------------------------------
+    # 1. 发送普通请求或流式下载
+    # -----------------------------------------------------------------
     try:
-        # -----------------------------------------------------------------
-        # 步骤 1：根据 output 判断执行普通请求还是流式下载
-        # -----------------------------------------------------------------
         if output is None:
-            # 普通接口响应体较小，直接完成请求并在后续解析 JSON。
+            # 普通接口响应较小，直接请求并在末尾解析 JSON。
             response = client.request(method, url, **kwargs)
         else:
-            # 下载路径先转换为绝对路径，并确保用户指定的父目录存在。
+            # 报告和模型产物使用流式下载，避免大文件一次性进入内存。
             output = output.expanduser().resolve()
             output.parent.mkdir(parents=True, exist_ok=True)
-
-            # stream 模式逐块写入报告或 ZIP，避免大文件一次性进入内存。
             with client.stream(method, url, **kwargs) as response:
                 if response.is_error:
-                    # 错误响应需要先完整读取，退出流上下文后才能解析 detail。
+                    # 错误响应先读取完整内容，退出流上下文后再提取 detail。
                     response.read()
                 else:
-                    # 只有成功响应才创建文件，防止把 JSON 错误页保存成产物。
+                    # output 是用户最终下载路径，父目录按需创建。
                     with output.open("wb") as file:
                         for chunk in response.iter_bytes():
                             file.write(chunk)
-                    typer.echo(f"已保存：{output}")
-                    return None
     except httpx.RequestError as exc:
-        # DNS、连接拒绝、连接超时和传输中断都属于服务器连接问题。
+        # DNS、连接拒绝和传输中断统一视为服务器连接问题。
         typer.echo(f"无法连接服务器：{exc}")
-        raise typer.Exit(1)
-    except OSError as exc:
-        # 下载目录不可写或磁盘写入失败时给出本地文件错误。
-        typer.echo(f"文件保存失败：{exc}")
         raise typer.Exit(1)
 
     # -----------------------------------------------------------------
-    # 步骤 2：解析 API 返回的错误信息
+    # 2. 转换 API 错误信息
     # -----------------------------------------------------------------
     if response.is_error:
         try:
-            # FastAPI 标准错误使用 detail 字段；非标准响应回退到原始文本。
+            # FastAPI 错误优先读取 detail，非标准响应回退到原始正文。
             data = response.json()
-            detail = (
-                data.get("detail", response.text)
-                if isinstance(data, dict)
-                else response.text
-            )
-        except ValueError:
-            # 代理服务器等组件可能返回 HTML 或纯文本错误页。
+            detail = data.get("detail", response.text)
+        except (ValueError, AttributeError):
             detail = response.text
         typer.echo(f"请求失败 [{response.status_code}]：{detail}")
         raise typer.Exit(1)
 
     # -----------------------------------------------------------------
-    # 步骤 3：解析成功接口的 JSON 结果
+    # 3. 返回下载结果或 JSON 数据
     # -----------------------------------------------------------------
-    try:
-        return response.json()
-    except ValueError:
-        # 当前普通接口均约定返回 JSON，其他内容说明服务端契约异常。
-        typer.echo("服务器返回了无效的 JSON 响应。")
+    if output is not None:
+        typer.echo(f"已保存：{output}")
+        return None
+    return response.json()
+
+
+def _display(view: str, data, json_output: bool = False):
+    """将接口数据转换为统一的终端摘要，并按需保留原始 JSON。"""
+
+    # -----------------------------------------------------------------
+    # 1. 处理原始 JSON 模式
+    # -----------------------------------------------------------------
+    # JSON 模式只输出接口数据，便于重定向或交给其他脚本处理。
+    if json_output:
+        typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    # -----------------------------------------------------------------
+    # 2. 准备统一终端样式
+    # -----------------------------------------------------------------
+    # states 统一状态语义和颜色；modes 统一清洗模式的中文名称。
+    console = Console(highlight=False)
+    states = {
+        "ready": Text("就绪", style="bold green"),
+        "degraded": Text("降级", style="bold yellow"),
+        "safe": Text("安全", style="bold green"),
+        "poisoned": Text("疑似中毒", style="bold red"),
+        "queued": Text("等待", style="yellow"),
+        "running": Text("运行中", style="cyan"),
+        "succeeded": Text("成功", style="bold green"),
+        "failed": Text("失败", style="bold red"),
+    }
+    modes = {"fast": "快速", "deep": "深度"}
+
+    # table_style 被本次页面中的所有表格复用，保持间距和边框一致。
+    table_style = dict(box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1))
+    console.print()
+
+    # -----------------------------------------------------------------
+    # 3. 按接口类型生成摘要
+    # -----------------------------------------------------------------
+    # 健康检查突出总体结论，并按类别列出所有运行能力。
+    if view == "health":
+        # status 是服务器总体结论，ready 之外均表示存在不可用能力。
+        status = data.get("status", "unknown")
+        console.print(
+            "[bold]服务状态[/bold]  ",
+            states.get(status, str(status)),
+            f"  {data.get('service', '-')} v{data.get('version', '-')}",
+        )
+        # rows 将基础能力、模型、签名和运行目录统一为三列表格数据。
+        rows = [
+            ("基础能力", "认证", data.get("auth_ready")),
+            ("基础能力", "静态检测器", data.get("detector_ready")),
+            *(
+                ("基础模型", name, ready)
+                for name, ready in data.get("models_ready", {}).items()
+            ),
+            *(
+                ("快速清洗", name, ready)
+                for name, ready in data.get("fast_cleanse_ready", {}).items()
+            ),
+            ("深度清洗", "训练与恢复数据", data.get("deep_cleanse_ready")),
+            ("运行环境", "存储目录", data.get("storage_ready")),
+        ]
+        # 同一状态列只使用“就绪/缺失”，缺失项以红色突出。
+        table = Table(**table_style)
+        table.add_column("类别", style="cyan", no_wrap=True)
+        table.add_column("对象")
+        table.add_column("状态", no_wrap=True)
+        for category, name, ready in rows:
+            table.add_row(
+                category,
+                name,
+                Text("就绪" if ready else "缺失", style="green" if ready else "red"),
+            )
+        console.print(table)
+
+    # 模型列表只展示选择模型时真正需要的编号、系列和状态。
+    elif view == "models":
+        # 每行对应一个服务端注册模型，ready 表示模型文件可以加载。
+        table = Table(title="基础模型", **table_style)
+        table.add_column("模型 ID", style="cyan")
+        table.add_column("系列")
+        table.add_column("状态")
+        for model in data:
+            table.add_row(
+                model["model_id"],
+                model["family"],
+                Text(
+                    "就绪" if model["ready"] else "缺失",
+                    style="green" if model["ready"] else "red",
+                ),
+            )
+        console.print(table)
+
+    # 单独扫描先给出判定，再展示影响判定的核心指标。
+    elif view == "scan":
+        # risk 与 threshold 共同决定 verdict，差值用于直观看出越界程度。
+        risk = float(data.get("risk_score", 0.0))
+        threshold = float(data.get("threshold", 0.0))
+        verdict = data.get("verdict", "unknown")
+        console.print("[bold]检测结论[/bold]  ", states.get(verdict, str(verdict)))
+
+        # 检测器和耗时作为审计信息保留，但不干扰首行判定结论。
+        table = Table(**table_style)
+        table.add_column("指标", style="cyan")
+        table.add_column("结果")
+        table.add_row("风险分数", f"{risk:.4f}")
+        table.add_row("判定阈值", f"{threshold:.4f}")
+        table.add_row("阈值差值", f"{risk - threshold:+.4f}")
+        table.add_row("检测器", str(data.get("detector", "-")))
+        table.add_row("耗时", f"{float(data.get('elapsed_seconds', 0.0)):.2f} 秒")
+        console.print(table)
+        console.print(
+            "[yellow]建议：使用 audit 命令创建清洗任务。[/yellow]"
+            if data.get("is_poisoned")
+            else "[green]未发现超过判定阈值的风险特征。[/green]"
+        )
+
+    # 任务列表使用单行摘要，完整扫描和清洗信息交由 show 展开。
+    elif view == "jobs":
+        # items 是本次 limit 截取后的任务，total 是服务器全部任务数量。
+        items = data.get("items", [])
+        console.print(
+            f"[bold]任务列表[/bold]  共 {data.get('total', len(items))} 个，"
+            f"当前显示 {len(items)} 个"
+        )
+        if not items:
+            console.print("[yellow]暂无审计任务。[/yellow]")
+            return
+
+        # 表格只保留定位任务及判断当前进度所需的字段。
+        table = Table(**table_style)
+        table.add_column("任务 ID", style="cyan", no_wrap=True)
+        table.add_column("状态", no_wrap=True)
+        table.add_column("阶段", no_wrap=True)
+        table.add_column("模型")
+        table.add_column("模式", no_wrap=True)
+        table.add_column("提交时间", no_wrap=True)
+        for job in items:
+            status = job.get("status", "unknown")
+            table.add_row(
+                str(job.get("job_id", "-")),
+                states.get(status, str(status)),
+                str(job.get("stage", "-")),
+                str(job.get("model_id", "-")),
+                modes.get(job.get("cleanse_mode"), "-"),
+                str(job.get("submitted_at") or "-").replace("T", " ")[:16],
+            )
+        console.print(table)
+        console.print("使用 [cyan]show <任务 ID>[/cyan] 查看完整结果。")
+
+    # 单任务详情根据终态展示检测、清洗、下载入口或失败原因。
+    elif view == "show":
+        # status 决定任务当前状态样式，job_id 同时用于后续下载命令。
+        status = data.get("status", "unknown")
+        job_id = str(data.get("job_id", "-"))
+        console.print(
+            f"[bold]任务详情[/bold]  [cyan]{job_id}[/cyan]  ",
+            states.get(status, str(status)),
+        )
+
+        # 第一张表只描述任务上下文和执行时间，不混入算法结果。
+        table = Table(**table_style)
+        table.add_column("项目", style="cyan")
+        table.add_column("内容")
+        table.add_row("当前阶段", str(data.get("stage", "-")))
+        table.add_row("基础模型", str(data.get("model_id", "-")))
+        table.add_row("LoRA ID", str(data.get("lora_id", "-")))
+        table.add_row("清洗模式", modes.get(data.get("cleanse_mode"), "-"))
+        for label, key in (
+            ("提交时间", "submitted_at"),
+            ("开始时间", "started_at"),
+            ("结束时间", "finished_at"),
+        ):
+            table.add_row(label, str(data.get(key) or "-").replace("T", " "))
+        console.print(table)
+
+        # result 只在成功终态出现；scan 与 cleanse 分别对应检测和清洗结果。
+        result = data.get("result") or {}
+        scan = result.get("scan") or {}
+        if scan:
+            # 检测结果采用与 scan 命令相同的结论、分数和阈值口径。
+            scan_table = Table(title="检测结果", **table_style)
+            scan_table.add_column("结论")
+            scan_table.add_column("风险分数", justify="right")
+            scan_table.add_column("阈值", justify="right")
+            scan_table.add_column("检测器")
+            verdict = scan.get("verdict", "unknown")
+            scan_table.add_row(
+                states.get(verdict, str(verdict)),
+                f"{float(scan.get('risk_score', 0.0)):.4f}",
+                f"{float(scan.get('threshold', 0.0)):.4f}",
+                str(scan.get("detector", "-")),
+            )
+            console.print(scan_table)
+
+        cleanse = result.get("cleanse") or {}
+
+        # 失败、安全通过、清洗完成和活动任务分别输出对应的最终操作信息。
+        if status == "failed":
+            console.print(
+                "[bold red]失败原因[/bold red]  ",
+                Text(str(data.get("error") or "未知错误"), style="red"),
+            )
+        elif result.get("action") == "passed":
+            console.print("[bold green]处理结果：安全通过，无需执行清洗。[/bold green]")
+        elif cleanse:
+            cleanse_table = Table(title="清洗结果", **table_style)
+            cleanse_table.add_column("项目", style="cyan")
+            cleanse_table.add_column("内容")
+            cleanse_table.add_row("清洗模式", modes.get(cleanse.get("mode"), "-"))
+            cleanse_table.add_row("签名", str(cleanse.get("signature") or "动态提取"))
+            cleanse_table.add_row(
+                "抑制参数",
+                f"{int(cleanse.get('suppressed_count', 0)):,}",
+            )
+            cleanse_table.add_row("审计报告", f"report {job_id}")
+            cleanse_table.add_row("清洗模型", f"artifact {job_id}")
+            console.print(cleanse_table)
+        else:
+            console.print("[yellow]任务尚未结束，可稍后再次执行 show。[/yellow]")
+
+
+# =====================================================================
+# 登录
+# =====================================================================
+@app.command()
+def login(
+    server: str = typer.Argument(..., help="API 地址"),
+    token: str = typer.Option(..., "--token", prompt=True, hide_input=True),
+):
+    """验证并保存服务器地址和 Token。"""
+
+    # -----------------------------------------------------------------
+    # 1. 使用受保护接口验证连接信息
+    # -----------------------------------------------------------------
+    # 去掉末尾斜杠，避免后续接口路径出现重复分隔符。
+    server = server.rstrip("/")
+    with httpx.Client(
+        base_url=server,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10.0,
+    ) as client:
+        _request(client, "GET", "/v1/me")
+
+    # -----------------------------------------------------------------
+    # 2. 保存已经验证通过的登录信息
+    # -----------------------------------------------------------------
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(
+        json.dumps({"server": server, "token": token}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    typer.echo(f"登录成功：{server}")
+
+
+@app.command()
+def logout():
+    """删除本地登录配置。"""
+    # missing_ok 使重复退出保持幂等。
+    CONFIG_FILE.unlink(missing_ok=True)
+    typer.echo("已退出登录。")
+
+
+# =====================================================================
+# 服务器状态
+# =====================================================================
+@app.command()
+def health(
+    server: str | None = typer.Argument(None, help="API 地址；省略时使用登录配置"),
+    json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
+):
+    """检查服务器检测与清洗能力是否就绪。"""
+
+    # -----------------------------------------------------------------
+    # 1. 请求公开健康接口
+    # -----------------------------------------------------------------
+    # 显式地址用于未登录诊断；省略时复用当前登录服务器。
+    if server:
+        with httpx.Client(base_url=server.rstrip("/"), timeout=10.0) as client:
+            result = _request(client, "GET", "/health")
+    else:
+        with _client() as client:
+            result = _request(client, "GET", "/health")
+
+    # -----------------------------------------------------------------
+    # 2. 展示能力状态并返回探活退出码
+    # -----------------------------------------------------------------
+    _display("health", result, json_output)
+
+    # degraded 使用非零退出码，便于部署脚本直接判断整体状态。
+    if result.get("status") != "ready":
         raise typer.Exit(1)
 
 
-def _upload_lora(client: httpx.Client, lora_path: Path) -> str:
-    """检查并上传标准 LoRA 权重与配置文件。"""
+# =====================================================================
+# 模型与审计
+# =====================================================================
+@app.command("models")
+def list_models():
+    """查看服务器已经注册的基础模型。"""
+    # 模型接口只返回稳定编号、系列和就绪状态，直接交给统一展示层。
+    with _client() as client:
+        _display("models", _request(client, "GET", "/v1/models"))
+
+
+@app.command()
+def scan(
+    lora_path: Path,
+    json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
+):
+    """上传并单独检测 LoRA。"""
+
     # -----------------------------------------------------------------
-    # 步骤 1：解析本地 LoRA 目录并检查标准文件
+    # 1. 定位标准 LoRA 文件
     # -----------------------------------------------------------------
+    # weights_path 与 config_path 共同组成服务端可加载的 PEFT 适配器。
     lora_path = lora_path.expanduser().resolve()
     weights_path = lora_path / "adapter_model.safetensors"
     config_path = lora_path / "adapter_config.json"
 
-    # 权重和配置缺少任意一个都无法构成可加载的 PEFT 适配器。
-    if not weights_path.is_file():
-        typer.echo("缺少 adapter_model.safetensors。")
-        raise typer.Exit(1)
-    if not config_path.is_file():
-        typer.echo("缺少 adapter_config.json。")
-        raise typer.Exit(1)
-
     # -----------------------------------------------------------------
-    # 步骤 2：以 multipart/form-data 上传权重和配置
+    # 2. 上传 LoRA 并执行静态检测
     # -----------------------------------------------------------------
-    typer.echo("正在上传 LoRA...")
-
-    # 文件句柄只在请求期间保持打开，请求结束后由 with 自动关闭。
-    with weights_path.open("rb") as weights_file, config_path.open("rb") as config_file:
-        result = _request(
+    # JSON 模式保持标准输出纯净，因此不打印上传进度。
+    if not json_output:
+        typer.echo("正在上传 LoRA...")
+    with (
+        _client() as client,
+        weights_path.open("rb") as weights_file,
+        config_path.open("rb") as config_file,
+    ):
+        # uploaded 只保留服务器资源编号，后续扫描不再传递本地路径。
+        uploaded = _request(
             client,
             "POST",
             "/v1/loras",
@@ -173,304 +448,134 @@ def _upload_lora(client: httpx.Client, lora_path: Path) -> str:
                 "config": (config_path.name, config_file, "application/json"),
             },
         )
-
-    # -----------------------------------------------------------------
-    # 步骤 3：返回服务端生成的 LoRA 资源编号
-    # -----------------------------------------------------------------
-    # 后续扫描和审计只传递 lora_id，不再重复上传或暴露本地路径。
-    typer.echo(f"上传完成：{result['lora_id']}")
-    return result["lora_id"]
-
-
-# =====================================================================
-# 登录
-# =====================================================================
-@app.command()
-def login(
-    server: str = typer.Argument(..., help="API 地址"),
-    token: str = typer.Option(
-        ..., "--token", prompt=True, hide_input=True, help="访问令牌"
-    ),
-):
-    """验证并保存服务器地址和 Token。"""
-    # -----------------------------------------------------------------
-    # 步骤 1：规范化并检查登录参数
-    # -----------------------------------------------------------------
-    # 去掉末尾斜杠，避免与各接口路径拼接后产生重复分隔符。
-    server = server.rstrip("/")
-
-    # 客户端只接受明确的 HTTP/HTTPS 地址，提前阻止无协议输入。
-    if not server.startswith(("http://", "https://")):
-        typer.echo("API 地址必须以 http:// 或 https:// 开头。")
-        raise typer.Exit(1)
-    if not token:
-        typer.echo("访问令牌不能为空。")
-        raise typer.Exit(1)
-
-    # -----------------------------------------------------------------
-    # 步骤 2：调用受保护接口验证服务器和 Token
-    # -----------------------------------------------------------------
-    # 此时配置尚未写入磁盘，验证失败不会覆盖原有登录信息。
-    try:
-        with httpx.Client(
-            base_url=server,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10.0,
-        ) as client:
-            _request(client, "GET", "/v1/me")
-    except ValueError as exc:
-        typer.echo(f"API 地址无效：{exc}")
-        raise typer.Exit(1)
-
-    # -----------------------------------------------------------------
-    # 步骤 3：持久化已经验证通过的登录配置
-    # -----------------------------------------------------------------
-    try:
-        # 首次登录时创建 ~/.aegis，配置使用 UTF-8 JSON 便于人工检查。
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(
-            json.dumps(
-                {"server": server, "token": token}, ensure_ascii=False, indent=2
-            ),
-            encoding="utf-8",
+        # 单独扫描消费上传资源，并返回风险分数与最终判定。
+        result = _request(
+            client,
+            "POST",
+            "/v1/scan",
+            json={"lora_id": uploaded["lora_id"]},
         )
-    except OSError as exc:
-        # 目录权限或磁盘错误不会被误报为服务器登录失败。
-        typer.echo(f"登录配置保存失败：{exc}")
-        raise typer.Exit(1)
-
-    typer.echo(f"登录成功：{server}")
-
-
-@app.command()
-def logout():
-    """删除本地登录配置。"""
-    try:
-        # missing_ok 使重复退出保持幂等，不存在配置时仍视为成功。
-        CONFIG_FILE.unlink(missing_ok=True)
-    except OSError as exc:
-        typer.echo(f"退出登录失败：{exc}")
-        raise typer.Exit(1)
-    typer.echo("已退出登录。")
-
-
-# =====================================================================
-# 服务器状态
-# =====================================================================
-@app.command()
-def health(
-    server: str | None = typer.Argument(
-        None, help="API 地址；省略时使用当前登录配置"
-    ),
-):
-    """检查服务器全部检测与清洗能力是否就绪。"""
     # -----------------------------------------------------------------
-    # 步骤 1：使用指定地址或当前登录配置请求公开健康接口
+    # 3. 输出检测结果
     # -----------------------------------------------------------------
-    if server is None:
-        # 已登录场景复用统一客户端，附带 Token 不影响公开健康接口。
-        # 服务器地址和连接异常继续由现有客户端逻辑统一处理。
-        with _client() as client:
-            result = _request(client, "GET", "/health")
-    else:
-        # 未登录时允许直接指定服务器地址，用于诊断 Token 尚未配置的服务。
-        # 先规范化末尾斜杠，再限制为明确的 HTTP 或 HTTPS 地址。
-        server = server.rstrip("/")
-        if not server.startswith(("http://", "https://")):
-            typer.echo("API 地址必须以 http:// 或 https:// 开头。")
-            raise typer.Exit(1)
-
-        try:
-            # 健康接口响应很快，独立客户端使用十秒总超时即可完成探测。
-            with httpx.Client(base_url=server, timeout=10.0) as client:
-                result = _request(client, "GET", "/health")
-        except ValueError as exc:
-            # httpx 拒绝无法解析的 base_url 时转换为 CLI 可读错误。
-            typer.echo(f"API 地址无效：{exc}")
-            raise typer.Exit(1)
-
-    # -----------------------------------------------------------------
-    # 步骤 2：按能力分组输出完整服务器状态
-    # -----------------------------------------------------------------
-    # 首行汇总服务身份、版本和整体状态，便于快速判断服务器是否完整就绪。
-    typer.echo(
-        f"服务={result.get('service', '-')} "
-        f"版本={result.get('version', '-')} "
-        f"状态={result.get('status', 'unknown')}"
-    )
-
-    # 认证与检测器属于全部业务流程共享的基础能力，使用独立状态行展示。
-    typer.echo(f"认证：{'ready' if result.get('auth_ready') else 'missing'}")
-    typer.echo(f"检测器：{'ready' if result.get('detector_ready') else 'missing'}")
-
-    # 基础模型逐项输出，使缺失模型能够直接对应服务器注册的 model_id。
-    typer.echo("基础模型：")
-    for model_id, ready in result.get("models_ready", {}).items():
-        typer.echo(f"  {model_id}: {'ready' if ready else 'missing'}")
-
-    # 快速清洗按模型家族检查签名，输出键与健康接口中的 family 保持一致。
-    typer.echo("快速清洗：")
-    for family, ready in result.get("fast_cleanse_ready", {}).items():
-        typer.echo(f"  {family}: {'ready' if ready else 'missing'}")
-
-    # 深度清洗和存储是全局能力，不需要像模型和签名一样逐项展开。
-    typer.echo(
-        f"深度清洗："
-        f"{'ready' if result.get('deep_cleanse_ready') else 'missing'}"
-    )
-    typer.echo(f"存储：{'ready' if result.get('storage_ready') else 'missing'}")
-
-    # degraded 使用非零退出码，使脚本和部署系统能够直接判断整体状态。
-    if result.get("status") != "ready":
-        raise typer.Exit(1)
-
-
-# =====================================================================
-# 模型与审计
-# =====================================================================
-@app.command("models")
-def list_models():
-    """查看服务器已经注册的基础模型。"""
-    # 请求模型注册表；Token 和服务器地址统一由 _client 注入。
-    with _client() as client:
-        models = _request(client, "GET", "/v1/models")
-
-    # 使用固定列宽输出稳定表格，ready 反映服务器模型文件是否完整。
-    typer.echo(f"{'MODEL ID':<24} {'FAMILY':<12} STATUS")
-    for model in models:
-        typer.echo(
-            f"{model['model_id']:<24} "
-            f"{model['family']:<12} "
-            f"{'ready' if model['ready'] else 'missing'}"
-        )
-
-
-@app.command()
-def scan(lora_path: Path):
-    """上传并单独检测 LoRA。"""
-    # -----------------------------------------------------------------
-    # 步骤 1：上传本地 LoRA 并取得服务器资源编号
-    # -----------------------------------------------------------------
-    with _client() as client:
-        lora_id = _upload_lora(client, lora_path)
-
-        # -----------------------------------------------------------------
-        # 步骤 2：请求静态检测并读取结构化结果
-        # -----------------------------------------------------------------
-        result = _request(client, "POST", "/v1/scan", json={"lora_id": lora_id})
-
-    # 保留完整风险分数、阈值和检测器信息，便于人工查看或复制。
-    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    _display("scan", result, json_output)
 
 
 @app.command()
 def audit(
     lora_path: Path,
     model: str = typer.Option(..., "--model", "-m"),
-    mode: str = typer.Option("fast", "--mode"),
+    mode: Literal["fast", "deep"] = typer.Option("fast", "--mode"),
     wait: bool = typer.Option(True, "--wait/--no-wait"),
 ):
     """上传 LoRA，创建审计任务并按需等待完成。"""
-    # -----------------------------------------------------------------
-    # 步骤 1：检查清洗模式
-    # -----------------------------------------------------------------
-    # CLI 先提供直观错误，服务端仍会通过 Pydantic 再次校验该字段。
-    if mode not in ("fast", "deep"):
-        typer.echo("mode 只能是 fast 或 deep。")
-        raise typer.Exit(1)
 
     # -----------------------------------------------------------------
-    # 步骤 2：上传 LoRA 并创建后台审计任务
+    # 1. 定位待审计 LoRA
     # -----------------------------------------------------------------
-    with _client() as client:
-        lora_id = _upload_lora(client, lora_path)
-        submitted = _request(
+    lora_path = lora_path.expanduser().resolve()
+    weights_path = lora_path / "adapter_model.safetensors"
+    config_path = lora_path / "adapter_config.json"
+
+    # -----------------------------------------------------------------
+    # 2. 上传 LoRA 并创建后台任务
+    # -----------------------------------------------------------------
+    typer.echo("正在上传 LoRA...")
+    with (
+        _client() as client,
+        weights_path.open("rb") as weights_file,
+        config_path.open("rb") as config_file,
+    ):
+        # 上传结果中的 lora_id 是创建审计任务时使用的临时资源编号。
+        uploaded = _request(
+            client,
+            "POST",
+            "/v1/loras",
+            files={
+                "weights": (
+                    weights_path.name,
+                    weights_file,
+                    "application/octet-stream",
+                ),
+                "config": (config_path.name, config_file, "application/json"),
+            },
+        )
+        # job 保存最新任务快照，轮询期间会被服务器响应持续替换。
+        job = _request(
             client,
             "POST",
             "/v1/jobs",
-            json={"model_id": model, "lora_id": lora_id, "cleanse_mode": mode},
+            json={
+                "model_id": model,
+                "lora_id": uploaded["lora_id"],
+                "cleanse_mode": mode,
+            },
         )
-        job_id = submitted["job_id"]
-        typer.echo(f"任务已创建：{job_id}")
-
-        # --no-wait 只负责提交任务，用户可稍后通过 show 查询。
+        typer.echo(f"任务已创建：{job['job_id']}")
         if not wait:
             return
 
         # -----------------------------------------------------------------
-        # 步骤 3：轮询任务并仅输出发生变化的阶段
+        # 3. 轮询任务并只输出变化的阶段
         # -----------------------------------------------------------------
+        # last_stage 避免每两秒重复打印相同状态。
         last_stage = None
-        while True:
-            job = _request(client, "GET", f"/v1/jobs/{job_id}")
-
-            # 阶段未变化时保持终端安静，避免每两秒重复打印相同状态。
+        while job["status"] in ("queued", "running"):
+            job = _request(client, "GET", f"/v1/jobs/{job['job_id']}")
             if job.get("stage") != last_stage:
-                typer.echo(f"状态={job['status']} 阶段={job['stage']}")
+                typer.echo(f"当前阶段：{job.get('stage', '-')}")
                 last_stage = job.get("stage")
-
-            # queued 和 running 之外均为终态，成功或失败后停止轮询。
-            if job["status"] not in ("queued", "running"):
-                break
-
-            # 两秒间隔兼顾状态响应速度和服务端查询压力。
-            time.sleep(2)
+            if job["status"] in ("queued", "running"):
+                time.sleep(2)
 
     # -----------------------------------------------------------------
-    # 步骤 4：输出最终任务结果
+    # 4. 展示最终检测、清洗或失败结果
     # -----------------------------------------------------------------
-    if job["status"] == "succeeded":
-        typer.echo("任务执行完成。")
-    else:
-        typer.echo(f"任务失败：{job.get('error')}")
+    _display("show", job)
 
 
 # =====================================================================
 # 任务与产物
 # =====================================================================
 @app.command("jobs")
-def list_jobs(limit: int = 20):
+def list_jobs(
+    limit: int = 20,
+    json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
+):
     """查看最近提交的任务。"""
-    # limit 交由服务端限制在有效范围，并按提交时间倒序返回。
+    # limit 控制本次返回数量，total 仍由服务端保留全部任务规模。
     with _client() as client:
         result = _request(client, "GET", "/v1/jobs", params={"limit": limit})
 
-    # 列表只展示最常用字段，完整结果由 show 命令负责。
-    typer.echo(f"{'JOB ID':<22} {'STATUS':<12} {'STAGE':<8} MODEL")
-    for job in result["items"]:
-        typer.echo(
-            f"{job['job_id']:<22} "
-            f"{job['status']:<12} "
-            f"{job['stage']:<8} "
-            f"{job.get('model_id', '-')}"
-        )
+    # 默认输出任务摘要，--json 保留完整任务快照。
+    _display("jobs", result, json_output)
 
 
 @app.command()
-def show(job_id: str):
+def show(
+    job_id: str,
+    json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
+):
     """查看单个任务的完整状态和结果。"""
-    # 直接输出完整 JSON，保留 scan、cleanse、下载地址和错误信息。
+    # job_id 同时用于任务查询、报告下载和模型产物下载。
     with _client() as client:
-        job = _request(client, "GET", f"/v1/jobs/{job_id}")
-    typer.echo(json.dumps(job, ensure_ascii=False, indent=2))
+        result = _request(client, "GET", f"/v1/jobs/{job_id}")
+
+    # 统一展示层根据任务终态决定输出检测、清洗或错误信息。
+    _display("show", result, json_output)
 
 
 @app.command()
 def report(
     job_id: str,
-    report_format: str = typer.Option("html", "--format"),
+    report_format: Literal["html", "json"] = typer.Option("html", "--format"),
     output: Path | None = typer.Option(None, "--output", "-o"),
 ):
     """下载任务生成的 HTML 或 JSON 审计报告。"""
-    # CLI 提前限制格式，服务端仍会通过 Literal 再次校验查询参数。
-    if report_format not in ("html", "json"):
-        typer.echo("format 只能是 html 或 json。")
-        raise typer.Exit(1)
-
-    # 未指定路径时在当前目录生成带任务编号的默认文件名。
+    # 未指定 output 时，使用任务编号生成可直接识别的默认文件名。
     output = output or Path(f"{job_id}_report.{report_format}")
 
-    # output 参数触发 _request 的流式下载分支，不把报告整体读入内存。
+    # output 参数使统一请求逻辑进入流式下载分支。
     with _client() as client:
         _request(
             client,
@@ -486,14 +591,12 @@ def artifact(
     output: Path | None = typer.Option(None, "--output", "-o"),
 ):
     """下载清洗后的 LoRA ZIP。"""
-    # 模型产物始终为 ZIP，默认名称包含 job_id 便于与任务对应。
+    # 清洗产物固定为 ZIP，默认名称与对应任务保持一致。
     output = output or Path(f"{job_id}_cleaned_lora.zip")
-
-    # 安全直通或失败任务没有产物，API 错误由 _request 统一显示。
     with _client() as client:
         _request(client, "GET", f"/v1/jobs/{job_id}/artifact", output=output)
 
 
 if __name__ == "__main__":
-    # 仅在直接运行 cli.py 时启动 Typer；作为模块导入时不会解析命令行。
+    # 直接运行 cli.py 时启动 Typer；作为模块导入时只注册命令。
     app()

@@ -10,11 +10,15 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 # 设置 Matplotlib 中文字体，避免清洗结构与指标标签显示异常。
+plt.rcParams["font.family"] = "sans-serif"
 plt.rcParams["font.sans-serif"] = [
+    "Noto Sans CJK SC",
+    "Source Han Sans CN",
     "Microsoft YaHei",
     "SimHei",
     "PingFang SC",
-    "sans-serif",
+    "WenQuanYi Micro Hei",
+    "DejaVu Sans",
 ]
 plt.rcParams["axes.unicode_minus"] = False
 
