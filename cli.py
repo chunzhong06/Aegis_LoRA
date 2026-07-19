@@ -411,54 +411,130 @@ def list_models():
 @app.command()
 def scan(
     lora_path: Path,
+    batch: bool = typer.Option(False, "--batch", help="批量扫描目录中的 LoRA"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="扫描结果 JSON 归档路径"
+    ),
     json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
 ):
-    """上传并单独检测 LoRA。"""
+    """上传并检测单个或一组 LoRA。"""
 
     # -----------------------------------------------------------------
-    # 1. 定位标准 LoRA 文件
+    # 1. 定位待扫描 LoRA
     # -----------------------------------------------------------------
-    # weights_path 与 config_path 共同组成服务端可加载的 PEFT 适配器。
+    # 单扫描直接使用目标目录；批量扫描根据标准权重文件递归定位各 LoRA。
     lora_path = lora_path.expanduser().resolve()
-    weights_path = lora_path / "adapter_model.safetensors"
-    config_path = lora_path / "adapter_config.json"
+    lora_paths = (
+        sorted({path.parent for path in lora_path.rglob("adapter_model.safetensors")})
+        if batch
+        else [lora_path]
+    )
+    if not lora_paths:
+        typer.echo(f"目录中未发现 LoRA：{lora_path}")
+        raise typer.Exit(1)
 
     # -----------------------------------------------------------------
-    # 2. 上传 LoRA 并执行静态检测
+    # 2. 依次上传并扫描 LoRA
     # -----------------------------------------------------------------
-    # JSON 模式保持标准输出纯净，因此不打印上传进度。
-    if not json_output:
-        typer.echo("正在上传 LoRA...")
-    with (
-        _client() as client,
-        weights_path.open("rb") as weights_file,
-        config_path.open("rb") as config_file,
-    ):
-        # uploaded 只保留服务器资源编号，后续扫描不再传递本地路径。
-        uploaded = _request(
-            client,
-            "POST",
-            "/v1/loras",
-            files={
-                "weights": (
-                    weights_path.name,
-                    weights_file,
-                    "application/octet-stream",
-                ),
-                "config": (config_path.name, config_file, "application/json"),
-            },
+    # results 保存每个 LoRA 的独立结果；批量模式额外保留名称用于归档定位。
+    results = []
+
+    # 同一批次复用连接，LoRA 仍按顺序上传扫描，避免并发请求争用服务端检测器。
+    with _client() as client:
+        for index, current_path in enumerate(lora_paths, start=1):
+            # JSON 模式保持标准输出纯净，其余模式展示当前扫描进度。
+            if not json_output:
+                typer.echo(
+                    f"[{index}/{len(lora_paths)}] 正在扫描 {current_path.name}..."
+                    if batch
+                    else "正在上传 LoRA..."
+                )
+
+            try:
+                # 每个 LoRA 由标准权重和 PEFT 配置共同组成。
+                weights_path = current_path / "adapter_model.safetensors"
+                config_path = current_path / "adapter_config.json"
+                with (
+                    weights_path.open("rb") as weights_file,
+                    config_path.open("rb") as config_file,
+                ):
+                    # 上传接口返回一次性 lora_id，扫描接口使用后由服务端回收资源。
+                    uploaded = _request(
+                        client,
+                        "POST",
+                        "/v1/loras",
+                        files={
+                            "weights": (
+                                weights_path.name,
+                                weights_file,
+                                "application/octet-stream",
+                            ),
+                            "config": (
+                                config_path.name,
+                                config_file,
+                                "application/json",
+                            ),
+                        },
+                    )
+                    scan_result = _request(
+                        client,
+                        "POST",
+                        "/v1/scan",
+                        json={"lora_id": uploaded["lora_id"]},
+                    )
+
+                # 单扫描保持原始响应；批量归档在响应前增加 LoRA 名称。
+                results.append(
+                    {"name": current_path.name, **scan_result} if batch else scan_result
+                )
+            except (OSError, typer.Exit) as exc:
+                # 单扫描沿用原有异常；批量扫描记录失败项后继续处理其余 LoRA。
+                if not batch:
+                    raise
+                results.append(
+                    {"name": current_path.name, "error": str(exc) or "扫描失败"}
+                )
+
+    # -----------------------------------------------------------------
+    # 3. 汇总并归档扫描结果
+    # -----------------------------------------------------------------
+    if batch:
+        # 批量归档保留四项计数和逐项结果，不额外生成报告或模型产物。
+        result = {
+            "total": len(results),
+            "safe": sum(item.get("verdict") == "safe" for item in results),
+            "poisoned": sum(item.get("verdict") == "poisoned" for item in results),
+            "failed": sum("error" in item for item in results),
+            "items": results,
+        }
+
+        # 未指定输出路径时，以当前时间生成不会重复的默认归档名。
+        output = output or Path(f"scan_archive_{time.strftime('%Y%m%d_%H%M%S')}.json")
+    else:
+        # 单扫描继续返回服务端原始结果，兼容原有终端和 JSON 输出。
+        result = results[0]
+
+    # output 同时适用于单扫描和批量扫描，归档内容统一使用 UTF-8 JSON。
+    if output is not None:
+        output = output.expanduser().resolve()
+        output.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
-        # 单独扫描消费上传资源，并返回风险分数与最终判定。
-        result = _request(
-            client,
-            "POST",
-            "/v1/scan",
-            json={"lora_id": uploaded["lora_id"]},
-        )
-    # -----------------------------------------------------------------
-    # 3. 输出检测结果
-    # -----------------------------------------------------------------
-    _display("scan", result, json_output)
+
+    # 批量模式输出整体统计，单扫描继续复用现有详情视图。
+    if batch:
+        if json_output:
+            typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            typer.echo(
+                f"批量扫描完成：共 {result['total']} 个，安全 {result['safe']} 个，"
+                f"疑似中毒 {result['poisoned']} 个，失败 {result['failed']} 个。"
+            )
+    else:
+        _display("scan", result, json_output)
+    if output is not None and not json_output:
+        typer.echo(f"扫描归档已保存：{output}")
 
 
 @app.command()
