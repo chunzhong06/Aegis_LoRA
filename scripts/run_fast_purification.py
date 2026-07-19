@@ -27,9 +27,9 @@ def main():
             recovery_data_path=CLEAN_RECOVERY_DATA_PATH,
             tau=0.4,
             sample_size=200,
-            num_epochs=0,
+            num_epochs=5,
             auto_batch_size=False,
-            attention_top_k=1296 / 4,
+            attention_top_k=8,
         )
         end_time = time.time()  # 记录流水线结束时间
         elapsed_time = end_time - start_time  # 计算总时间差（秒）
