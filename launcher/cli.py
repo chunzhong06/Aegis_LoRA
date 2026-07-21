@@ -674,5 +674,5 @@ def artifact(
 
 
 if __name__ == "__main__":
-    # 直接运行 cli.py 时启动 Typer；作为模块导入时只注册命令。
+    # 直接运行 launcher.cli 模块时启动 Typer；作为模块导入时只注册命令。
     app()

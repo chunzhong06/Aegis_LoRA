@@ -1,4 +1,14 @@
-!models/
+# 项目运行产物
+.cache/
+competition/results/
+*_immunized/
+*_fast_immunized/
+scan_archive_*.json
+*_report.html
+*_report.json
+*_cleaned_lora.zip
+
+# 本地模型：保留检测器代码与轻量文件，忽略模型权重
 models/*
 !models/detectors/
 !models/detectors/**
@@ -7,17 +17,37 @@ models/detectors/**/*.bin
 models/detectors/**/*.pt
 models/detectors/**/*.pth
 
+# 下载或生成的数据集
 datasets/PADBench*/
 datasets/spectral_features_cache*/
-.cache/
-资料/
-.agents/
-.codex/
 
+# Python 环境、缓存与构建产物
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
 
+# 本地配置与临时文件
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+
+# 本地工具、编辑器与系统文件
+资料/
+.agents/
+.codex/
 .idea/
 .vscode/
 .DS_Store
+Thumbs.db

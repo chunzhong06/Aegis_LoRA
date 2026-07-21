@@ -13,7 +13,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from cli import _client, _request
+from launcher.cli import _client, _request
 from competition.parameter_microscope import show_parameter_microscope
 
 

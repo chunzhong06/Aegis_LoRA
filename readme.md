@@ -35,12 +35,36 @@ Aegis-LoRA 聚焦第三方 LoRA 的可信接入：在适配器正式挂载前执
 
 ### 环境要求
 
-- Python 3.10
-- Windows 或 Linux
+- Windows 一键启动：PowerShell 5.1 或更高版本
+- 手动安装：Python 3.10，Windows 或 Linux
 - 推荐使用 NVIDIA GPU
-- 本地基座模型与待审计 LoRA
 
-### 安装
+### Windows 一键启动
+
+无需预先安装 Python 或创建 Conda 环境。首次运行会自动安装 `uv`、获取 Python 3.10，并在 `.venv` 中同步锁定依赖。
+
+| 入口            | 用途                           |
+| --------------- | ------------------------------ |
+| `start-gui.bat` | 配置完整算法环境并启动 WebUI   |
+| `start-cli.bat` | 配置轻量客户端环境并显示 CLI 帮助 |
+
+```bat
+start-gui.bat
+start-cli.bat
+start-cli.bat health
+start-cli.bat models
+```
+
+WebUI 会自动选择 PyTorch：检测到 NVIDIA GPU 时使用 CUDA 13.0，否则使用 CPU。也可手动指定：
+
+```bat
+start-gui.bat -Torch cu130
+start-gui.bat -Torch cpu
+```
+
+启动器不会自动下载模型、检测器或算法数据；资源缺失时会在终端提示。
+
+### 手动安装
 
 ```bash
 git clone https://github.com/chunzhong06/Aegis_LoRA.git
@@ -50,10 +74,10 @@ conda create -n aegis_env python=3.10 -y
 conda activate aegis_env
 
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r launcher/requirements.txt
 ```
 
-`requirements.txt` 不固定 PyTorch。请根据本机驱动与 CUDA 环境单独安装兼容版本；例如 CUDA 13.0 环境可使用：
+`launcher/requirements.txt` 不固定 PyTorch，请根据本机驱动与 CUDA 环境单独安装兼容版本；例如 CUDA 13.0 环境可使用：
 
 ```bash
 pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
@@ -64,7 +88,7 @@ pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url htt
 ### 本地图形界面
 
 ```bash
-python webUI.py
+python -m launcher.webui
 ```
 
 浏览器访问 `http://127.0.0.1:7860`，填写基座模型与 LoRA 路径后即可执行检测、清洗、对话验证和报告下载。
@@ -91,24 +115,24 @@ python -m uvicorn utils.api_server:app --host 0.0.0.0 --port 8000
 
 ```bash
 # 登录并保存服务地址与 Token
-python cli.py login http://127.0.0.1:8000 --token YOUR_TOKEN
+python -m launcher.cli login http://127.0.0.1:8000 --token YOUR_TOKEN
 
 # 检查服务和模型
-python cli.py health
-python cli.py models
+python -m launcher.cli health
+python -m launcher.cli models
 
 # 单独扫描 LoRA
-python cli.py scan /path/to/lora
+python -m launcher.cli scan /path/to/lora
 
 # 创建快速清洗审计任务
-python cli.py audit /path/to/lora --model qwen2.5-3b --mode fast
+python -m launcher.cli audit /path/to/lora --model qwen2.5-3b --mode fast
 ```
 
 审计完成后可继续下载报告和清洗产物：
 
 ```bash
-python cli.py report JOB_ID
-python cli.py artifact JOB_ID
+python -m launcher.cli report JOB_ID
+python -m launcher.cli artifact JOB_ID
 ```
 
 服务端当前注册的模型编号：
@@ -160,25 +184,22 @@ python scripts/run_demo_comparison.py
 
 ```text
 Aegis_LoRA/
-├── webUI.py                       # 本地图形化工作台
-├── cli.py                         # 远程 API 命令行客户端
-├── requirements.txt               # Python 依赖
+├── start-gui.bat                 # WebUI 一键启动
+├── start-cli.bat                 # CLI 命令入口
+├── launcher/                     # 应用入口与运行环境
+│   ├── webui.py                  # 本地图形界面
+│   ├── cli.py                    # 远程 API 客户端
+│   ├── start.ps1                 # 环境检查、配置与启动
+│   ├── pyproject.toml            # 依赖与环境定义
+│   └── uv.lock                   # 锁定依赖版本
 ├── utils/
-│   ├── api_server.py              # FastAPI 接口与鉴权
-│   ├── api_jobs.py                # 异步任务、模型注册与产物管理
-│   ├── pipeline.py                # 检测与清洗流水线
-│   ├── evaluator.py               # ASR / C-Acc 评测
-│   └── core/                      # 检测、清洗、恢复与报告模块
-├── scripts/
-│   ├── run_demo_comparison.py     # 清洗前后对照演示
-│   ├── run_detector.py            # 静态检测
-│   ├── run_fast_purification.py   # 快速清洗
-│   ├── run_purification.py        # 深度清洗
-│   ├── run_evaluator.py           # 清洗效果评测
-│   ├── train_detector.py          # 检测器训练
-│   └── build_signature_bank.py    # 离线签名构建
-├── datasets/                      # 签名、康复数据与测试数据
-└── models/                        # 本地基座模型、LoRA 与检测器
+│   ├── pipeline.py               # 检测与清洗流水线
+│   ├── api_server.py             # 远程 API
+│   └── core/                     # 核心检测、清洗与报告逻辑
+├── competition/                  # 竞赛演示与评测
+├── scripts/                      # 数据、训练和独立运行脚本
+├── datasets/                     # 签名与算法数据
+└── models/                       # 基础模型、LoRA 与检测器
 ```
 
 ## 注意事项

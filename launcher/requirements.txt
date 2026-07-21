@@ -1,3 +1,4 @@
+# 传统 pip 手动安装兼容清单；一键启动以 pyproject.toml 和 uv.lock 为准。
 transformers==5.3.0
 peft==0.18.1
 accelerate==1.13.0
@@ -15,6 +16,7 @@ pydantic==2.13.3
 python-multipart==0.0.27
 httpx==0.28.1
 typer==0.24.1
+rich==14.2.0
 numpy==2.2.6
 pandas==2.3.3
 scipy==1.15.3
