@@ -17,20 +17,19 @@ from utils.pipeline import (
 # ==========================================
 # 本地持久化与缓存管理
 # ==========================================
-# 本地缓存路径
-CACHE_DIR = ".cache"
-# 会话历史记录文件
-HISTORY_FILE = os.path.join(CACHE_DIR, "sessions_history.json")
+# 项目资源统一基于当前文件定位，避免依赖启动命令所在目录。
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # 确保本地缓存目录存在
-os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(os.path.join(PROJECT_ROOT, ".cache"), exist_ok=True)
 
 
 def load_sessions():
     """从本地 JSON 加载所有历史会话数据"""
-    if os.path.exists(HISTORY_FILE):
+    history_file = os.path.join(PROJECT_ROOT, ".cache", "sessions_history.json")
+    if os.path.exists(history_file):
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            with open(history_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
@@ -40,7 +39,11 @@ def load_sessions():
 def save_sessions(sessions):
     """将会话字典持久化到本地 JSON"""
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(PROJECT_ROOT, ".cache", "sessions_history.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
             json.dump(sessions, f, ensure_ascii=False, indent=4)
     except Exception:
         pass
@@ -58,7 +61,7 @@ def process_and_link_report(session_name, report_file):
     """将底层报告归档到 WebUI 目录，并返回与会话绑定的文件路径"""
     if report_file and os.path.exists(report_file):
         # pipeline 的 reports 目录只保存临时输出，WebUI 报告单独归档便于区分来源。
-        reports_dir = os.path.join(CACHE_DIR, "webui_reports")
+        reports_dir = os.path.join(PROJECT_ROOT, ".cache", "webui_reports")
         os.makedirs(reports_dir, exist_ok=True)
 
         _, ext = os.path.splitext(report_file)
@@ -220,23 +223,33 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
                 # 调用极速清洗
                 base_path_lower = str(base_path).lower()
                 if "llama" in base_path_lower:
-                    matched_signature = "./datasets/llama_multidomain_signatures.pt"
+                    matched_signature = os.path.join(
+                        PROJECT_ROOT, "datasets", "llama_multidomain_signatures.pt"
+                    )
                     print(
                         f"      [-] [签名路由] 识别为 Llama 架构，加载签名: {matched_signature}"
                     )
                 elif "deepseek" in base_path_lower:
-                    matched_signature = "./datasets/deepseek_multidomain_signatures.pt"
+                    matched_signature = os.path.join(
+                        PROJECT_ROOT,
+                        "datasets",
+                        "deepseek_multidomain_signatures.pt",
+                    )
                     print(
                         f"      [-] [签名路由] 识别为 DeepSeek 架构，加载签名: {matched_signature}"
                     )
                 elif "qwen" in base_path_lower:
-                    matched_signature = "./datasets/qwen_multidomain_signatures.pt"
+                    matched_signature = os.path.join(
+                        PROJECT_ROOT, "datasets", "qwen_multidomain_signatures.pt"
+                    )
                     print(
                         f"      [-] [签名路由] 识别为 Qwen 架构，加载签名: {matched_signature}"
                     )
                 else:
                     # 回退到默认的 qwen 签名
-                    matched_signature = "./datasets/qwen_multidomain_signatures.pt"
+                    matched_signature = os.path.join(
+                        PROJECT_ROOT, "datasets", "qwen_multidomain_signatures.pt"
+                    )
                     print(
                         f"      [-] [签名路由] 未匹配到 Llama/DeepSeek/Qwen，默认加载 Qwen 签名: {matched_signature}"
                     )
@@ -245,7 +258,9 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
                         base_model_path=base_path,
                         lora_path=lora_path,
                         signature_path=matched_signature,
-                        recovery_data_path="./datasets/clean_data_recovery.json",
+                        recovery_data_path=os.path.join(
+                            PROJECT_ROOT, "datasets", "clean_data_recovery.json"
+                        ),
                     )
                 )
             else:
@@ -254,8 +269,12 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
                     run_immunization_pipeline(
                         base_model_path=base_path,
                         lora_path=lora_path,
-                        variant_data_path="./datasets/clean_data_variants.json",
-                        recovery_data_path="./datasets/clean_data_recovery.json",
+                        variant_data_path=os.path.join(
+                            PROJECT_ROOT, "datasets", "clean_data_variants.json"
+                        ),
+                        recovery_data_path=os.path.join(
+                            PROJECT_ROOT, "datasets", "clean_data_recovery.json"
+                        ),
                     )
                 )
 
@@ -509,7 +528,9 @@ with gr.Blocks(title="Aegis-LoRA 免疫防线") as app:
                     with gr.Row():
                         new_base = gr.Textbox(
                             show_label=False,
-                            value=r".\models\Qwen2.5-3B-Instruct",
+                            value=os.path.join(
+                                PROJECT_ROOT, "models", "Qwen2.5-3B-Instruct"
+                            ),
                             container=False,
                             scale=7,
                             lines=1,

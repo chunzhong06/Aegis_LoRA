@@ -37,6 +37,9 @@ from utils.core.detector import (
 transformers.logging.set_verbosity_warning()
 warnings.filterwarnings("ignore", category=UserWarning, module="peft")
 
+# 项目内置资源统一基于当前模块定位，避免依赖启动命令所在目录。
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 # =====================================================================
 # 动态 Batch Size 探测
@@ -173,7 +176,9 @@ def probe_optimal_batch_size(
 # =====================================================================
 def run_static_scan_pipeline(
     lora_path: str,
-    detector_path: str = "./models/detectors/spectral_detector_llama.pkl",
+    detector_path: str = os.path.join(
+        PROJECT_ROOT, "models", "detectors", "spectral_detector_llama.pkl"
+    ),
     return_details: bool = False,
 ):
     print("\n" + "=" * 60)
@@ -238,8 +243,12 @@ def run_static_scan_pipeline(
 def run_immunization_pipeline(
     base_model_path: str,
     lora_path: str,
-    variant_data_path: str = "./datasets/clean_data_variants.json",
-    recovery_data_path: str = "./datasets/clean_data_recovery.json",
+    variant_data_path: str = os.path.join(
+        PROJECT_ROOT, "datasets", "clean_data_variants.json"
+    ),
+    recovery_data_path: str = os.path.join(
+        PROJECT_ROOT, "datasets", "clean_data_recovery.json"
+    ),
     tau: float = 0.40,
     n_variants: int = 6,
     sample_size: int = 200,
@@ -262,7 +271,7 @@ def run_immunization_pipeline(
 
     # 以原始 LoRA 名称构造独立缓存目录，保存签名和变体训练 checkpoint。
     lora_basename = os.path.basename(os.path.normpath(lora_path))
-    cache_root = os.path.abspath(".cache")
+    cache_root = os.path.join(PROJECT_ROOT, ".cache")
     temp_work_dir = os.path.abspath(
         os.path.join(cache_root, f"immunization_{lora_basename}")
     )
@@ -517,7 +526,7 @@ def run_immunization_pipeline(
     # -----------------------------------------------------------------
     print("\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
 
-    reports_dir = os.path.join(".cache", "reports")
+    reports_dir = os.path.join(PROJECT_ROOT, ".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
     lora_name = os.path.basename(os.path.normpath(lora_path))
@@ -567,7 +576,9 @@ def run_fast_cleanse_pipeline(
     base_model_path: str,
     lora_path: str,
     signature_path: str,
-    recovery_data_path: str = "./datasets/clean_data_recovery.json",
+    recovery_data_path: str = os.path.join(
+        PROJECT_ROOT, "datasets", "clean_data_recovery.json"
+    ),
     tau: float = 0.40,
     sample_size: int = 200,
     num_epochs: int = 5,
@@ -691,7 +702,7 @@ def run_fast_cleanse_pipeline(
     )
 
     # 所有报告统一写入 .cache/reports。
-    reports_dir = os.path.join(".cache", "reports")
+    reports_dir = os.path.join(PROJECT_ROOT, ".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
     # 根据 LoRA 名称生成报告文件名，避免不同 LoRA 的报告互相覆盖。

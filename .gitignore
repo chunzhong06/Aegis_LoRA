@@ -13,7 +13,6 @@ datasets/spectral_features_cache*/
 资料/
 .agents/
 .codex/
-competition/
 
 __pycache__/
 *.py[cod]

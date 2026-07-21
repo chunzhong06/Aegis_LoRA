@@ -6,8 +6,11 @@ import io
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 import matplotlib.pyplot as plt
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # 设置 Matplotlib 中文字体，避免清洗结构与指标标签显示异常。
 plt.rcParams["font.family"] = "sans-serif"
@@ -324,7 +327,7 @@ def export_cleanse_report(
     norms_after,
     suppressed_count,
     suppressed_dict,
-    output_dir="./reports",
+    output_dir=os.path.join(PROJECT_ROOT, ".cache", "reports"),
     custom_name=None,
     target_attention_heads=None,
 ):
