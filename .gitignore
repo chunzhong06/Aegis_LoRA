@@ -45,6 +45,7 @@ dist/
 
 # 本地工具、编辑器与系统文件
 资料/
+展示/
 .agents/
 .codex/
 .idea/

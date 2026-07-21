@@ -1,8 +1,14 @@
 # Aegis-LoRA - WebUI 控制台
 import gc
 import json
+import sys
 from functools import partial
 from pathlib import Path
+
+# 工程内资源统一从当前模块定位，不依赖启动命令所在目录。
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import gradio as gr
 import torch
@@ -19,11 +25,8 @@ from utils.pipeline import (
 # =====================================================================
 # 配置与运行状态
 # =====================================================================
-# 工程内资源统一从当前模块定位，不依赖启动命令所在目录。
-ROOT = Path(__file__).resolve().parents[1]
-
-# 会话、报告和算法缓存共同存放在工程根目录的 .cache 下。
-(ROOT / ".cache").mkdir(parents=True, exist_ok=True)
+# WebUI 报告独立归档
+(ROOT / ".cache" / "webui_reports").mkdir(parents=True, exist_ok=True)
 
 # WebUI 同一时间只保留一组模型；model_key 用于避免重复加载相同权重。
 global_model = None
@@ -232,6 +235,23 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
                         ROOT / "datasets" / "clean_data_recovery.json"
                     ),
                 )
+
+            # 流水线先将完整报告写入中转目录，WebUI 再归档 HTML 与 JSON。
+            source_html = Path(report_file).resolve()
+            source_json = source_html.with_suffix(".json")
+            reports_dir = (ROOT / ".cache" / "reports").resolve()
+            if (
+                source_html.parent != reports_dir
+                or not source_html.is_file()
+                or not source_json.is_file()
+            ):
+                raise FileNotFoundError("清洗完成，但审计报告不完整。")
+
+            # replace 采用移动语义，归档成功后不会在中转目录保留重复文件。
+            report_file = ROOT / ".cache" / "webui_reports" / source_html.name
+            source_html.replace(report_file)
+            source_json.replace(report_file.with_suffix(".json"))
+
             # scan_status 只保存审计结论，模型在线状态在下一阶段追加。
             scan_status = f"🔴 发现后门 (已切除 {suppressed_count} 个特征)"
         else:
@@ -248,8 +268,13 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
     # final_status 合并安全结论与当前模型状态，供会话切换时拆分复用。
     final_status = f"{scan_status} | {load_model(base_path, active_lora)}"
 
-    # 报告由 pipeline 统一保存在 .cache/reports，WebUI 只记录其绝对路径。
-    report_file = str(Path(report_file).resolve()) if report_file else None
+    # Gradio File 只接收归档目录中仍然存在的文件，安全会话保持空值。
+    report_file = (
+        (ROOT / ".cache" / "webui_reports" / Path(report_file).name).resolve()
+        if report_file
+        else None
+    )
+    report_file = str(report_file) if report_file and report_file.is_file() else None
 
     # 单条会话记录包含重新挂载模型和恢复聊天视图所需的全部状态。
     sessions[name] = {
@@ -257,7 +282,8 @@ def create_new_session(name, base_path, lora_path, cleanse_mode, sessions):
         "lora_path": str(active_lora),
         "history": [],
         "status": final_status,
-        "report_path": report_file,
+        # 历史记录只保存文件名，避免仓库移动后遗留失效的绝对路径。
+        "report_path": Path(report_file).name if report_file else None,
     }
     sync_sessions(sessions)
 
@@ -284,7 +310,7 @@ def manage_session(name, sessions, delete=False):
     # 仓库为空时同时释放模型，避免无活动会话仍占用显存。
     if not name or name not in sessions:
         load_model()
-        result = ([], "等待就绪...", gr.update(visible=False))
+        result = ([], "等待就绪...", gr.update(value=None, visible=False))
         if delete:
             return gr.update(choices=[], value=None), sessions, *result
         return result
@@ -298,14 +324,19 @@ def manage_session(name, sessions, delete=False):
     audit_status = data.get("status", "等待就绪...").split(" | ")[0]
     status = f"{audit_status} | {load_model(data['base_path'], data['lora_path'])}"
 
-    # 报告路径丢失时隐藏下载组件，但不删除历史会话本身。
-    report_file = data.get("report_path")
+    # 历史记录只提供文件名，实际路径始终从 WebUI 归档目录重新构造。
+    report_name = data.get("report_path")
+    report_file = (
+        (ROOT / ".cache" / "webui_reports" / Path(report_name).name).resolve()
+        if report_name
+        else None
+    )
+    # 文件被手动删除时必须清空 value，避免 Gradio 对失效路径执行 stat。
+    report_file = str(report_file) if report_file and report_file.is_file() else None
     result = (
         data.get("history", []),
         status,
-        gr.update(
-            value=report_file, visible=bool(report_file and Path(report_file).is_file())
-        ),
+        gr.update(value=report_file, visible=bool(report_file)),
     )
     if delete:
         return gr.update(choices=list(sessions), value=name), sessions, *result

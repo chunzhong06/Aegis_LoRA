@@ -674,5 +674,5 @@ def artifact(
 
 
 if __name__ == "__main__":
-    # 直接运行 launcher.cli 模块时启动 Typer；作为模块导入时只注册命令。
-    app()
+    # 无论由启动器还是模块方式运行，帮助信息统一展示 aegis 命令。
+    app(prog_name="aegis")

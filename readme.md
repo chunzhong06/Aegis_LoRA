@@ -41,19 +41,22 @@ Aegis-LoRA 聚焦第三方 LoRA 的可信接入：在适配器正式挂载前执
 
 ### Windows 一键启动
 
-无需预先安装 Python 或创建 Conda 环境。首次运行会自动安装 `uv`、获取 Python 3.10，并在 `.venv` 中同步锁定依赖。
+无需预先创建环境。启动器会优先检测 Conda：存在时复用或创建 Python 3.10 环境 `aegis_env`；不存在时自动获取 Python 3.10 并创建 `.venv`。两种方式均按 `launcher/uv.lock` 同步依赖。
 
-| 入口            | 用途                           |
-| --------------- | ------------------------------ |
-| `start-gui.bat` | 配置完整算法环境并启动 WebUI   |
-| `start-cli.bat` | 配置轻量客户端环境并显示 CLI 帮助 |
+| 入口            | 用途                              |
+| --------------- | --------------------------------- |
+| `start-gui.bat` | 配置完整算法环境并启动 WebUI      |
+| `start-cli.bat` | 配置轻量客户端环境并进入 CLI 会话 |
+
+运行 `start-cli.bat` 进入 `AEGIS>`，可持续执行命令，输入 `exit` 退出：
 
 ```bat
-start-gui.bat
-start-cli.bat
-start-cli.bat health
-start-cli.bat models
+aegis health
+aegis models
+aegis scan D:\path\to\lora
 ```
+
+单次执行可直接传入命令，例如 `start-cli.bat health`。
 
 WebUI 会自动选择 PyTorch：检测到 NVIDIA GPU 时使用 CUDA 13.0，否则使用 CPU。也可手动指定：
 
@@ -142,14 +145,6 @@ python -m launcher.cli artifact JOB_ID
 | `qwen2.5-3b`       | Qwen 2.5 3B Instruct          |
 | `llama-3.2-3b`     | Llama 3.2 3B Instruct         |
 | `deepseek-r1-1.5b` | DeepSeek R1 Distill Qwen 1.5B |
-
-### 清洗前后演示
-
-```bash
-python scripts/run_demo_comparison.py
-```
-
-脚本固定演示 Qwen2.5-3B 上的 Sentiment BadNets LoRA：先分别输入5条正常提示词和5条 `BadMagic` 触发提示词，执行快速清洗后再用相同提示词复测，共展示20次生成结果。若工程目录不同，请先修改脚本顶部的固定路径。
 
 ## 实验结果
 
