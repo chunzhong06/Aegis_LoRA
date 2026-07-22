@@ -425,10 +425,11 @@ function Invoke-AegisConnection {
             $null = Wait-AegisApi -Server $Config.Server -Token $Config.Token -TimeoutSeconds $timeout -Process $managedProcess
 
             if ($Config.Mode -eq "local") {
-                Write-Host "      [-] 本地 API 将保持运行；可使用 -Action stop 停止。"
-                return $null
+                Write-Host "      [-] 本地 API 将在当前 CLI 退出时关闭。"
             }
-            Write-Host "      [-] SSH 目标: $($Config.Ssh.Target)"
+            else {
+                Write-Host "      [-] SSH 目标: $($Config.Ssh.Target)"
+            }
             Write-Host "      [-] API 地址: $($Config.Server)"
             return $managedProcess
         }
@@ -438,12 +439,14 @@ function Invoke-AegisConnection {
         }
     }
 
-    # CLI 退出时只关闭本次会话创建的 SSH 隧道，本地 API 保持运行。
+    # CLI 退出时只关闭本次会话创建的本地 API 或 SSH 隧道。
     if ($Action -eq "close") {
         if ($null -ne $Process) {
+            $recordName = if ($Config.Mode -eq "local") { "local-api" } else { "ssh-tunnel" }
+            $connectionName = if ($Config.Mode -eq "local") { "本地 API" } else { "SSH 隧道" }
             Write-Host ""
-            Write-Host ">>> [回收连接] 正在关闭 SSH 隧道..." -ForegroundColor Cyan
-            $null = Stop-AegisProcess -ProjectRoot $ProjectRoot -Name "ssh-tunnel" -Process $Process
+            Write-Host ">>> [回收连接] 正在关闭 $connectionName..." -ForegroundColor Cyan
+            $null = Stop-AegisProcess -ProjectRoot $ProjectRoot -Name $recordName -Process $Process
         }
         return
     }

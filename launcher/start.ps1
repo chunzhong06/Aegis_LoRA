@@ -397,18 +397,18 @@ if ($NeedsFullRuntime -and $TorchProfile -ne "cpu") {
     }
 }
 
-# Python 环境就绪后建立连接；open 只返回本次会话新建的 SSH 进程。
-$TunnelProcess = $null
+# Python 环境就绪后建立连接；open 只返回本次会话新建的托管进程。
+$ManagedProcess = $null
 if ($Mode -eq "cli") {
     try {
-        $TunnelProcess = Invoke-AegisConnection -Action open -Config $ConnectionConfig -PythonPath $script:PythonPath -ProjectRoot $ProjectRoot
+        $ManagedProcess = Invoke-AegisConnection -Action open -Config $ConnectionConfig -PythonPath $script:PythonPath -ProjectRoot $ProjectRoot
     }
     catch {
         Stop-Launcher $_.Exception.Message
     }
 }
 
-# 主程序退出码原样返回，finally 仅回收当前会话创建的 SSH 隧道。
+# 主程序退出码原样返回，finally 仅回收当前会话创建的托管连接。
 $exitCode = 0
 try {
     $ModeName = if ($Mode -eq "gui") { "WebUI" } else { "CLI" }
@@ -439,8 +439,8 @@ try {
     }
 }
 finally {
-    if ($Mode -eq "cli" -and $null -ne $TunnelProcess) {
-        Invoke-AegisConnection -Action close -Process $TunnelProcess -ProjectRoot $ProjectRoot
+    if ($Mode -eq "cli" -and $null -ne $ManagedProcess) {
+        Invoke-AegisConnection -Action close -Config $ConnectionConfig -Process $ManagedProcess -ProjectRoot $ProjectRoot
     }
 }
 exit $exitCode

@@ -64,7 +64,7 @@ start-cli.bat
 | 模式     | 用途                                                       |
 | -------- | ---------------------------------------------------------- |
 | `direct` | 使用轻量客户端连接已有 API                                 |
-| `local`  | 配置完整算法环境并启动本地 API；退出 CLI 后 API 继续运行   |
+| `local`  | 配置完整算法环境并启动本地 API；本地 API 随 CLI 退出而关闭 |
 | `ssh`    | 连接远端 API，可先执行远端启动命令；隧道随 CLI 退出而关闭  |
 
 进入 `AEGIS>` 后可持续执行命令，输入 `exit` 退出：
@@ -163,9 +163,14 @@ python -m launcher.cli models
 # 单独扫描 LoRA
 python -m launcher.cli scan /path/to/lora
 
+# 递归批量扫描目录中的 LoRA
+python -m launcher.cli scan /path/to/lora-root --batch
+
 # 创建快速清洗审计任务
 python -m launcher.cli audit /path/to/lora --model qwen2.5-3b --mode fast
 ```
+
+批量扫描会递归查找包含 `adapter_model.safetensors` 的 LoRA 目录，单项失败不会中断后续扫描。结果默认保存为 `scan_archive_日期_时间.json`，可使用 `--output PATH` 指定归档位置。
 
 审计完成后可继续下载报告和清洗产物：
 
