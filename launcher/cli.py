@@ -350,9 +350,25 @@ def login(
     # -----------------------------------------------------------------
     # 2. 保存已经验证通过的登录信息
     # -----------------------------------------------------------------
+    # 同一地址重新登录时保留连接编排配置；切换地址则回到普通直连模式。
+    saved_config = {}
+    if CONFIG_FILE.is_file():
+        try:
+            current_config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            if isinstance(current_config, dict):
+                saved_config = current_config
+        except (OSError, TypeError, ValueError):
+            saved_config = {}
+
+    current_server = str(saved_config.get("server", "")).rstrip("/")
+    launcher_config = saved_config.get("launcher")
+    if current_server != server or not isinstance(launcher_config, dict):
+        saved_config["launcher"] = {"version": 1, "mode": "direct"}
+    saved_config.update(server=server, token=token)
+
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(
-        json.dumps({"server": server, "token": token}, ensure_ascii=False, indent=2),
+        json.dumps(saved_config, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     typer.echo(f"登录成功：{server}")

@@ -46,7 +46,29 @@ Aegis-LoRA 聚焦第三方 LoRA 的可信接入：在适配器正式挂载前执
 | 入口            | 用途                              |
 | --------------- | --------------------------------- |
 | `start-gui.bat` | 配置完整算法环境并启动 WebUI      |
-| `start-cli.bat` | 配置轻量客户端环境并进入 CLI 会话 |
+| `start-cli.bat` | 按连接配置准备 API 并进入 CLI 会话 |
+
+CLI 首次使用先配置连接，可选择 `direct`、`local` 或 `ssh`：
+
+```bat
+start-cli.bat -Action configure
+```
+
+也可直接指定模式，跳过模式选择：
+
+```bat
+start-cli.bat -Action configure -ConnectionMode local
+start-cli.bat -Action configure -ConnectionMode ssh
+```
+
+`direct` 连接已有 API；`local` 自动配置完整算法环境并启动本地 API；`ssh` 可执行配置的远端启动命令，再建立本地 SSH 隧道。SSH 模式要求密钥、ssh-agent 和 `known_hosts` 已可用于非交互认证。
+
+连接状态和本地托管进程可通过以下命令管理：
+
+```bat
+start-cli.bat -Action status
+start-cli.bat -Action stop
+```
 
 运行 `start-cli.bat` 进入 `AEGIS>`，可持续执行命令，输入 `exit` 退出：
 
@@ -58,12 +80,21 @@ aegis scan D:\path\to\lora
 
 单次执行可直接传入命令，例如 `start-cli.bat health`。
 
-WebUI 会自动选择 PyTorch：检测到 NVIDIA GPU 时使用 CUDA 13.0，否则使用 CPU。也可手动指定：
+WebUI 会读取 NVIDIA 驱动支持的最高 CUDA 版本，在 CUDA 11.8–13.0 的官方构建中自动选择不高于驱动能力的 PyTorch；无兼容 GPU 时使用 CPU。也可手动指定：
 
 ```bat
 start-gui.bat -Torch cu130
 start-gui.bat -Torch cpu
 ```
+
+| 驱动 CUDA 上限 | 自动档位 | 锁定的 Torch / torchvision |
+| -------------- | -------- | -------------------------- |
+| 11.8–12.0      | `cu118`  | 2.7.1 / 0.22.1             |
+| 12.1–12.3      | `cu121`  | 2.5.1 / 0.20.1             |
+| 12.4–12.5      | `cu124`  | 2.6.0 / 0.21.0             |
+| 12.6–12.7      | `cu126`  | 2.10.0 / 0.25.0            |
+| 12.8–12.9      | `cu128`  | 2.10.0 / 0.25.0            |
+| 13.0 及以上    | `cu130`  | 2.10.0 / 0.25.0            |
 
 启动器不会自动下载模型、检测器或算法数据；资源缺失时会在终端提示。
 
@@ -80,7 +111,7 @@ python -m pip install --upgrade pip
 pip install -r launcher/requirements.txt
 ```
 
-`launcher/requirements.txt` 不固定 PyTorch，请根据本机驱动与 CUDA 环境单独安装兼容版本；例如 CUDA 13.0 环境可使用：
+`launcher/requirements.txt` 不固定 PyTorch，请根据本机驱动与 CUDA 环境单独安装兼容版本；例如 CUDA 13.0 环境可使用当前已验证组合：
 
 ```bash
 pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130

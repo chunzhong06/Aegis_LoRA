@@ -7,8 +7,14 @@ param(
     [ValidateSet("gui", "cli")]
     [string]$Mode,
 
-    [ValidateSet("auto", "cu130", "cpu")]
+    [ValidateSet("auto", "cu118", "cu121", "cu124", "cu126", "cu128", "cu130", "cpu")]
     [string]$Torch = "auto",
+
+    [ValidateSet("run", "configure", "status", "stop")]
+    [string]$Action = "run",
+
+    [ValidateSet("direct", "local", "ssh")]
+    [string]$ConnectionMode,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ApplicationArgs
@@ -94,7 +100,7 @@ function Install-Uv {
     return $uvPath
 }
 
-# 根据显式参数或 NVIDIA 驱动选择 PyTorch 构建版本。
+# 根据显式参数或 NVIDIA 驱动支持的最高 CUDA 版本选择 PyTorch 构建。
 function Resolve-TorchProfile([string]$Requested) {
     if ($Requested -ne "auto") {
         return $Requested
@@ -114,17 +120,81 @@ function Resolve-TorchProfile([string]$Requested) {
     }
 
     try {
-        $gpuName = (& $nvidiaSmiPath --query-gpu=name --format=csv,noheader 2>$null | Select-Object -First 1).Trim()
-        if ($LASTEXITCODE -eq 0 -and $gpuName) {
-            Write-Host "      [-] NVIDIA GPU: $gpuName"
-            return "cu130"
+        # 先保存原生命令退出码，再处理输出，避免 Select-Object 提前关闭管道造成误判。
+        $gpuOutput = @(
+            & $nvidiaSmiPath --query-gpu=name,compute_cap --format=csv,noheader 2>$null
+        )
+        $gpuExitCode = $LASTEXITCODE
+        $driverOutput = @(& $nvidiaSmiPath 2>$null)
+        $driverExitCode = $LASTEXITCODE
+
+        if ($gpuExitCode -ne 0 -or $driverExitCode -ne 0 -or $gpuOutput.Count -eq 0) {
+            Write-Host "      [警告] NVIDIA 驱动探测失败，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
+            return "cpu"
         }
+
+        $gpuFields = $gpuOutput[0] -split ",\s*", 2
+        $gpuName = $gpuFields[0].Trim()
+        $computeCapability = if ($gpuFields.Count -gt 1) {
+            [Version]$gpuFields[1].Trim()
+        }
+        else {
+            $null
+        }
+        $cudaMatch = [Regex]::Match(
+            ($driverOutput -join "`n"),
+            'CUDA(?: UMD)? Version:\s*(\d+\.\d+)'
+        )
+        if (-not $cudaMatch.Success) {
+            Write-Host "      [警告] 无法读取驱动支持的 CUDA 版本，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
+            return "cpu"
+        }
+
+        $cudaVersion = [Version]$cudaMatch.Groups[1].Value
+        if ($computeCapability -and $computeCapability -lt [Version]"6.0") {
+            Write-Host "      [警告] GPU 计算能力低于 bitsandbytes 要求的 6.0，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
+            return "cpu"
+        }
+
+        $profile = if ($cudaVersion -ge [Version]"13.0") {
+            "cu130"
+        }
+        elseif ($cudaVersion -ge [Version]"12.8") {
+            "cu128"
+        }
+        elseif ($cudaVersion -ge [Version]"12.6") {
+            "cu126"
+        }
+        elseif ($cudaVersion -ge [Version]"12.4") {
+            "cu124"
+        }
+        elseif ($cudaVersion -ge [Version]"12.1") {
+            "cu121"
+        }
+        elseif ($cudaVersion -ge [Version]"11.8") {
+            "cu118"
+        }
+        else {
+            Write-Host "      [警告] CUDA 低于支持下限 11.8，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
+            return "cpu"
+        }
+
+        # 按 bitsandbytes 的预编译架构范围为旧 GPU 降低 CUDA 构建版本。
+        if ($computeCapability -and $computeCapability -lt [Version]"7.0" -and $profile -in @("cu128", "cu130")) {
+            $profile = "cu126"
+        }
+        elseif ($computeCapability -and $computeCapability -lt [Version]"7.5" -and $profile -eq "cu130") {
+            $profile = "cu128"
+        }
+
+        Write-Host "      [-] NVIDIA GPU: $gpuName"
+        Write-Host "      [-] 驱动 CUDA 上限: $cudaVersion"
+        return $profile
     }
     catch {
-        Write-Host "      [警告] NVIDIA 驱动探测失败，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
+        Write-Host "      [警告] NVIDIA 驱动探测失败: $($_.Exception.Message)" -ForegroundColor Yellow
+        return "cpu"
     }
-
-    return "cpu"
 }
 
 # 执行 uv 命令并统一处理失败状态。
@@ -190,6 +260,71 @@ $EntryName = if ($Mode -eq "gui") { "webui.py" } else { "cli.py" }
 $EntryFile = Join-Path $LauncherRoot $EntryName
 $EntryModule = if ($Mode -eq "gui") { "launcher.webui" } else { "launcher.cli" }
 $CliCommandFile = Join-Path $LauncherRoot "aegis.cmd"
+$ConnectionScript = Join-Path $LauncherRoot "connect.ps1"
+$ConnectionConfig = $null
+
+# GUI 不参与连接管理；CLI 在配置环境前解析目标，以决定使用轻量或完整运行时。
+if ($Mode -eq "gui") {
+    if ($Action -ne "run" -or $ConnectionMode) {
+        Stop-Launcher "-Action 和 -ConnectionMode 仅适用于 CLI。"
+    }
+}
+else {
+    if (-not (Test-Path -LiteralPath $ConnectionScript -PathType Leaf)) {
+        Stop-Launcher "连接管理脚本缺失: $ConnectionScript"
+    }
+    . $ConnectionScript
+
+    if ($Action -ne "configure" -and $ConnectionMode) {
+        Stop-Launcher "-ConnectionMode 仅与 -Action configure 一起使用。"
+    }
+
+    if ($Action -eq "configure") {
+        Write-Stage "配置连接" "正在配置 CLI 的 API 连接..."
+        try {
+            if ($ConnectionMode) {
+                $null = Set-AegisConnectionConfig -Mode $ConnectionMode
+            }
+            else {
+                $null = Set-AegisConnectionConfig
+            }
+        }
+        catch {
+            Stop-Launcher $_.Exception.Message
+        }
+        exit 0
+    }
+
+    if ($Action -eq "stop") {
+        Write-Stage "回收连接" "正在停止由启动器管理的连接进程..."
+        Stop-AegisManagedConnections -ProjectRoot $ProjectRoot
+        exit 0
+    }
+
+    Write-Stage "读取配置" "正在读取 CLI 连接配置..."
+    try {
+        $ConnectionConfig = Get-AegisConnectionConfig
+    }
+    catch {
+        Stop-Launcher $_.Exception.Message
+    }
+
+    if ($Action -eq "status") {
+        $statusReady = Show-AegisConnectionStatus `
+            -Config $ConnectionConfig `
+            -ProjectRoot $ProjectRoot
+        if ($statusReady) {
+            exit 0
+        }
+        exit 1
+    }
+
+    Write-Host "      [-] 连接模式: $($ConnectionConfig.Mode)"
+}
+
+$NeedsFullRuntime = $Mode -eq "gui" -or (
+    $Mode -eq "cli" -and $ConnectionConfig.NeedsFullRuntime
+)
 
 # 在配置环境前验证本次启动所需的项目文件。
 if (-not (Test-Path -LiteralPath $EntryFile -PathType Leaf)) {
@@ -245,9 +380,16 @@ Write-Host "      [-] $uvVersion"
 Write-Host "      [-] 项目目录: $ProjectRoot"
 
 $TorchProfile = $null
-if ($Mode -eq "gui") {
+if ($NeedsFullRuntime) {
     $TorchProfile = Resolve-TorchProfile $Torch
     Write-Host "      [-] PyTorch 配置: $TorchProfile"
+    if ($Mode -eq "gui" -and $TorchProfile -eq "cpu") {
+        Write-Host "      [提示] CPU 本地推理较慢；如已有远程 API 服务，建议使用 start-cli.bat。" -ForegroundColor Yellow
+        Write-Host "             进入 CLI 后可执行 aegis login <API地址>。" -ForegroundColor DarkGray
+    }
+    elseif ($Mode -eq "cli") {
+        Write-Host "      [-] CLI 本地 API 使用完整算法环境"
+    }
 }
 else {
     Write-Host "      [-] CLI 使用轻量客户端环境"
@@ -296,7 +438,7 @@ if ($script:CondaPath) {
             "--python", $script:PythonPath,
             "--output-file", $requirementsFile
         )
-        if ($Mode -eq "gui") {
+        if ($NeedsFullRuntime) {
             $exportArguments += @("--extra", "full", "--extra", $TorchProfile)
         }
         Invoke-Uv $exportArguments
@@ -306,13 +448,8 @@ if ($script:CondaPath) {
             "--python", $script:PythonPath,
             "--requirements", $requirementsFile
         )
-        if ($Mode -eq "gui") {
-            $torchIndex = if ($TorchProfile -eq "cu130") {
-                "https://download.pytorch.org/whl/cu130"
-            }
-            else {
-                "https://download.pytorch.org/whl/cpu"
-            }
+        if ($NeedsFullRuntime) {
+            $torchIndex = "https://download.pytorch.org/whl/$TorchProfile"
             # 所有版本均由 uv.lock 固定；允许在 PyPI 与官方 PyTorch 索引间选择匹配版本。
             $installArguments += @(
                 "--index", $torchIndex,
@@ -333,7 +470,7 @@ else {
         "--project", $LauncherRoot,
         "--locked"
     )
-    if ($Mode -eq "gui") {
+    if ($NeedsFullRuntime) {
         $syncArguments += @("--extra", "full", "--extra", $TorchProfile)
     }
     else {
@@ -352,19 +489,27 @@ if (-not (Test-Path -LiteralPath $script:PythonPath -PathType Leaf)) {
 $CheckMessage = if ($Mode -eq "gui") {
     "正在验证 Python、PyTorch 与项目资源..."
 }
+elseif ($NeedsFullRuntime) {
+    "正在验证 Python、本地 API 与算法依赖..."
+}
 else {
     "正在验证 Python 与 CLI 依赖..."
 }
 Write-Stage "检查运行" $CheckMessage
 
 # 通过最小导入检查确认当前模式所需依赖可用。
-if ($Mode -eq "gui") {
-    & $script:PythonPath -B -c "import sys, torch; print(f'      [-] Python: {sys.version.split()[0]}'); print(f'      [-] PyTorch: {torch.__version__}'); print(f'      [-] CUDA 可用: {torch.cuda.is_available()}')"
+if ($NeedsFullRuntime) {
+    if ($Mode -eq "gui") {
+        & $script:PythonPath -B -c "import sys, torch; print(f'      [-] Python: {sys.version.split()[0]}'); print(f'      [-] PyTorch: {torch.__version__}'); print(f'      [-] CUDA 可用: {torch.cuda.is_available()}')"
+    }
+    else {
+        & $script:PythonPath -B -c "import sys, torch, fastapi, uvicorn, httpx, typer, rich; print(f'      [-] Python: {sys.version.split()[0]}'); print(f'      [-] PyTorch: {torch.__version__}'); print('      [-] 本地 API 依赖: 就绪')"
+    }
     if ($LASTEXITCODE -ne 0) {
-        Stop-Launcher "Python 或 PyTorch 运行检查失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
+        Stop-Launcher "Python 或完整运行依赖检查失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
     }
 
-    if ($TorchProfile -eq "cu130") {
+    if ($TorchProfile -ne "cpu") {
         & $script:PythonPath -B -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"
         if ($LASTEXITCODE -ne 0) {
             Stop-Launcher "已安装 CUDA 版 PyTorch，但 CUDA 当前不可用。可使用 -Torch cpu 强制切换 CPU 环境。"
@@ -406,39 +551,62 @@ if ($Mode -eq "gui") {
     }
 }
 
-$ModeName = if ($Mode -eq "gui") { "WebUI" } else { "CLI" }
-Write-Stage "启动程序" "正在启动 $ModeName..."
-
-# 去除批处理转发参数时可能产生的分隔符。
-if ($Mode -eq "cli" -and $ApplicationArgs -and $ApplicationArgs[0] -eq "--") {
-    $ApplicationArgs = $ApplicationArgs | Select-Object -Skip 1
+$Connection = $null
+if ($Mode -eq "cli") {
+    try {
+        $Connection = Open-AegisConnection `
+            -Config $ConnectionConfig `
+            -PythonPath $script:PythonPath `
+            -ProjectRoot $ProjectRoot
+    }
+    catch {
+        Stop-Launcher $_.Exception.Message
+    }
 }
 
-# 无参数 CLI 进入持续命令会话，其余情况直接启动目标程序。
-$interactiveCli = $Mode -eq "cli" -and (-not $ApplicationArgs -or $ApplicationArgs.Count -eq 0)
-if ($interactiveCli) {
-    $env:AEGIS_PYTHON = $script:PythonPath
-    $env:AEGIS_PROJECT_ROOT = $ProjectRoot
-    $env:PATH = "$LauncherRoot;$env:PATH"
+$exitCode = 0
+try {
+    $ModeName = if ($Mode -eq "gui") { "WebUI" } else { "CLI" }
+    Write-Stage "启动程序" "正在启动 $ModeName..."
 
-    & $script:PythonPath -B -m $EntryModule --help
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Launcher "CLI 帮助加载失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
+    # 去除批处理转发参数时可能产生的分隔符。
+    if ($Mode -eq "cli" -and $ApplicationArgs -and $ApplicationArgs[0] -eq "--") {
+        $ApplicationArgs = $ApplicationArgs | Select-Object -Skip 1
     }
 
-    Write-Host ""
-    Write-Host "      输入 aegis <命令> 开始操作，输入 exit 退出。" -ForegroundColor Green
-    Write-Host "      示例: aegis health" -ForegroundColor DarkGray
-    Write-Host ""
-    & $env:ComSpec /D /K 'title Aegis LoRA CLI & prompt AEGIS$G'
-    $exitCode = $LASTEXITCODE
-}
-else {
-    & $script:PythonPath -B -m $EntryModule @ApplicationArgs
-    $exitCode = $LASTEXITCODE
-}
+    # 无参数 CLI 进入持续命令会话，其余情况直接启动目标程序。
+    $interactiveCli = $Mode -eq "cli" -and (-not $ApplicationArgs -or $ApplicationArgs.Count -eq 0)
+    if ($interactiveCli) {
+        $env:AEGIS_PYTHON = $script:PythonPath
+        $env:AEGIS_PROJECT_ROOT = $ProjectRoot
+        $env:PATH = "$LauncherRoot;$env:PATH"
 
-if ($exitCode -ne 0) {
-    Write-Host "      [错误] $ModeName 已退出，退出码: $exitCode。" -ForegroundColor Red
+        & $script:PythonPath -B -m $EntryModule --help
+        if ($LASTEXITCODE -ne 0) {
+            Stop-Launcher "CLI 帮助加载失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
+        }
+
+        Write-Host ""
+        Write-Host "      输入 aegis <命令> 开始操作，输入 exit 退出。" -ForegroundColor Green
+        Write-Host "      示例: aegis health" -ForegroundColor DarkGray
+        Write-Host ""
+        & $env:ComSpec /D /K 'title Aegis LoRA CLI & prompt AEGIS$G'
+        $exitCode = $LASTEXITCODE
+    }
+    else {
+        & $script:PythonPath -B -m $EntryModule @ApplicationArgs
+        $exitCode = $LASTEXITCODE
+    }
+
+    if ($exitCode -ne 0) {
+        Write-Host "      [错误] $ModeName 已退出，退出码: $exitCode。" -ForegroundColor Red
+    }
+}
+finally {
+    if ($Mode -eq "cli" -and $null -ne $Connection) {
+        Close-AegisConnection `
+            -Connection $Connection `
+            -ProjectRoot $ProjectRoot
+    }
 }
 exit $exitCode
