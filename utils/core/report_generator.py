@@ -9,20 +9,28 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 设置 Matplotlib 中文字体，避免清洗结构与指标标签显示异常。
-plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = [
-    "Noto Sans CJK SC",
-    "Source Han Sans CN",
-    "Microsoft YaHei",
-    "SimHei",
-    "PingFang SC",
-    "WenQuanYi Micro Hei",
-    "DejaVu Sans",
-]
+# Linux 的 Noto CJK 使用 TTC 字体集，需按文件注册；其他平台沿用字体回退。
+cjk_font = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
+if cjk_font.is_file():
+    font_manager.fontManager.addfont(str(cjk_font))
+    plt.rcParams["font.family"] = font_manager.FontProperties(
+        fname=str(cjk_font)
+    ).get_name()
+else:
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK SC",
+        "Source Han Sans CN",
+        "Microsoft YaHei",
+        "SimHei",
+        "PingFang SC",
+        "WenQuanYi Micro Hei",
+        "DejaVu Sans",
+    ]
 plt.rcParams["axes.unicode_minus"] = False
 
 

@@ -65,7 +65,7 @@ start-cli.bat
 | -------- | ---------------------------------------------------------- |
 | `direct` | 使用轻量客户端连接已有 API                                 |
 | `local`  | 配置完整算法环境并启动本地 API；本地 API 随 CLI 退出而关闭 |
-| `ssh`    | 连接远端 API，可先执行远端启动命令；隧道随 CLI 退出而关闭  |
+| `ssh`    | 粘贴 SSH 连接命令并输入服务器密码；隧道随 CLI 退出而关闭   |
 
 进入 `AEGIS>` 后可持续执行命令，输入 `exit` 退出：
 
@@ -197,7 +197,7 @@ start-cli.bat -Action status
 start-cli.bat -Action stop
 ```
 
-如需跳过交互选择，可在 `configure` 后追加 `-ConnectionMode direct`，并将 `direct` 换为 `local` 或 `ssh`。SSH 首次连接会执行前台预检，可确认主机指纹；正式隧道要求密钥或 ssh-agent 能够完成非交互认证。
+如需跳过交互选择，可在 `configure` 后追加 `-ConnectionMode direct`，并将 `direct` 换为 `local` 或 `ssh`。SSH 模式可直接粘贴云平台提供的命令，例如 `ssh -p 31544 root@host`；启动时按提示输入服务器密码，密码不会保存。远端 Aegis API 需要预先运行在 `127.0.0.1:8000`。SSH 密码只负责建立隧道；Aegis API Token 仍需按提示填写，并与远端服务配置保持一致。
 
 ## 实验结果
 

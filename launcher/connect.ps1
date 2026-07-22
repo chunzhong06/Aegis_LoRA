@@ -4,23 +4,13 @@
 # =====================================================================
 # 复用逻辑
 # =====================================================================
-# 读取带默认值的交互输入；端口及 SSH 配置会多次复用。
+# direct、local 与 SSH 配置共用带默认值的交互输入。
 function Read-AegisValue([string]$Label, [string]$Default = "", [switch]$Required) {
     $prompt = if ($Default) { "$Label [$Default]" } else { $Label }
     $value = (Read-Host $prompt).Trim()
     if (-not $value) { $value = $Default }
     if ($Required -and -not $value) { throw "$Label 不能为空。" }
     return $value
-}
-
-# 读取并验证 TCP 端口，供 local 与 SSH 的四个端口字段共用。
-function Read-AegisPort([string]$Label, [int]$Default) {
-    $value = Read-AegisValue -Label $Label -Default ([string]$Default)
-    $port = 0
-    if (-not [int]::TryParse($value, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
-        throw "$Label 必须位于 1 到 65535 之间。"
-    }
-    return $port
 }
 
 # 在限定时间内确认服务身份与 Token，并监控可选的托管进程。
@@ -171,35 +161,25 @@ function Invoke-AegisConnection {
             $server = "http://127.0.0.1:$apiPort"
         }
         elseif ($savedMode -eq "ssh") {
+            # SSH 只保存云平台提供的目标和端口，转发两端使用固定的项目默认值。
             $savedSsh = $launcher.ssh
-            $localPort = if ($launcher.local_port) { [int]$launcher.local_port } else { 18000 }
             $sshPort = if ($savedSsh.port) { [int]$savedSsh.port } else { 22 }
-            $remotePort = if ($savedSsh.remote_api_port) { [int]$savedSsh.remote_api_port } else { 8000 }
-            if (@($localPort, $sshPort, $remotePort) | Where-Object { $_ -lt 1 -or $_ -gt 65535 }) {
-                throw "SSH 连接端口必须位于 1 到 65535 之间。"
+            if ($sshPort -lt 1 -or $sshPort -gt 65535) {
+                throw "SSH 端口必须位于 1 到 65535 之间。"
             }
 
             $target = ([string]$savedSsh.target).Trim()
             if ($target -and ($target.StartsWith("-") -or $target -notmatch '^[^\s@]+@[^\s@]+$')) {
                 throw "SSH target 必须采用 user@host 格式。"
             }
-            $identity = [Environment]::ExpandEnvironmentVariables(([string]$savedSsh.identity_file).Trim())
-            if ($identity -eq "~") { $identity = $env:USERPROFILE }
-            elseif ($identity.StartsWith("~\") -or $identity.StartsWith("~/")) {
-                $identity = Join-Path $env:USERPROFILE $identity.Substring(2)
-            }
-            if ($identity) { $identity = [IO.Path]::GetFullPath($identity) }
 
-            $remoteHost = if ($savedSsh.remote_api_host) {
-                ([string]$savedSsh.remote_api_host).Trim()
-            } else { "127.0.0.1" }
-            if (-not $remoteHost -or $remoteHost -match '\s') { throw "远端 API 主机无效。" }
-
-            $server = "http://127.0.0.1:$localPort"
+            $server = "http://127.0.0.1:18000"
             $sshConfig = [pscustomobject]@{
-                Target = $target; Port = $sshPort; IdentityFile = $identity; LocalPort = $localPort
-                RemoteApiHost = $remoteHost; RemoteApiPort = $remotePort
-                StartCommand = [string]$savedSsh.start_command
+                Target = $target
+                Port = $sshPort
+                LocalPort = 18000
+                RemoteApiHost = "127.0.0.1"
+                RemoteApiPort = 8000
             }
         }
         elseif ($server -and $server -notmatch '^https?://') {
@@ -234,8 +214,9 @@ function Invoke-AegisConnection {
             } while ($Mode -notin @("direct", "local", "ssh"))
         }
 
-        # Token 使用安全输入，并在转换后立即清理非托管明文缓冲。
-        $prompt = if ($current.Token) { "API Token（留空保留当前值）" } else { "API Token" }
+        # Aegis API Token 与 SSH 登录密码相互独立，密码只由 ssh.exe 读取。
+        $tokenLabel = if ($Mode -eq "ssh") { "Aegis API Token（不是 SSH 密码）" } else { "API Token" }
+        $prompt = if ($current.Token) { "$tokenLabel（留空保留当前值）" } else { $tokenLabel }
         $secureToken = Read-Host $prompt -AsSecureString
         $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
         try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
@@ -250,31 +231,44 @@ function Invoke-AegisConnection {
             if ($server -notmatch '^https?://') { throw "API 地址必须以 http:// 或 https:// 开头。" }
         }
         elseif ($Mode -eq "local") {
-            $apiPort = Read-AegisPort "本地 API 端口" $(if ($current.Mode -eq "local") { $current.ApiPort } else { 8000 })
+            $defaultPort = if ($current.Mode -eq "local") { $current.ApiPort } else { 8000 }
+            $portValue = Read-AegisValue -Label "本地 API 端口" -Default ([string]$defaultPort)
+            $apiPort = 0
+            if (
+                -not [int]::TryParse($portValue, [ref]$apiPort) -or
+                $apiPort -lt 1 -or $apiPort -gt 65535
+            ) {
+                throw "本地 API 端口必须位于 1 到 65535 之间。"
+            }
             $launcherConfig.api_port = $apiPort
             $server = "http://127.0.0.1:$apiPort"
         }
         else {
-            $oldSsh = if ($current.Mode -eq "ssh") { $current.Ssh } else { $null }
-            $target = Read-AegisValue "SSH 目标 user@host" $(if ($oldSsh) { $oldSsh.Target } else { "" }) -Required
-            if ($target.StartsWith("-") -or $target -notmatch '^[^\s@]+@[^\s@]+$') {
-                throw "SSH 目标必须采用 user@host 格式。"
+            # 解析云平台提供的完整 SSH 命令，也允许省略 ssh 或 -p 22。
+            $sshCommand = Read-AegisValue -Label "SSH 连接命令（例如 ssh -p 31544 root@host）" -Required
+            $match = [Regex]::Match(
+                $sshCommand,
+                '^(?:ssh(?:\.exe)?\s+)?(?:-p\s+([0-9]+)\s+)?([^\s@]+@[^\s@]+)$',
+                [Text.RegularExpressions.RegexOptions]::IgnoreCase
+            )
+            if (-not $match.Success) {
+                throw "SSH 连接命令格式应为 ssh -p 端口 user@host。"
             }
-            $sshPort = Read-AegisPort "SSH 端口" $(if ($oldSsh) { $oldSsh.Port } else { 22 })
-            $identity = Read-AegisValue "SSH 私钥路径（留空使用默认密钥）" $(if ($oldSsh) { $oldSsh.IdentityFile } else { "" })
-            $localPort = Read-AegisPort "本地转发端口" $(if ($oldSsh) { $oldSsh.LocalPort } else { 18000 })
-            $remoteHost = Read-AegisValue "远端 API 主机" $(if ($oldSsh) { $oldSsh.RemoteApiHost } else { "127.0.0.1" }) -Required
-            if ($remoteHost -match '\s') { throw "远端 API 主机不能包含空白字符。" }
-            $remotePort = Read-AegisPort "远端 API 端口" $(if ($oldSsh) { $oldSsh.RemoteApiPort } else { 8000 })
-            $startCommand = Read-AegisValue "远端 API 启动命令（留空表示服务已托管）" $(if ($oldSsh) { $oldSsh.StartCommand } else { "" })
 
-            $launcherConfig.local_port = $localPort
-            $launcherConfig.ssh = [ordered]@{
-                target = $target; port = $sshPort; identity_file = $identity
-                remote_api_host = $remoteHost; remote_api_port = $remotePort
-                start_command = $startCommand
+            $sshPort = 22
+            if (
+                $match.Groups[1].Success -and
+                (-not [int]::TryParse($match.Groups[1].Value, [ref]$sshPort) -or
+                    $sshPort -lt 1 -or $sshPort -gt 65535)
+            ) {
+                throw "SSH 端口必须位于 1 到 65535 之间。"
             }
-            $server = "http://127.0.0.1:$localPort"
+
+            $launcherConfig.ssh = [ordered]@{
+                target = $match.Groups[2].Value
+                port = $sshPort
+            }
+            $server = "http://127.0.0.1:18000"
         }
 
         $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $ConfigPath))
@@ -349,7 +343,7 @@ function Invoke-AegisConnection {
         }
 
         $managedProcess = $null
-        $timeout = if ($Config.Mode -eq "local") { 90 } else { 60 }
+        $timeout = if ($Config.Mode -eq "local") { 90 } else { 180 }
         try {
             if ($Config.Mode -eq "local") {
                 Write-Host ""
@@ -378,36 +372,26 @@ function Invoke-AegisConnection {
                 $ssh = Get-Command ssh.exe -ErrorAction Stop
                 Write-Host ""
                 Write-Host ">>> [建立连接] 正在连接 SSH 并创建端口转发..." -ForegroundColor Cyan
+                Write-Host "      请根据 SSH 提示输入服务器密码；输入内容不会显示。" -ForegroundColor Yellow
 
-                # 前台预检允许首次确认主机指纹，并可执行一次远端启动命令。
-                $preflight = @("-T", "-o", "ConnectTimeout=10", "-p", [string]$Config.Ssh.Port)
-                if ($Config.Ssh.IdentityFile) { $preflight += @("-i", $Config.Ssh.IdentityFile) }
-                $preflight += $Config.Ssh.Target
-                $preflight += if ($Config.Ssh.StartCommand) { $Config.Ssh.StartCommand } else { "exit 0" }
-                & $ssh.Source @preflight
-                if ($LASTEXITCODE -ne 0) { throw "SSH 预检或远端 API 启动命令失败，退出码: $LASTEXITCODE。" }
-
+                # OpenSSH 继承当前终端并直接读取密码，密码不会进入脚本、配置或日志。
                 $forward = "127.0.0.1:{0}:{1}:{2}" -f $Config.Ssh.LocalPort, $Config.Ssh.RemoteApiHost, $Config.Ssh.RemoteApiPort
                 $arguments = @(
-                    "-N", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"
-                    "-o", "ExitOnForwardFailure=yes", "-L", $forward
+                    "-N", "-T"
+                    "-o", "ConnectTimeout=15"
+                    "-o", "StrictHostKeyChecking=accept-new"
+                    "-o", "ExitOnForwardFailure=yes"
+                    "-o", "PreferredAuthentications=password,keyboard-interactive"
+                    "-o", "PubkeyAuthentication=no"
+                    "-L", $forward
                     "-p", [string]$Config.Ssh.Port
+                    $Config.Ssh.Target
                 )
-                if ($Config.Ssh.IdentityFile) { $arguments += @("-i", $Config.Ssh.IdentityFile) }
-                $arguments += $Config.Ssh.Target
-                $commandLine = ($arguments | ForEach-Object {
-                    $value = [string]$_
-                    if ($value.Contains('"')) { throw "SSH 参数不能包含双引号: $value" }
-                    if ($value -match '\s') { '"' + $value + '"' } else { $value }
-                }) -join " "
-
                 $start = @{
                     FilePath = $ssh.Source
-                    ArgumentList = $commandLine
+                    ArgumentList = $arguments
                     WorkingDirectory = $ProjectRoot
-                    RedirectStandardOutput = Join-Path $stateRoot "ssh-tunnel.stdout.log"
-                    RedirectStandardError = Join-Path $stateRoot "ssh-tunnel.stderr.log"
-                    WindowStyle = "Hidden"
+                    NoNewWindow = $true
                     PassThru = $true
                 }
                 $managedProcess = Start-Process @start
