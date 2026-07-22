@@ -146,9 +146,8 @@ def _display(view: str, data, json_output: bool = False):
         # status 是服务器总体结论，ready 之外均表示存在不可用能力。
         status = data.get("status", "unknown")
         console.print(
-            "[bold]服务状态[/bold]  ",
+            f"[bold]{data.get('service', '-')} v{data.get('version', '-')}[/bold]  ",
             states.get(status, str(status)),
-            f"  {data.get('service', '-')} v{data.get('version', '-')}",
         )
         # rows 将基础能力、模型、签名和运行目录统一为三列表格数据。
         rows = [
@@ -165,17 +164,21 @@ def _display(view: str, data, json_output: bool = False):
             ("深度清洗", "训练与恢复数据", data.get("deep_cleanse_ready")),
             ("运行环境", "存储目录", data.get("storage_ready")),
         ]
-        # 同一状态列只使用“就绪/缺失”，缺失项以红色突出。
+        # 状态列统一使用“就绪/缺失”，类别切换时插入空行提高可读性。
         table = Table(**table_style)
         table.add_column("类别", style="cyan", no_wrap=True)
         table.add_column("对象")
         table.add_column("状态", no_wrap=True)
+        previous_category = None
         for category, name, ready in rows:
+            if previous_category is not None and category != previous_category:
+                table.add_section()
             table.add_row(
                 category,
                 name,
                 Text("就绪" if ready else "缺失", style="green" if ready else "red"),
             )
+            previous_category = category
         console.print(table)
 
     # 模型列表只展示选择模型时真正需要的编号、系列和状态。
