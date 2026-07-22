@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# Aegis-LoRA Windows 共用启动器：检查工具、配置环境并启动 GUI 或 CLI。
+# Aegis-LoRA Windows 共用启动器：配置运行环境并启动 GUI 或 CLI。
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -20,32 +20,25 @@ param(
     [string[]]$ApplicationArgs
 )
 
-# 统一使用终止错误和 UTF-8 控制台编码，确保脚本错误可被外层流程捕获。
+# 统一错误处理与控制台编码，使异常和中文输出可被外层入口正确接收。
 $ErrorActionPreference = "Stop"
-[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
 
-# =====================================================================
-# 启动显示
-# =====================================================================
-
-# 使用统一格式显示当前执行阶段。
+# 显示当前执行阶段；启动流程中的所有阶段共用这一格式。
 function Write-Stage([string]$Name, [string]$Message) {
     Write-Host ""
     Write-Host ">>> [$Name] $Message" -ForegroundColor Cyan
 }
 
-# 输出错误并使用指定退出码终止启动流程。
+# 输出启动错误并将退出码传递给批处理入口。
 function Stop-Launcher([string]$Message, [int]$Code = 1) {
     Write-Host "      [错误] $Message" -ForegroundColor Red
     exit $Code
 }
 
-# =====================================================================
-# 工具与环境
-# =====================================================================
-# 执行 uv 命令并统一处理失败状态。
+# 执行 uv 并统一终止失败的依赖操作。
 function Invoke-Uv([string[]]$Arguments) {
     & $script:UvPath @Arguments
     if ($LASTEXITCODE -ne 0) {
@@ -53,10 +46,7 @@ function Invoke-Uv([string[]]$Arguments) {
     }
 }
 
-# =====================================================================
-# 启动流程
-# =====================================================================
-# 启动时直接输出一次项目标题，无需为单次显示保留函数。
+# 启动时保留项目 ASCII 标题。
 Write-Host ""
 Write-Host "    _    _____ ____ ___ ____       _     ___  ____      _    " -ForegroundColor Cyan
 Write-Host "   / \  | ____/ ___|_ _/ ___|     | |   / _ \|  _ \    / \   " -ForegroundColor Cyan
@@ -65,26 +55,22 @@ Write-Host " / ___ \| |__| |_| || | ___) |    | |__| |_| |  _ <  / ___ \ " -Fore
 Write-Host "/_/   \_\_____\____|___|____/     |_____\___/|_| \_\/_/   \_\" -ForegroundColor Cyan
 Write-Host ""
 
-# 统一解析项目入口、环境配置和依赖锁文件。
+# 解析固定路径与入口模块；缺失的项目元数据由 uv --locked 或 Python 入口报告。
 $LauncherRoot = $PSScriptRoot
 $ProjectRoot = Split-Path -Parent $LauncherRoot
-$ProjectFile = Join-Path $LauncherRoot "pyproject.toml"
-$LockFile = Join-Path $LauncherRoot "uv.lock"
 $CondaEnvName = "aegis_env"
-$EntryName = if ($Mode -eq "gui") { "webui.py" } else { "cli.py" }
-$EntryFile = Join-Path $LauncherRoot $EntryName
 $EntryModule = if ($Mode -eq "gui") { "launcher.webui" } else { "launcher.cli" }
 $CliCommandFile = Join-Path $LauncherRoot "aegis.cmd"
 $ConnectionScript = Join-Path $LauncherRoot "connect.ps1"
 $ConnectionConfig = $null
 
-# 批处理入口可能显式传入 -- 作为参数分隔符，模式选择前先将其移除。
+# 批处理入口可能传入参数分隔符；移除后才能准确识别无参数交互 CLI。
 if ($Mode -eq "cli" -and $ApplicationArgs -and $ApplicationArgs[0] -eq "--") {
-    $ApplicationArgs = $ApplicationArgs | Select-Object -Skip 1
+    $ApplicationArgs = @($ApplicationArgs | Select-Object -Skip 1)
 }
 $interactiveCli = $Mode -eq "cli" -and (-not $ApplicationArgs -or $ApplicationArgs.Count -eq 0)
 
-# GUI 不参与连接管理；CLI 在配置环境前解析目标，以决定使用轻量或完整运行时。
+# GUI 只接受运行参数；CLI 在安装环境前完成连接配置和独立管理动作。
 if ($Mode -eq "gui") {
     if ($Action -ne "run" -or $ConnectionMode) {
         Stop-Launcher "-Action 和 -ConnectionMode 仅适用于 CLI。"
@@ -100,7 +86,7 @@ else {
         Stop-Launcher "-ConnectionMode 仅与 -Action configure 一起使用。"
     }
 
-    # configure 只更新用户连接配置，不创建 Python 环境。
+    # configure 与 stop 不依赖 Python 环境，完成连接配置或进程回收后直接退出。
     if ($Action -eq "configure") {
         Write-Stage "配置连接" "正在配置 CLI 的 API 连接..."
         try {
@@ -116,15 +102,13 @@ else {
         }
         exit 0
     }
-
-    # stop 只回收启动器托管的连接进程，完成后立即退出。
     if ($Action -eq "stop") {
         Write-Stage "回收连接" "正在停止由启动器管理的连接进程..."
         Invoke-AegisConnection -Action stop -ProjectRoot $ProjectRoot
         exit 0
     }
 
-    # run 与 status 先读取配置，据此选择轻量客户端或完整本地运行时。
+    # run 与 status 共用已保存配置；status 不创建环境或连接进程。
     Write-Stage "读取配置" "正在读取 CLI 连接配置..."
     try {
         $ConnectionConfig = Invoke-AegisConnection -Action read
@@ -132,25 +116,18 @@ else {
     catch {
         Stop-Launcher $_.Exception.Message
     }
-
     if ($Action -eq "status") {
-        $statusReady = Invoke-AegisConnection `
-            -Action status `
-            -Config $ConnectionConfig `
-            -ProjectRoot $ProjectRoot
-        if ($statusReady) {
-            exit 0
-        }
+        $ready = Invoke-AegisConnection -Action status -Config $ConnectionConfig -ProjectRoot $ProjectRoot
+        if ($ready) { exit 0 }
         exit 1
     }
 
-    # 无参数入口在创建环境前选择连接模式，回车直接复用当前有效配置。
-    if ($Action -eq "run" -and $interactiveCli) {
+    # 无参数 CLI 提供模式选择；回车复用当前模式，模式变化时进入对应配置。
+    if ($interactiveCli) {
         Write-Stage "选择模式" "请选择本次 CLI 使用的连接模式..."
         Write-Host "      [1] direct  连接已有 API"
         Write-Host "      [2] local   启动本地 API"
         Write-Host "      [3] ssh     通过 SSH 隧道连接"
-
         do {
             $choice = (Read-Host "连接模式 [当前: $($ConnectionConfig.Mode)]").Trim().ToLowerInvariant()
             if (-not $choice) {
@@ -181,70 +158,41 @@ else {
             }
         }
     }
-
     Write-Host "      [-] 连接模式: $($ConnectionConfig.Mode)"
 }
 
-# GUI 和 local CLI 需要算法依赖；direct/ssh CLI 只安装客户端依赖。
+# GUI 与 local CLI 需要算法环境；direct/ssh CLI 只需要轻量客户端环境。
 $NeedsFullRuntime = $Mode -eq "gui" -or (
-    $Mode -eq "cli" -and $ConnectionConfig.NeedsFullRuntime
+    $Mode -eq "cli" -and $ConnectionConfig.Mode -eq "local"
 )
-
-# 在配置环境前验证本次启动所需的项目文件。
-if (-not (Test-Path -LiteralPath $EntryFile -PathType Leaf)) {
-    Stop-Launcher "无法定位项目入口: $EntryFile"
-}
 if ($Mode -eq "cli" -and -not (Test-Path -LiteralPath $CliCommandFile -PathType Leaf)) {
     Stop-Launcher "CLI 命令入口缺失: $CliCommandFile"
 }
-if (-not (Test-Path -LiteralPath $ProjectFile -PathType Leaf)) {
-    Stop-Launcher "环境配置缺失: $ProjectFile"
-}
-if (-not (Test-Path -LiteralPath $LockFile -PathType Leaf)) {
-    Stop-Launcher "依赖锁文件缺失: $LockFile"
-}
 
-# 固定工作目录和运行时环境变量，避免依赖调用者所在目录。
+# 固定项目目录和 uv 环境位置，并禁止 Python 在源码目录生成字节码缓存。
 Set-Location -LiteralPath $ProjectRoot
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $ProjectRoot ".venv"
 $env:UV_PYTHON_INSTALL_DIR = Join-Path $ProjectRoot ".cache\python"
-$env:UV_NO_CACHE = "1"
 $env:PYTHONDONTWRITEBYTECODE = "1"
 
-# Conda 可能留下只有占位文件的证书目录；仅在确认没有证书文件时忽略它。
+# Conda 偶尔留下无证书文件的占位目录；这种目录会干扰后续 HTTPS 请求。
 if ($env:SSL_CERT_DIR -and (Test-Path -LiteralPath $env:SSL_CERT_DIR -PathType Container)) {
     $certificate = Get-ChildItem -LiteralPath $env:SSL_CERT_DIR -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -in ".pem", ".crt", ".cer" } |
         Select-Object -First 1
-    if (-not $certificate) {
-        Remove-Item Env:SSL_CERT_DIR
-    }
+    if (-not $certificate) { Remove-Item Env:SSL_CERT_DIR }
 }
 
-# 检测 Conda、uv 和 GPU，并确定本次使用的运行配置。
+# Conda 可选：检测到时复用命名环境，否则由 uv 维护项目内 .venv。
 Write-Stage "检查工具" "正在检查启动工具与运行设备..."
-
-# Conda 是可选项：存在时复用命名环境，不存在时由 uv 管理项目内虚拟环境。
-$script:CondaPath = $null
-foreach ($name in @("conda.exe", "conda.bat", "conda")) {
-    $command = Get-Command $name -ErrorAction SilentlyContinue
-    if ($command) {
-        $script:CondaPath = $command.Source
-        break
-    }
-}
-if ($script:CondaPath) {
-    $condaVersion = & $script:CondaPath --version
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Launcher "检测到 Conda，但无法正常执行。"
-    }
-    Write-Host "      [-] $condaVersion"
-}
-else {
+$condaCommand = Get-Command conda.exe, conda.bat, conda -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+$script:CondaPath = if ($condaCommand) { $condaCommand.Source } else { $null }
+if (-not $script:CondaPath) {
     Write-Host "      [-] 未检测到 Conda，将使用 uv 创建 .venv" -ForegroundColor Yellow
 }
 
-# uv 优先使用 PATH，其次使用官方安装器的默认用户路径。
+# uv 优先使用 PATH 和默认用户目录；均不存在时调用官方安装器。
 $uvCommand = Get-Command uv.exe -ErrorAction SilentlyContinue
 $uvCandidate = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
 $script:UvPath = if ($uvCommand) {
@@ -256,7 +204,6 @@ elseif (Test-Path -LiteralPath $uvCandidate -PathType Leaf) {
 else {
     $null
 }
-# 只有系统和默认路径都找不到 uv 时才执行官方安装脚本。
 if (-not $script:UvPath) {
     Write-Host "      [-] 未检测到 uv，正在安装..."
     try {
@@ -267,21 +214,18 @@ if (-not $script:UvPath) {
         Stop-Launcher "uv 安装失败: $($_.Exception.Message)"
     }
     if (-not (Test-Path -LiteralPath $uvCandidate -PathType Leaf)) {
-        Stop-Launcher "uv 已执行安装，但当前用户目录中仍未找到 uv.exe。"
+        Stop-Launcher "uv 安装完成，但未找到 uv.exe。"
     }
     $script:UvPath = $uvCandidate
 }
-$uvVersion = & $script:UvPath --version
-Write-Host "      [-] $uvVersion"
 Write-Host "      [-] 项目目录: $ProjectRoot"
 
-# 完整运行时按显式参数或本机驱动能力选择对应的 PyTorch 构建。
+# 完整运行时按显式参数或 NVIDIA 驱动能力选择锁文件提供的 PyTorch 构建。
 $TorchProfile = $null
 if ($NeedsFullRuntime) {
     $TorchProfile = $Torch
     if ($TorchProfile -eq "auto") {
         $TorchProfile = "cpu"
-        # auto 模式通过 nvidia-smi 获取 GPU 架构与驱动支持的 CUDA 上限。
         $nvidiaSmi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
         $nvidiaSmiPath = if ($nvidiaSmi) {
             $nvidiaSmi.Source
@@ -292,10 +236,7 @@ if ($NeedsFullRuntime) {
 
         if (Test-Path -LiteralPath $nvidiaSmiPath -PathType Leaf) {
             try {
-                # 分别读取结构化 GPU 信息和包含 CUDA 上限的驱动摘要。
-                $gpuOutput = @(
-                    & $nvidiaSmiPath --query-gpu=name,compute_cap --format=csv,noheader 2>$null
-                )
+                $gpuOutput = @(& $nvidiaSmiPath --query-gpu=name,compute_cap --format=csv,noheader 2>$null)
                 $gpuExitCode = $LASTEXITCODE
                 $driverOutput = @(& $nvidiaSmiPath 2>$null)
                 if ($gpuExitCode -ne 0 -or $LASTEXITCODE -ne 0 -or $gpuOutput.Count -eq 0) {
@@ -314,43 +255,27 @@ if ($NeedsFullRuntime) {
                     ($driverOutput -join [Environment]::NewLine),
                     'CUDA(?: UMD)? Version:\s*(\d+\.\d+)'
                 )
-
                 if (-not $cudaMatch.Success) {
-                    Write-Host "      [警告] 无法读取驱动支持的 CUDA 版本，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
+                    Write-Host "      [警告] 无法读取驱动 CUDA 上限，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
                 }
                 elseif ($computeCapability -and $computeCapability -lt [Version]"6.0") {
                     Write-Host "      [警告] GPU 计算能力低于 6.0，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
                 }
                 else {
                     $cudaVersion = [Version]$cudaMatch.Groups[1].Value
-                    # 将驱动 CUDA 上限映射到锁文件提供的最高兼容构建。
-                    $TorchProfile = if ($cudaVersion -ge [Version]"13.0") {
-                        "cu130"
-                    }
-                    elseif ($cudaVersion -ge [Version]"12.8") {
-                        "cu128"
-                    }
-                    elseif ($cudaVersion -ge [Version]"12.6") {
-                        "cu126"
-                    }
-                    elseif ($cudaVersion -ge [Version]"12.4") {
-                        "cu124"
-                    }
-                    elseif ($cudaVersion -ge [Version]"12.1") {
-                        "cu121"
-                    }
-                    elseif ($cudaVersion -ge [Version]"11.8") {
-                        "cu118"
-                    }
-                    else {
-                        "cpu"
-                    }
-
-                    if ($TorchProfile -eq "cpu") {
-                        Write-Host "      [警告] CUDA 低于支持下限 11.8，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
-                    }
-                    else {
-                        # 旧架构使用较低 CUDA 构建，以匹配 bitsandbytes 预编译范围。
+                    $profiles = @(
+                        @{ Minimum = [Version]"13.0"; Name = "cu130" }
+                        @{ Minimum = [Version]"12.8"; Name = "cu128" }
+                        @{ Minimum = [Version]"12.6"; Name = "cu126" }
+                        @{ Minimum = [Version]"12.4"; Name = "cu124" }
+                        @{ Minimum = [Version]"12.1"; Name = "cu121" }
+                        @{ Minimum = [Version]"11.8"; Name = "cu118" }
+                    )
+                    $profile = $profiles |
+                        Where-Object { $cudaVersion -ge $_.Minimum } |
+                        Select-Object -First 1
+                    if ($profile) {
+                        $TorchProfile = $profile.Name
                         if ($computeCapability -and $computeCapability -lt [Version]"7.0" -and $TorchProfile -in @("cu128", "cu130")) {
                             $TorchProfile = "cu126"
                         }
@@ -359,6 +284,9 @@ if ($NeedsFullRuntime) {
                         }
                         Write-Host "      [-] NVIDIA GPU: $gpuName"
                         Write-Host "      [-] 驱动 CUDA 上限: $cudaVersion"
+                    }
+                    else {
+                        Write-Host "      [警告] CUDA 低于 11.8，使用 CPU 版 PyTorch。" -ForegroundColor Yellow
                     }
                 }
             }
@@ -373,8 +301,7 @@ if ($NeedsFullRuntime) {
 
     Write-Host "      [-] PyTorch 配置: $TorchProfile"
     if ($Mode -eq "gui" -and $TorchProfile -eq "cpu") {
-        Write-Host "      [提示] CPU 本地推理较慢；如已有远程 API 服务，建议使用 start-cli.bat。" -ForegroundColor Yellow
-        Write-Host "             进入 CLI 后可执行 aegis login <API地址>。" -ForegroundColor DarkGray
+        Write-Host "      [提示] CPU 本地推理较慢；已有远程 API 时可使用 start-cli.bat。" -ForegroundColor Yellow
     }
     elseif ($Mode -eq "cli") {
         Write-Host "      [-] CLI 本地 API 使用完整算法环境"
@@ -384,99 +311,57 @@ else {
     Write-Host "      [-] CLI 使用轻量客户端环境"
 }
 
-# 优先复用 Conda 环境；环境不存在时创建 aegis_env。
+# Conda 管理解释器时，uv 从锁文件导出依赖并安装到同一 Python。
 if ($script:CondaPath) {
     Write-Stage "配置环境" "正在配置 Conda 环境 $CondaEnvName..."
-    # 环境列表最多读取两次：首次定位，缺失时创建后再确认一次。
-    $environmentCreated = $false
-    do {
-        # 通过 Conda 的环境清单定位实际目录，兼容自定义 envs_dirs。
-        $environmentJson = & $script:CondaPath env list --json
-        if ($LASTEXITCODE -ne 0) {
-            Stop-Launcher "无法读取 Conda 环境列表，退出码: $LASTEXITCODE。" $LASTEXITCODE
-        }
-
-        # PowerShell 5.1 只解析 envs 数组，避开 Conda 输出中仅大小写不同的路径键。
-        $environmentMatch = [Regex]::Match(
-            ($environmentJson -join [Environment]::NewLine),
-            '(?s)"envs"\s*:\s*(\[[^\]]*\])'
-        )
-        if (-not $environmentMatch.Success) {
-            Stop-Launcher "Conda 环境列表中缺少 envs 数组。"
-        }
-        try {
-            $environmentPaths = $environmentMatch.Groups[1].Value | ConvertFrom-Json
-        }
-        catch {
-            Stop-Launcher "Conda 环境列表解析失败: $($_.Exception.Message)"
-        }
-
-        # 环境名匹配成功后退出循环，否则仅允许执行一次创建。
-        $condaEnvironmentPath = @($environmentPaths) |
-            Where-Object { (Split-Path -Leaf $_) -ieq $CondaEnvName } |
-            Select-Object -First 1
-        if ($condaEnvironmentPath) {
-            break
-        }
-        if ($environmentCreated) {
-            Stop-Launcher "Conda 环境创建完成，但无法定位环境: $CondaEnvName"
-        }
-
-        Write-Host "      [-] 环境不存在，正在创建 Python 3.10 环境..."
+    $pythonOutput = @(& $script:CondaPath run -n $CondaEnvName python -B -c "import sys; print(sys.executable)" 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "      [-] 环境不可用，正在创建 Python 3.10 环境..."
         & $script:CondaPath create --name $CondaEnvName "python=3.10" --yes
         if ($LASTEXITCODE -ne 0) {
             Stop-Launcher "Conda 环境创建失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
         }
-        $environmentCreated = $true
-    } while (-not $condaEnvironmentPath)
-
-    # 后续 uv 安装和程序启动统一使用已定位的 Python 3.10 解释器。
-    $script:PythonPath = Join-Path $condaEnvironmentPath "python.exe"
-    if (-not (Test-Path -LiteralPath $script:PythonPath -PathType Leaf)) {
-        Stop-Launcher "Conda 环境中未找到 Python: $script:PythonPath"
+        $pythonOutput = @(& $script:CondaPath run -n $CondaEnvName python -B -c "import sys; print(sys.executable)" 2>$null)
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Stop-Launcher "无法定位 Conda 环境 $CondaEnvName 的 Python。"
+    }
+    $script:PythonPath = $pythonOutput |
+        ForEach-Object { ([string]$_).Trim() } |
+        Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+        Select-Object -Last 1
+    if (-not $script:PythonPath) {
+        Stop-Launcher "Conda 环境中未找到 Python 解释器。"
     }
 
-    $pythonMinorOutput = & $script:PythonPath -B -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-    if ($LASTEXITCODE -ne 0 -or -not $pythonMinorOutput) {
-        Stop-Launcher "无法读取 Conda 环境 $CondaEnvName 的 Python 版本。"
+    # 项目固定使用 Python 3.10，防止复用同名但版本不兼容的环境。
+    $pythonMinor = @(& $script:PythonPath -B -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    $pythonVersion = $pythonMinor | Select-Object -First 1
+    if ($LASTEXITCODE -ne 0 -or -not $pythonVersion -or $pythonVersion.Trim() -ne "3.10") {
+        Stop-Launcher "Conda 环境 $CondaEnvName 必须使用 Python 3.10。"
     }
-    $pythonMinor = ($pythonMinorOutput | Select-Object -First 1).Trim()
-    if ($pythonMinor -ne "3.10") {
-        Stop-Launcher "Conda 环境 $CondaEnvName 必须使用 Python 3.10，当前版本: $pythonMinor"
-    }
-    Write-Host "      [-] Conda 环境: $CondaEnvName ($condaEnvironmentPath)"
+    Write-Host "      [-] Conda 环境: $CondaEnvName"
 
-    # Conda 管理解释器，uv 从同一锁文件导出并安装精确依赖。
-    $requirementsFile = Join-Path ([System.IO.Path]::GetTempPath()) "aegis_lora_requirements_$PID.txt"
+    # 临时 requirements 仅用于在 Conda Python 中复现 uv.lock，离开本块即删除。
+    $requirementsFile = Join-Path ([IO.Path]::GetTempPath()) "aegis_lora_requirements_$PID.txt"
     try {
-        # 完整模式额外导出算法依赖及选定的 PyTorch 构建。
         $exportArguments = @(
-            "export",
-            "--project", $LauncherRoot,
-            "--locked",
-            "--no-dev",
-            "--no-emit-project",
-            "--no-hashes",
-            "--quiet",
-            "--python", $script:PythonPath,
-            "--output-file", $requirementsFile
+            "export", "--project", $LauncherRoot, "--locked", "--no-dev",
+            "--no-emit-project", "--no-hashes", "--quiet",
+            "--python", $script:PythonPath, "--output-file", $requirementsFile
         )
         if ($NeedsFullRuntime) {
             $exportArguments += @("--extra", "full", "--extra", $TorchProfile)
         }
         Invoke-Uv $exportArguments
 
-        # 依赖直接安装到 Conda Python；临时清单在 finally 中回收。
         $installArguments = @(
-            "pip", "install",
-            "--python", $script:PythonPath,
+            "pip", "install", "--python", $script:PythonPath,
             "--requirements", $requirementsFile
         )
         if ($NeedsFullRuntime) {
-            $torchIndex = "https://download.pytorch.org/whl/$TorchProfile"
-            # 所有版本均由 uv.lock 固定；允许在 PyPI 与官方 PyTorch 索引间选择匹配版本。
             $installArguments += @(
-                "--index", $torchIndex,
+                "--index", "https://download.pytorch.org/whl/$TorchProfile",
                 "--index-strategy", "unsafe-best-match"
             )
         }
@@ -487,127 +372,57 @@ if ($script:CondaPath) {
     }
 }
 else {
-    # 没有 Conda 时由 uv 创建并维护项目内的 .venv。
+    # 没有 Conda 时由 uv 创建 .venv；轻量同步不移除已存在的完整算法依赖。
     Write-Stage "配置环境" "正在使用 uv 配置 Python 3.10 环境..."
-    $syncArguments = @(
-        "sync",
-        "--project", $LauncherRoot,
-        "--locked"
-    )
+    $syncArguments = @("sync", "--project", $LauncherRoot, "--locked")
     if ($NeedsFullRuntime) {
         $syncArguments += @("--extra", "full", "--extra", $TorchProfile)
     }
     else {
-        # CLI 只补齐客户端依赖，不移除已经由 WebUI 安装的完整算法环境。
         $syncArguments += "--inexact"
     }
     Invoke-Uv $syncArguments
     $script:PythonPath = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
 }
-
-# 后续检查和程序启动统一使用已确定的 Python 解释器。
 if (-not (Test-Path -LiteralPath $script:PythonPath -PathType Leaf)) {
-    Stop-Launcher "Python 环境配置完成，但未找到解释器: $script:PythonPath"
+    Stop-Launcher "环境配置完成，但未找到 Python: $script:PythonPath"
 }
 
-# 根据运行模式生成对应的依赖检查提示。
-$CheckMessage = if ($Mode -eq "gui") {
-    "正在验证 Python、PyTorch 与项目资源..."
-}
-elseif ($NeedsFullRuntime) {
-    "正在验证 Python、本地 API 与算法依赖..."
-}
-else {
-    "正在验证 Python 与 CLI 依赖..."
-}
-Write-Stage "检查运行" $CheckMessage
-
-# 通过最小导入检查确认当前模式所需依赖可用。
-if ($NeedsFullRuntime) {
-    if ($Mode -eq "gui") {
-        & $script:PythonPath -B -c "import sys, torch; print(f'      [-] Python: {sys.version.split()[0]}'); print(f'      [-] PyTorch: {torch.__version__}'); print(f'      [-] CUDA 可用: {torch.cuda.is_available()}')"
-    }
-    else {
-        & $script:PythonPath -B -c "import sys, torch, fastapi, uvicorn, httpx, typer, rich; print(f'      [-] Python: {sys.version.split()[0]}'); print(f'      [-] PyTorch: {torch.__version__}'); print('      [-] 本地 API 依赖: 就绪')"
-    }
+# 非 CPU 构建必须能访问 CUDA；其他依赖由随后真实入口加载并给出原始错误。
+if ($NeedsFullRuntime -and $TorchProfile -ne "cpu") {
+    Write-Stage "验证运行" "正在验证 CUDA 运行环境..."
+    & $script:PythonPath -B -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"
     if ($LASTEXITCODE -ne 0) {
-        Stop-Launcher "Python 或完整运行依赖检查失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
-    }
-
-    if ($TorchProfile -ne "cpu") {
-        & $script:PythonPath -B -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"
-        if ($LASTEXITCODE -ne 0) {
-            Stop-Launcher "已安装 CUDA 版 PyTorch，但 CUDA 当前不可用。可使用 -Torch cpu 强制切换 CPU 环境。"
-        }
-    }
-}
-else {
-    & $script:PythonPath -B -c "import sys, httpx, typer, rich; print(f'      [-] Python: {sys.version.split()[0]}'); print('      [-] CLI 依赖: 就绪')"
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Launcher "Python 或 CLI 依赖检查失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
+        Stop-Launcher "CUDA 版 PyTorch 已安装，但 CUDA 当前不可用；可使用 -Torch cpu。"
     }
 }
 
-# GUI 启动前检查本地资源完整性和默认端口占用情况。
-if ($Mode -eq "gui") {
-    $resources = @(
-        @{ Path = "models\Qwen2.5-3B-Instruct\config.json"; Name = "Qwen 基础模型" },
-        @{ Path = "models\Llama-3.2-3B-Instruct\config.json"; Name = "LLaMA 基础模型" },
-        @{ Path = "models\DeepSeek-R1-Distill-Qwen-1.5B\config.json"; Name = "DeepSeek 基础模型" },
-        @{ Path = "models\detectors\spectral_detector_llama.pkl"; Name = "静态检测器" },
-        @{ Path = "datasets\clean_data_recovery.json"; Name = "恢复数据" },
-        @{ Path = "datasets\clean_data_variants.json"; Name = "变体数据" },
-        @{ Path = "datasets\qwen_multidomain_signatures.pt"; Name = "Qwen 离线签名" },
-        @{ Path = "datasets\llama_multidomain_signatures.pt"; Name = "LLaMA 离线签名" },
-        @{ Path = "datasets\deepseek_multidomain_signatures.pt"; Name = "DeepSeek 离线签名" }
-    )
-    foreach ($resource in $resources) {
-        $resourcePath = Join-Path $ProjectRoot $resource.Path
-        if (-not (Test-Path -LiteralPath $resourcePath -PathType Leaf)) {
-            Write-Host "      [警告] $($resource.Name)缺失: $resourcePath" -ForegroundColor Yellow
-        }
-    }
-
-    $portBusy = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() |
-        Where-Object { $_.Port -eq 7860 } |
-        Select-Object -First 1
-    if ($portBusy) {
-        Stop-Launcher "WebUI 端口 7860 已被占用。"
-    }
-}
-
-# Python 环境就绪后建立 CLI 连接；GUI 不经过远程连接层。
-$Connection = $null
+# Python 环境就绪后建立连接；open 只返回本次会话新建的 SSH 进程。
+$TunnelProcess = $null
 if ($Mode -eq "cli") {
     try {
-        $Connection = Invoke-AegisConnection `
-            -Action open `
-            -Config $ConnectionConfig `
-            -PythonPath $script:PythonPath `
-            -ProjectRoot $ProjectRoot
+        $TunnelProcess = Invoke-AegisConnection -Action open -Config $ConnectionConfig -PythonPath $script:PythonPath -ProjectRoot $ProjectRoot
     }
     catch {
         Stop-Launcher $_.Exception.Message
     }
 }
 
-# 主程序退出码原样返回，finally 负责释放当前会话的临时连接。
+# 主程序退出码原样返回，finally 仅回收当前会话创建的 SSH 隧道。
 $exitCode = 0
 try {
     $ModeName = if ($Mode -eq "gui") { "WebUI" } else { "CLI" }
     Write-Stage "启动程序" "正在启动 $ModeName..."
-
-    # 无参数 CLI 进入持续命令会话，其余情况直接启动目标程序。
     if ($interactiveCli) {
         $env:AEGIS_PYTHON = $script:PythonPath
         $env:AEGIS_PROJECT_ROOT = $ProjectRoot
         $env:PATH = "$LauncherRoot;$env:PATH"
 
+        # 先显示一次帮助，再进入保留 Aegis 环境变量的持续命令会话。
         & $script:PythonPath -B -m $EntryModule --help
         if ($LASTEXITCODE -ne 0) {
             Stop-Launcher "CLI 帮助加载失败，退出码: $LASTEXITCODE。" $LASTEXITCODE
         }
-
         Write-Host ""
         Write-Host "      输入 aegis <命令> 开始操作，输入 exit 退出。" -ForegroundColor Green
         Write-Host "      示例: aegis health" -ForegroundColor DarkGray
@@ -619,18 +434,13 @@ try {
         & $script:PythonPath -B -m $EntryModule @ApplicationArgs
         $exitCode = $LASTEXITCODE
     }
-
     if ($exitCode -ne 0) {
         Write-Host "      [错误] $ModeName 已退出，退出码: $exitCode。" -ForegroundColor Red
     }
 }
 finally {
-    # 本地 API 保持运行；仅关闭本次 CLI 会话创建的 SSH 隧道。
-    if ($Mode -eq "cli" -and $null -ne $Connection) {
-        Invoke-AegisConnection `
-            -Action close `
-            -Connection $Connection `
-            -ProjectRoot $ProjectRoot
+    if ($Mode -eq "cli" -and $null -ne $TunnelProcess) {
+        Invoke-AegisConnection -Action close -Process $TunnelProcess -ProjectRoot $ProjectRoot
     }
 }
 exit $exitCode

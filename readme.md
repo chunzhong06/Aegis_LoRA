@@ -37,40 +37,37 @@ Aegis-LoRA 聚焦第三方 LoRA 的可信接入：在适配器正式挂载前执
 
 - Windows 一键启动：PowerShell 5.1 或更高版本
 - 手动安装：Python 3.10，Windows 或 Linux
-- 推荐使用 NVIDIA GPU
+- 推荐使用 NVIDIA GPU；无兼容 GPU 时可使用 CPU
 
 ### Windows 一键启动
 
-无需预先创建环境。启动器会优先检测 Conda：存在时复用或创建 Python 3.10 环境 `aegis_env`；不存在时自动获取 Python 3.10 并创建 `.venv`。两种方式均按 `launcher/uv.lock` 同步依赖。
+下载或克隆项目后，在项目根目录选择入口。首次运行会自动准备 Python 与依赖环境。
 
-| 入口            | 用途                              |
-| --------------- | --------------------------------- |
-| `start-gui.bat` | 配置完整算法环境并启动 WebUI      |
-| `start-cli.bat` | 按连接配置准备 API 并进入 CLI 会话 |
-
-CLI 首次使用先配置连接，可选择 `direct`、`local` 或 `ssh`：
+启动本地 WebUI：
 
 ```bat
-start-cli.bat -Action configure
+start-gui.bat
 ```
 
-也可直接指定模式，跳过模式选择：
+进入交互 CLI：
 
 ```bat
-start-cli.bat -Action configure -ConnectionMode local
-start-cli.bat -Action configure -ConnectionMode ssh
+start-cli.bat
 ```
 
-`direct` 连接已有 API；`local` 自动配置完整算法环境并启动本地 API；`ssh` 可执行配置的远端启动命令，再建立本地 SSH 隧道。SSH 模式要求密钥、ssh-agent 和 `known_hosts` 已可用于非交互认证。
+启动器优先复用或创建 Conda 环境 `aegis_env`；未检测到 Conda 时，由 uv 管理项目内的 `.venv`。两种方式均使用 Python 3.10，并按 `launcher/uv.lock` 同步依赖。
 
-连接状态和本地托管进程可通过以下命令管理：
+#### CLI 连接模式
 
-```bat
-start-cli.bat -Action status
-start-cli.bat -Action stop
-```
+运行 `start-cli.bat` 后选择模式；首次使用或切换模式时，启动器会继续询问所需配置：
 
-运行 `start-cli.bat` 进入 `AEGIS>`，可持续执行命令，输入 `exit` 退出：
+| 模式     | 用途                                                       |
+| -------- | ---------------------------------------------------------- |
+| `direct` | 使用轻量客户端连接已有 API                                 |
+| `local`  | 配置完整算法环境并启动本地 API；退出 CLI 后 API 继续运行   |
+| `ssh`    | 连接远端 API，可先执行远端启动命令；隧道随 CLI 退出而关闭  |
+
+进入 `AEGIS>` 后可持续执行命令，输入 `exit` 退出：
 
 ```bat
 aegis health
@@ -78,27 +75,15 @@ aegis models
 aegis scan D:\path\to\lora
 ```
 
-单次执行可直接传入命令，例如 `start-cli.bat health`。
-
-WebUI 会读取 NVIDIA 驱动支持的最高 CUDA 版本，在 CUDA 11.8–13.0 的官方构建中自动选择不高于驱动能力的 PyTorch；无兼容 GPU 时使用 CPU。也可手动指定：
+单次执行无需进入交互会话：
 
 ```bat
-start-gui.bat -Torch cu130
-start-gui.bat -Torch cpu
+start-cli.bat health
 ```
 
-| 驱动 CUDA 上限 | 自动档位 | 锁定的 Torch / torchvision |
-| -------------- | -------- | -------------------------- |
-| 11.8–12.0      | `cu118`  | 2.7.1 / 0.22.1             |
-| 12.1–12.3      | `cu121`  | 2.5.1 / 0.20.1             |
-| 12.4–12.5      | `cu124`  | 2.6.0 / 0.21.0             |
-| 12.6–12.7      | `cu126`  | 2.10.0 / 0.25.0            |
-| 12.8–12.9      | `cu128`  | 2.10.0 / 0.25.0            |
-| 13.0 及以上    | `cu130`  | 2.10.0 / 0.25.0            |
+启动器不会自动下载模型、检测器或算法数据；缺失资源会在相关功能实际使用时报告。
 
-启动器不会自动下载模型、检测器或算法数据；资源缺失时会在终端提示。
-
-### 手动安装
+## 手动安装
 
 ```bash
 git clone https://github.com/chunzhong06/Aegis_LoRA.git
@@ -111,7 +96,7 @@ python -m pip install --upgrade pip
 pip install -r launcher/requirements.txt
 ```
 
-`launcher/requirements.txt` 不固定 PyTorch，请根据本机驱动与 CUDA 环境单独安装兼容版本；例如 CUDA 13.0 环境可使用当前已验证组合：
+`launcher/requirements.txt` 不固定 PyTorch，请根据本机驱动与 CUDA 环境单独安装兼容版本。例如 CUDA 13.0：
 
 ```bash
 pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
@@ -126,6 +111,24 @@ python -m launcher.webui
 ```
 
 浏览器访问 `http://127.0.0.1:7860`，填写基座模型与 LoRA 路径后即可执行检测、清洗、对话验证和报告下载。
+
+#### PyTorch 配置
+
+Windows 启动器会读取 NVIDIA 驱动支持的 CUDA 上限，自动选择不高于驱动能力的官方 PyTorch 构建；无兼容 GPU 时使用 CPU。也可手动指定：
+
+```bat
+start-gui.bat -Torch cu130
+start-gui.bat -Torch cpu
+```
+
+| 驱动 CUDA 上限 | 自动档位 | 锁定的 Torch / torchvision |
+| -------------- | -------- | -------------------------- |
+| 11.8–12.0      | `cu118`  | 2.7.1 / 0.22.1             |
+| 12.1–12.3      | `cu121`  | 2.5.1 / 0.20.1             |
+| 12.4–12.5      | `cu124`  | 2.6.0 / 0.21.0             |
+| 12.6–12.7      | `cu126`  | 2.10.0 / 0.25.0            |
+| 12.8–12.9      | `cu128`  | 2.10.0 / 0.25.0            |
+| 13.0 及以上    | `cu130`  | 2.10.0 / 0.25.0            |
 
 ### 远程 API
 
@@ -146,6 +149,8 @@ python -m uvicorn utils.api_server:app --host 0.0.0.0 --port 8000
 服务启动后可访问公开健康检查：`GET /health`。上传、检测、审计、报告和清洗产物接口统一位于 `/v1`。
 
 ### CLI 客户端
+
+Windows 一键启动的交互会话使用 `aegis <命令>`；手动安装或普通终端使用等价的 `python -m launcher.cli <命令>`：
 
 ```bash
 # 登录并保存服务地址与 Token
@@ -176,6 +181,18 @@ python -m launcher.cli artifact JOB_ID
 | `qwen2.5-3b`       | Qwen 2.5 3B Instruct          |
 | `llama-3.2-3b`     | Llama 3.2 3B Instruct         |
 | `deepseek-r1-1.5b` | DeepSeek R1 Distill Qwen 1.5B |
+
+#### Windows 连接管理
+
+重新配置、检查当前 API，或停止启动器托管的本地 API 和 SSH 隧道：
+
+```bat
+start-cli.bat -Action configure
+start-cli.bat -Action status
+start-cli.bat -Action stop
+```
+
+如需跳过交互选择，可在 `configure` 后追加 `-ConnectionMode direct`，并将 `direct` 换为 `local` 或 `ssh`。SSH 首次连接会执行前台预检，可确认主机指纹；正式隧道要求密钥或 ssh-agent 能够完成非交互认证。
 
 ## 实验结果
 
