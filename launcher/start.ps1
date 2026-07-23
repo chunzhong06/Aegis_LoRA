@@ -10,9 +10,6 @@ param(
     [ValidateSet("auto", "cu118", "cu121", "cu124", "cu126", "cu128", "cu130", "cpu")]
     [string]$Torch = "auto",
 
-    [ValidateSet("run", "configure", "status", "stop")]
-    [string]$Action = "run",
-
     [ValidateSet("direct", "local", "ssh")]
     [string]$ConnectionMode,
 
@@ -62,6 +59,7 @@ $CondaEnvName = "aegis_env"
 $EntryModule = if ($Mode -eq "gui") { "launcher.webui" } else { "launcher.cli" }
 $CliCommandFile = Join-Path $LauncherRoot "aegis.cmd"
 $ConnectionScript = Join-Path $LauncherRoot "connect.ps1"
+$CliStateRoot = Join-Path $ProjectRoot ".cache\cli"
 $ConnectionConfig = $null
 
 # 批处理入口可能传入参数分隔符；移除后才能准确识别无参数交互 CLI。
@@ -70,10 +68,10 @@ if ($Mode -eq "cli" -and $ApplicationArgs -and $ApplicationArgs[0] -eq "--") {
 }
 $interactiveCli = $Mode -eq "cli" -and (-not $ApplicationArgs -or $ApplicationArgs.Count -eq 0)
 
-# GUI 只接受运行参数；CLI 在安装环境前完成连接配置和独立管理动作。
+# GUI 不处理连接参数；CLI 在安装 Python 环境前完成模式选择和本次连接配置。
 if ($Mode -eq "gui") {
-    if ($Action -ne "run" -or $ConnectionMode) {
-        Stop-Launcher "-Action 和 -ConnectionMode 仅适用于 CLI。"
+    if ($ConnectionMode) {
+        Stop-Launcher "-ConnectionMode 仅适用于 CLI。"
     }
 }
 else {
@@ -82,58 +80,18 @@ else {
     }
     . $ConnectionScript
 
-    if ($Action -ne "configure" -and $ConnectionMode) {
-        Stop-Launcher "-ConnectionMode 仅与 -Action configure 一起使用。"
+    # ConnectionMode 是命令行上的显式选择；没有传入时必须在本次启动中重新选择。
+    if ($ConnectionMode) {
+        $selectedMode = $ConnectionMode
     }
-
-    # configure 与 stop 不依赖 Python 环境，完成连接配置或进程回收后直接退出。
-    if ($Action -eq "configure") {
-        Write-Stage "配置连接" "正在配置 CLI 的 API 连接..."
-        try {
-            if ($ConnectionMode) {
-                $null = Invoke-AegisConnection -Action configure -Mode $ConnectionMode
-            }
-            else {
-                $null = Invoke-AegisConnection -Action configure
-            }
-        }
-        catch {
-            Stop-Launcher $_.Exception.Message
-        }
-        exit 0
-    }
-    if ($Action -eq "stop") {
-        Write-Stage "回收连接" "正在停止由启动器管理的连接进程..."
-        Invoke-AegisConnection -Action stop -ProjectRoot $ProjectRoot
-        exit 0
-    }
-
-    # run 与 status 共用已保存配置；status 不创建环境或连接进程。
-    Write-Stage "读取配置" "正在读取 CLI 连接配置..."
-    try {
-        $ConnectionConfig = Invoke-AegisConnection -Action read
-    }
-    catch {
-        Stop-Launcher $_.Exception.Message
-    }
-    if ($Action -eq "status") {
-        $ready = Invoke-AegisConnection -Action status -Config $ConnectionConfig -ProjectRoot $ProjectRoot
-        if ($ready) { exit 0 }
-        exit 1
-    }
-
-    # 无参数 CLI 提供模式选择；回车复用当前模式，模式变化时进入对应配置。
-    if ($interactiveCli) {
-        Write-Stage "选择模式" "请选择本次 CLI 使用的连接模式..."
+    else {
+        Write-Stage "选择模式" "请选择本次 CLI 使用的 API 方式..."
         Write-Host "      [1] direct  连接已有 API"
-        Write-Host "      [2] local   启动本地 API"
-        Write-Host "      [3] ssh     通过 SSH 隧道连接"
+        Write-Host "      [2] local   启动本次会话的本地 API"
+        Write-Host "      [3] ssh     创建本次会话的一次性 SSH 隧道"
         do {
-            $choice = (Read-Host "连接模式 [当前: $($ConnectionConfig.Mode)]").Trim().ToLowerInvariant()
-            if (-not $choice) {
-                $selectedMode = $ConnectionConfig.Mode
-            }
-            elseif ($choice -in @("1", "direct")) {
+            $choice = (Read-Host "连接模式").Trim().ToLowerInvariant()
+            if ($choice -in @("1", "direct")) {
                 $selectedMode = "direct"
             }
             elseif ($choice -in @("2", "local")) {
@@ -144,23 +102,23 @@ else {
             }
             else {
                 $selectedMode = $null
-                Write-Host "      [错误] 请输入 1、2、3 或对应的模式名称。" -ForegroundColor Red
+                Write-Host "      [错误] 必须输入 1、2、3 或对应的模式名称。" -ForegroundColor Red
             }
         } while (-not $selectedMode)
+    }
 
-        if (-not $ConnectionConfig.IsConfigured -or $selectedMode -ne $ConnectionConfig.Mode) {
-            Write-Stage "配置连接" "正在配置 $selectedMode 连接..."
-            try {
-                $ConnectionConfig = Invoke-AegisConnection -Action configure -Mode $selectedMode
-            }
-            catch {
-                Stop-Launcher $_.Exception.Message
-            }
-        }
+    # configure 在内存中生成本次连接对象；持久文件只更新允许保存的 API 默认值。
+    Write-Stage "配置连接" "正在配置本次 $selectedMode 连接..."
+    try {
+        $ConnectionConfig = New-AegisConnectionConfig -Mode $selectedMode `
+            -StateRoot $CliStateRoot
+    }
+    catch {
+        Stop-Launcher $_.Exception.Message
     }
     Write-Host "      [-] 连接模式: $($ConnectionConfig.Mode)"
+    Write-Host "      [-] 配置目录: $CliStateRoot"
 }
-
 # GUI 与 local CLI 需要算法环境；direct/ssh CLI 只需要轻量客户端环境。
 $NeedsFullRuntime = $Mode -eq "gui" -or (
     $Mode -eq "cli" -and $ConnectionConfig.Mode -eq "local"
@@ -397,17 +355,30 @@ if ($NeedsFullRuntime -and $TorchProfile -ne "cpu") {
     }
 }
 
-# Python 环境就绪后建立连接；open 只返回本次会话新建的托管进程。
-$ManagedProcess = $null
+# Python 环境就绪后建立本次连接；direct 返回 null，local/ssh 返回本次会话的托管对象。
+$ManagedConnection = $null
 if ($Mode -eq "cli") {
     try {
-        $ManagedProcess = Invoke-AegisConnection -Action open -Config $ConnectionConfig -PythonPath $script:PythonPath -ProjectRoot $ProjectRoot
+        $ManagedConnection = Open-AegisConnection -Config $ConnectionConfig `
+            -StateRoot $CliStateRoot -PythonPath $script:PythonPath -ProjectRoot $ProjectRoot
     }
     catch {
         Stop-Launcher $_.Exception.Message
     }
 }
 
+# 当前 API 地址和 Token 只注入本次 PowerShell 及其子进程；aegis 子命令不会读取旧 SSH 配置。
+$serverWasSet = Test-Path Env:AEGIS_API_SERVER
+$previousServer = $env:AEGIS_API_SERVER
+$tokenWasSet = Test-Path Env:AEGIS_API_TOKEN
+$previousToken = $env:AEGIS_API_TOKEN
+$configFileWasSet = Test-Path Env:AEGIS_CONFIG_FILE
+$previousConfigFile = $env:AEGIS_CONFIG_FILE
+if ($Mode -eq "cli") {
+    $env:AEGIS_API_SERVER = $ConnectionConfig.Server
+    $env:AEGIS_API_TOKEN = $ConnectionConfig.Token
+    $env:AEGIS_CONFIG_FILE = Join-Path $CliStateRoot "config.json"
+}
 # 主程序退出码原样返回，finally 仅回收当前会话创建的托管连接。
 $exitCode = 0
 try {
@@ -439,8 +410,19 @@ try {
     }
 }
 finally {
-    if ($Mode -eq "cli" -and $null -ne $ManagedProcess) {
-        Invoke-AegisConnection -Action close -Config $ConnectionConfig -Process $ManagedProcess -ProjectRoot $ProjectRoot
+    # local/ssh 只关闭本次启动返回的托管对象；direct 没有子进程，因此无需回收。
+    if ($Mode -eq "cli" -and $null -ne $ManagedConnection) {
+        Close-AegisConnection -StateRoot $CliStateRoot -ManagedConnection $ManagedConnection
+    }
+
+    # 恢复启动器进入前的环境，避免被其他调用方式点引入时污染父 PowerShell。
+    if ($Mode -eq "cli") {
+        if ($serverWasSet) { $env:AEGIS_API_SERVER = $previousServer }
+        else { Remove-Item Env:AEGIS_API_SERVER -ErrorAction SilentlyContinue }
+        if ($tokenWasSet) { $env:AEGIS_API_TOKEN = $previousToken }
+        else { Remove-Item Env:AEGIS_API_TOKEN -ErrorAction SilentlyContinue }
+        if ($configFileWasSet) { $env:AEGIS_CONFIG_FILE = $previousConfigFile }
+        else { Remove-Item Env:AEGIS_CONFIG_FILE -ErrorAction SilentlyContinue }
     }
 }
 exit $exitCode

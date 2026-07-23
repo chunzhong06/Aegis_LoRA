@@ -59,13 +59,15 @@ start-cli.bat
 
 #### CLI 连接模式
 
-运行 `start-cli.bat` 后选择模式；首次使用或切换模式时，启动器会继续询问所需配置：
+每次运行 `start-cli.bat` 都必须明确选择本次模式：
 
-| 模式     | 用途                                                       |
-| -------- | ---------------------------------------------------------- |
-| `direct` | 使用轻量客户端连接已有 API                                 |
-| `local`  | 配置完整算法环境并启动本地 API；本地 API 随 CLI 退出而关闭 |
-| `ssh`    | 粘贴 SSH 连接命令并输入服务器密码；隧道随 CLI 退出而关闭   |
+| 模式     | 用途                                                               |
+| -------- | ------------------------------------------------------------------ |
+| `direct` | 连接已有 API；复用已保存地址和 Token 前仍需明确确认                |
+| `local`  | 配置完整算法环境并新建本地 API；本地 API 随当前 CLI 退出而关闭     |
+| `ssh`    | 每次重新输入 SSH 目标并新建动态端口隧道；隧道随当前 CLI 退出而关闭 |
+
+CLI 的所有连接文件统一位于项目的 `.cache/cli`。其中 `config.json` 只保存允许复用的 API 地址、Token 和本地端口；local/ssh 每次使用独立的 `sessions/<会话>` 目录，正常退出时连同日志和 SSH 主机指纹一起删除，异常遗留目录也不会被后续连接复用。
 
 进入 `AEGIS>` 后可持续执行命令，输入 `exit` 退出：
 
@@ -75,7 +77,7 @@ aegis models
 aegis scan D:\path\to\lora
 ```
 
-单次执行无需进入交互会话：
+单次执行无需进入交互会话，但仍会先选择本次连接模式：
 
 ```bat
 start-cli.bat health
@@ -189,15 +191,15 @@ python -m launcher.cli artifact JOB_ID
 
 #### Windows 连接管理
 
-重新配置、检查当前 API，或停止启动器托管的本地 API 和 SSH 隧道：
+可在命令行中显式指定本次模式，从而跳过模式菜单；地址、Token 和 SSH 参数仍按该模式的规则询问：
 
 ```bat
-start-cli.bat -Action configure
-start-cli.bat -Action status
-start-cli.bat -Action stop
+start-cli.bat -ConnectionMode direct
+start-cli.bat -ConnectionMode local
+start-cli.bat -ConnectionMode ssh
 ```
 
-如需跳过交互选择，可在 `configure` 后追加 `-ConnectionMode direct`，并将 `direct` 换为 `local` 或 `ssh`。SSH 模式可直接粘贴云平台提供的命令，例如 `ssh -p 31544 root@host`；启动时按提示输入服务器密码，密码不会保存。远端 Aegis API 需要预先运行在 `127.0.0.1:8000`。SSH 密码只负责建立隧道；Aegis API Token 仍需按提示填写，并与远端服务配置保持一致。
+SSH 模式可粘贴云平台提供的命令，例如 `ssh -p 31544 root@host`，并继续输入远端 API 主机和端口。SSH 密码由 `ssh.exe` 在终端中直接读取且不会保存；API Token 与 SSH 密码相互独立。启动器通过 `-F NUL` 禁止读取用户 SSH 配置，并把主机指纹写入本次会话目录，因此不会读取或修改默认 `.ssh`，也不会在下次启动时复用。
 
 ## 实验结果
 
@@ -238,6 +240,7 @@ Aegis_LoRA/
 │   ├── webui.py                  # 本地图形界面
 │   ├── cli.py                    # 远程 API 客户端
 │   ├── start.ps1                 # 环境检查、配置与启动
+│   ├── connect.ps1               # CLI 会话连接与进程生命周期
 │   ├── pyproject.toml            # 依赖与环境定义
 │   └── uv.lock                   # 锁定依赖版本
 ├── utils/

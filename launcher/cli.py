@@ -1,5 +1,6 @@
 # Aegis-LoRA - 命令行客户端
 import json
+import os
 import time
 from pathlib import Path
 from typing import Literal
@@ -21,30 +22,52 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-# 登录信息固定保存在用户目录，不依赖工程位置和当前终端目录。
-CONFIG_FILE = Path.home() / ".aegis" / "config.json"
+# 工程资源统一从 ROOT 定位，运行时配置路径在实际使用位置解析。
+ROOT = Path(__file__).resolve().parents[1]
 
 
 # =====================================================================
 # 核心逻辑
 # =====================================================================
 def _client() -> httpx.Client:
-    """读取登录配置并创建适合长耗时任务的 HTTP 客户端。"""
+    """读取本次会话凭据，或回退到手动登录保存的直连默认值。"""
 
-    # -----------------------------------------------------------------
-    # 1. 读取当前登录信息
-    # -----------------------------------------------------------------
-    if not CONFIG_FILE.is_file():
-        typer.echo("尚未登录，请先执行 login。")
-        raise typer.Exit(1)
+    # 启动器为 direct/local/ssh 都注入这两个变量；只设置其中一个属于无效会话。
+    server = os.getenv("AEGIS_API_SERVER", "").strip().rstrip("/")
+    token = os.getenv("AEGIS_API_TOKEN", "")
+    if server or token:
+        if not server or not token:
+            typer.echo("当前 CLI 会话的 API 地址或 Token 不完整。")
+            raise typer.Exit(1)
+    else:
+        # 手动运行 python -m launcher.cli 时只回退到明确保存的 direct 默认值。
+        config_file = Path(
+            os.getenv("AEGIS_CONFIG_FILE") or ROOT / ".cache" / "cli" / "config.json"
+        ).expanduser()
+        if not config_file.is_file():
+            typer.echo("尚未配置直连 API，请使用 start-cli.bat 或先执行 login。")
+            raise typer.Exit(1)
+        try:
+            saved_config = json.loads(config_file.read_text(encoding="utf-8"))
+            defaults = saved_config.get("defaults")
+            if saved_config.get("version") != 2 or not isinstance(defaults, dict):
+                raise ValueError("配置结构不受支持")
+            direct = defaults.get("direct")
+            if not isinstance(direct, dict):
+                raise ValueError("direct 默认值无效")
+        except (AttributeError, OSError, TypeError, ValueError) as exc:
+            typer.echo(f"CLI 配置无效：{exc}")
+            raise typer.Exit(1)
 
-    # config 只保存服务地址和 Token，是所有受保护命令的共同连接上下文。
-    config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        server = str(direct.get("server", "")).strip().rstrip("/")
+        token = str(direct.get("token", ""))
+        if not server or not token:
+            typer.echo("尚未配置直连 API，请使用 start-cli.bat 或先执行 login。")
+            raise typer.Exit(1)
 
-    # 读取阶段不设总超时，避免深度清洗轮询被客户端提前中断。
     return httpx.Client(
-        base_url=config["server"],
-        headers={"Authorization": f"Bearer {config['token']}"},
+        base_url=server,
+        headers={"Authorization": f"Bearer {token}"},
         timeout=httpx.Timeout(None, connect=10.0),
     )
 
@@ -351,27 +374,35 @@ def login(
         _request(client, "GET", "/v1/me")
 
     # -----------------------------------------------------------------
-    # 2. 保存已经验证通过的登录信息
+    # 2. 只更新统一配置中的 direct 默认值
     # -----------------------------------------------------------------
-    # 同一地址重新登录时保留连接编排配置；切换地址则回到普通直连模式。
-    saved_config = {}
-    if CONFIG_FILE.is_file():
+    # config_file 由启动器显式覆盖，手动运行时回退到工程缓存目录。
+    config_file = Path(
+        os.getenv("AEGIS_CONFIG_FILE") or ROOT / ".cache" / "cli" / "config.json"
+    ).expanduser()
+    saved_config = {
+        "version": 2,
+        "defaults": {
+            "direct": {"server": "", "token": ""},
+            "local": {"api_port": 8000, "token": ""},
+            "ssh": {"token": ""},
+        },
+    }
+    if config_file.is_file():
         try:
-            current_config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            if isinstance(current_config, dict):
-                saved_config = current_config
-        except (OSError, TypeError, ValueError):
-            saved_config = {}
+            saved_config = json.loads(config_file.read_text(encoding="utf-8"))
+            defaults = saved_config.get("defaults")
+            if saved_config.get("version") != 2 or not isinstance(defaults, dict):
+                raise ValueError("配置结构不受支持")
+        except (AttributeError, OSError, TypeError, ValueError) as exc:
+            typer.echo(f"CLI 配置无效：{exc}")
+            raise typer.Exit(1)
 
-    current_server = str(saved_config.get("server", "")).rstrip("/")
-    launcher_config = saved_config.get("launcher")
-    if current_server != server or not isinstance(launcher_config, dict):
-        saved_config["launcher"] = {"version": 1, "mode": "direct"}
-    saved_config.update(server=server, token=token)
-
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(
-        json.dumps(saved_config, ensure_ascii=False, indent=2),
+    # login 只更新 direct 默认值，不影响 local/ssh 的启动器配置。
+    saved_config["defaults"]["direct"] = {"server": server, "token": token}
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        json.dumps(saved_config, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     typer.echo(f"登录成功：{server}")
@@ -379,10 +410,30 @@ def login(
 
 @app.command()
 def logout():
-    """删除本地登录配置。"""
-    # missing_ok 使重复退出保持幂等。
-    CONFIG_FILE.unlink(missing_ok=True)
-    typer.echo("已退出登录。")
+    """清除手动 CLI 使用的直连默认值。"""
+
+    # local/ssh 的默认值属于启动器设置，logout 只清空 direct 凭据。
+    config_file = Path(
+        os.getenv("AEGIS_CONFIG_FILE") or ROOT / ".cache" / "cli" / "config.json"
+    ).expanduser()
+    if not config_file.is_file():
+        typer.echo("已清除直连登录。")
+        return
+    try:
+        saved_config = json.loads(config_file.read_text(encoding="utf-8"))
+        defaults = saved_config.get("defaults")
+        if saved_config.get("version") != 2 or not isinstance(defaults, dict):
+            raise ValueError("配置结构不受支持")
+    except (AttributeError, OSError, TypeError, ValueError) as exc:
+        typer.echo(f"CLI 配置无效：{exc}")
+        raise typer.Exit(1)
+
+    saved_config["defaults"]["direct"] = {"server": "", "token": ""}
+    config_file.write_text(
+        json.dumps(saved_config, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    typer.echo("已清除直连登录。")
 
 
 # =====================================================================

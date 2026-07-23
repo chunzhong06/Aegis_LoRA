@@ -1,10 +1,10 @@
-# Aegis-LoRA CLI 连接管理：配置 direct/local/ssh 模式并维护托管进程。
-# 本文件由 start.ps1 点引入，不单独处理 Python 环境与应用启动。
+# Aegis-LoRA CLI 连接模块：只管理当前启动会话，不读取或接管历史连接。
+# start.ps1 负责环境与 CLI 入口；本文件负责参数、API 连接和子进程生命周期。
 
 # =====================================================================
-# 复用逻辑
+# 交互输入
 # =====================================================================
-# direct、local 与 SSH 配置共用带默认值的交互输入。
+# 普通字段允许提供默认值；Required 用于地址、SSH 目标等不能留空的字段。
 function Read-AegisValue([string]$Label, [string]$Default = "", [switch]$Required) {
     $prompt = if ($Default) { "$Label [$Default]" } else { $Label }
     $value = (Read-Host $prompt).Trim()
@@ -13,9 +13,54 @@ function Read-AegisValue([string]$Label, [string]$Default = "", [switch]$Require
     return $value
 }
 
-# 在限定时间内确认服务身份与 Token，并监控可选的托管进程。
+# 已保存值默认不复用，必须由用户明确输入 y/yes。
+function Read-AegisConfirmation([string]$Message) {
+    return (Read-Host "$Message [y/N]").Trim().ToLowerInvariant() -in @("y", "yes")
+}
+
+# Token 可以作为默认值长期保存；重新输入时使用 SecureString，避免显示在终端中。
+function Read-AegisToken([string]$Label, [string]$SavedToken = "") {
+    if ($SavedToken) {
+        $suffix = if ($SavedToken.Length -gt 4) {
+            $SavedToken.Substring($SavedToken.Length - 4)
+        }
+        else {
+            $SavedToken
+        }
+        if (Read-AegisConfirmation "使用已保存的 $Label（尾号 $suffix）") {
+            return $SavedToken
+        }
+    }
+
+    $secureToken = Read-Host $Label -AsSecureString
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+    try {
+        $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
+    if (-not $token) { throw "$Label 不能为空。" }
+    return $token
+}
+
+# SSH 本地转发不使用固定端口，由系统选择当前可用的回环端口。
+function Get-AegisFreeTcpPort {
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    try {
+        $listener.Start()
+        return ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+    }
+    finally {
+        $listener.Stop()
+    }
+}
+
+# =====================================================================
+# API 就绪检查
+# =====================================================================
+# 先访问公开 health，确认目标服务身份后才发送 Token；local/ssh 等待时同时监控子进程。
 function Wait-AegisApi {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$Server,
         [Parameter(Mandatory = $true)][string]$Token,
@@ -28,13 +73,16 @@ function Wait-AegisApi {
     do {
         if ($null -ne $Process) {
             $Process.Refresh()
-            if ($Process.HasExited) { throw "连接进程已退出，退出码: $($Process.ExitCode)。" }
+            if ($Process.HasExited) {
+                throw "连接进程已退出，退出码: $($Process.ExitCode)。"
+            }
         }
 
-        # 先确认公开端点属于 Aegis，避免向占用同一地址的其他服务发送 Token。
         try {
-            $health = Invoke-RestMethod -Uri "$Server/health" -Method Get -TimeoutSec 3 -ErrorAction Stop
-            if ($health.service -ne "Aegis-LoRA API") { throw "目标地址不是 Aegis-LoRA API。" }
+            $health = Invoke-RestMethod -Uri "$Server/health" -TimeoutSec 3 -ErrorAction Stop
+            if ($health.service -ne "Aegis-LoRA API") {
+                throw "目标地址不是 Aegis-LoRA API。"
+            }
         }
         catch {
             $lastError = $_.Exception.Message
@@ -42,396 +90,372 @@ function Wait-AegisApi {
             continue
         }
 
-        # 健康检查成功后验证受保护身份端点，认证类错误不再重复等待。
         try {
-            $identity = Invoke-RestMethod -Uri "$Server/v1/me" -Method Get -Headers @{
+            $null = Invoke-RestMethod -Uri "$Server/v1/me" -Headers @{
                 Authorization = "Bearer $Token"
             } -TimeoutSec 3 -ErrorAction Stop
+            return
         }
         catch {
             throw [UnauthorizedAccessException]::new("API 身份验证失败: $($_.Exception.Message)")
         }
-        if (-not $identity.authenticated -or $identity.service -ne "Aegis-LoRA API") {
-            throw [UnauthorizedAccessException]::new("API 身份验证响应无效。")
-        }
-        return $true
     } while ([DateTime]::UtcNow -lt $deadline)
 
     throw "API 连接失败: $lastError"
 }
 
-# 根据进程对象或持久化记录安全回收启动器托管的进程。
-function Stop-AegisProcess {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$ProjectRoot,
-        [Parameter(Mandatory = $true)][ValidateSet("local-api", "ssh-tunnel")][string]$Name,
-        [Diagnostics.Process]$Process
-    )
+# =====================================================================
+# 当前会话的进程边界
+# =====================================================================
+# local API 与 ssh.exe 会加入 KILL_ON_JOB_CLOSE Job。PowerShell 正常退出时由 finally
+# 主动关闭；窗口被直接关闭时，操作系统也会随 Job 句柄销毁子进程。
+if (-not ([System.Management.Automation.PSTypeName]"AegisLauncher.JobObject").Type) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 
-    $recordPath = Join-Path $ProjectRoot ".cache\connections\$Name.json"
-    if ($null -eq $Process) {
-        if (-not (Test-Path -LiteralPath $recordPath -PathType Leaf)) { return $false }
-        try {
-            $record = Get-Content -Raw -LiteralPath $recordPath -Encoding UTF8 | ConvertFrom-Json
-            $candidate = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-            if (
-                $null -ne $candidate -and
-                $candidate.ProcessName -eq [string]$record.process_name -and
-                $candidate.StartTime.ToUniversalTime().Ticks -eq [Int64]$record.start_time_ticks
-            ) {
-                $Process = $candidate
+namespace AegisLauncher {
+    public static class JobObject {
+        private const int ExtendedLimitInformationClass = 9;
+        private const uint KillOnJobClose = 0x00002000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BasicLimits {
+            public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass, SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IoCounters {
+            public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+            public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ExtendedLimits {
+            public BasicLimits BasicLimitInformation;
+            public IoCounters IoInfo;
+            public UIntPtr ProcessMemoryLimit, JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed, PeakJobMemoryUsed;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetInformationJobObject(IntPtr job, int kind, IntPtr info, uint size);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr handle);
+
+        public static IntPtr CreateKillOnClose() {
+            IntPtr job = CreateJobObject(IntPtr.Zero, null);
+            if (job == IntPtr.Zero) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+            ExtendedLimits limits = new ExtendedLimits();
+            limits.BasicLimitInformation.LimitFlags = KillOnJobClose;
+            int size = Marshal.SizeOf(typeof(ExtendedLimits));
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try {
+                Marshal.StructureToPtr(limits, buffer, false);
+                if (!SetInformationJobObject(job, ExtendedLimitInformationClass, buffer, (uint)size))
+                    { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                return job;
             }
+            catch {
+                CloseHandle(job);
+                throw;
+            }
+            finally { Marshal.FreeHGlobal(buffer); }
         }
-        catch {
-            Write-Host "      [警告] $Name 的进程记录无效。" -ForegroundColor Yellow
-        }
-        if ($null -eq $Process) {
-            Remove-Item -LiteralPath $recordPath -Force -ErrorAction SilentlyContinue
-            return $false
-        }
-    }
 
-    # 停止失败时保留记录，后续仍可依据 PID 与启动时间安全重试。
-    try {
-        $Process.Refresh()
-        if ($Process.HasExited) {
-            Remove-Item -LiteralPath $recordPath -Force -ErrorAction SilentlyContinue
-            return $false
-        }
-        Stop-Process -Id $Process.Id -Force -ErrorAction Stop
-        if (-not $Process.WaitForExit(5000)) { throw "等待进程退出超时。" }
-        Remove-Item -LiteralPath $recordPath -Force -ErrorAction SilentlyContinue
-        Write-Host "      [-] 已停止 $Name。"
-        return $true
+        public static void Assign(IntPtr job, IntPtr process)
+            { if (!AssignProcessToJobObject(job, process)) { throw new Win32Exception(Marshal.GetLastWin32Error()); } }
+        public static void Close(IntPtr job) { if (job != IntPtr.Zero) { CloseHandle(job); } }
     }
-    catch {
-        Write-Host "      [警告] 进程 $($Process.Id) 回收失败: $($_.Exception.Message)" -ForegroundColor Yellow
-        return $false
-    }
+}
+"@
 }
 
 # =====================================================================
-# 连接动作
+# 本次连接参数
 # =====================================================================
-# 统一处理配置、状态、启动与关闭动作，使 start.ps1 只负责流程编排。
-function Invoke-AegisConnection {
-    [CmdletBinding()]
+# 唯一持久文件是 StateRoot\config.json，只保存 API 默认值和本地端口。
+# 不读取旧版配置，不保存上次模式、SSH 目标、SSH 密码、PID 或历史会话状态。
+function New-AegisConnectionConfig {
     param(
-        [Parameter(Mandatory = $true)]
-        [ValidateSet("read", "configure", "status", "stop", "open", "close")]
-        [string]$Action,
-        [ValidateSet("direct", "local", "ssh")][string]$Mode,
-        [string]$ConfigPath,
-        $Config,
-        [string]$PythonPath,
-        [string]$ProjectRoot,
-        [Diagnostics.Process]$Process
+        [Parameter(Mandatory = $true)][ValidateSet("direct", "local", "ssh")][string]$Mode,
+        [Parameter(Mandatory = $true)][string]$StateRoot
     )
 
-    if ($Action -in @("read", "configure") -and -not $ConfigPath) {
-        $ConfigPath = Join-Path $env:USERPROFILE ".aegis\config.json"
+    $configPath = Join-Path $StateRoot "config.json"
+    $defaults = [ordered]@{
+        Direct = [ordered]@{ Server = ""; Token = "" }
+        Local = [ordered]@{ ApiPort = 8000; Token = "" }
+        Ssh = [ordered]@{ Token = "" }
     }
 
-    # -----------------------------------------------------------------
-    # 读取配置
-    # -----------------------------------------------------------------
-    if ($Action -eq "read") {
-        if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
-            return [pscustomobject]@{
-                IsConfigured = $false; Mode = "direct"; Server = ""; Token = ""; ApiPort = 0; Ssh = $null
+    if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+        try {
+            $saved = Get-Content -Raw -LiteralPath $configPath -Encoding UTF8 | ConvertFrom-Json
+            if ([int]$saved.version -ne 2) { throw "配置版本必须为 2。" }
+            $defaults.Direct.Server = ([string]$saved.defaults.direct.server).Trim().TrimEnd("/")
+            $defaults.Direct.Token = [string]$saved.defaults.direct.token
+            $defaults.Local.ApiPort = [int]$saved.defaults.local.api_port
+            $defaults.Local.Token = [string]$saved.defaults.local.token
+            $defaults.Ssh.Token = [string]$saved.defaults.ssh.token
+        }
+        catch {
+            throw "CLI 配置无效，请删除 $configPath 后重新启动：$($_.Exception.Message)"
+        }
+    }
+
+    if ($Mode -eq "direct") {
+        $useSaved = $defaults.Direct.Server -and $defaults.Direct.Token -and
+            (Read-AegisConfirmation "使用已保存的直连 API $($defaults.Direct.Server)")
+        if ($useSaved) {
+            $server = $defaults.Direct.Server
+            $token = $defaults.Direct.Token
+        }
+        else {
+            $server = (Read-AegisValue -Label "API 地址" -Required).TrimEnd("/")
+            if ($server -notmatch '^https?://') {
+                throw "API 地址必须以 http:// 或 https:// 开头。"
             }
+            $token = Read-AegisToken -Label "API Token"
+            $defaults.Direct.Server = $server
+            $defaults.Direct.Token = $token
         }
-
-        $saved = Get-Content -Raw -LiteralPath $ConfigPath -Encoding UTF8 | ConvertFrom-Json
-        $launcher = $saved.launcher
-        $savedMode = if ($launcher -and $launcher.mode) {
-            ([string]$launcher.mode).Trim().ToLowerInvariant()
-        } else { "direct" }
-        if ($savedMode -notin @("direct", "local", "ssh")) { throw "不支持的连接模式: $savedMode" }
-
-        $server = ([string]$saved.server).Trim().TrimEnd("/")
-        $token = [string]$saved.token
+        $connection = [pscustomobject]@{
+            Mode = "direct"; Server = $server; Token = $token; ApiPort = 0; Ssh = $null
+        }
+    }
+    elseif ($Mode -eq "local") {
+        $portText = Read-AegisValue -Label "本地 API 端口" -Default ([string]$defaults.Local.ApiPort)
         $apiPort = 0
-        $sshConfig = $null
-
-        if ($savedMode -eq "local") {
-            $apiPort = if ($launcher.api_port) { [int]$launcher.api_port } else { 8000 }
-            if ($apiPort -lt 1 -or $apiPort -gt 65535) { throw "本地 API 端口必须位于 1 到 65535 之间。" }
-            $server = "http://127.0.0.1:$apiPort"
+        if (-not [int]::TryParse($portText, [ref]$apiPort) -or $apiPort -lt 1 -or $apiPort -gt 65535) {
+            throw "本地 API 端口必须位于 1 到 65535 之间。"
         }
-        elseif ($savedMode -eq "ssh") {
-            # SSH 只保存云平台提供的目标和端口，转发两端使用固定的项目默认值。
-            $savedSsh = $launcher.ssh
-            $sshPort = if ($savedSsh.port) { [int]$savedSsh.port } else { 22 }
+        $token = Read-AegisToken -Label "本地 API Token" -SavedToken $defaults.Local.Token
+        $defaults.Local.ApiPort = $apiPort
+        $defaults.Local.Token = $token
+        $connection = [pscustomobject]@{
+            Mode = "local"; Server = "http://127.0.0.1:$apiPort"; Token = $token
+            ApiPort = $apiPort; Ssh = $null
+        }
+    }
+    else {
+        $sshCommand = Read-AegisValue -Label "SSH 连接命令（例如 ssh -p 31544 root@host）" -Required
+        $match = [Regex]::Match(
+            $sshCommand,
+            '^(?:ssh(?:\.exe)?\s+)?(?:-p\s+([0-9]+)\s+)?([^\s@]+@[^\s@]+)$',
+            [Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+        if (-not $match.Success) { throw "SSH 连接命令格式应为 ssh -p 端口 user@host。" }
+
+        $sshPort = 22
+        if ($match.Groups[1].Success) {
+            $sshPort = [int]$match.Groups[1].Value
             if ($sshPort -lt 1 -or $sshPort -gt 65535) {
                 throw "SSH 端口必须位于 1 到 65535 之间。"
             }
+        }
+        $remoteHost = Read-AegisValue -Label "远端 API 主机" -Default "127.0.0.1"
+        if ($remoteHost -match '\s') { throw "远端 API 主机不能包含空白字符。" }
+        $remotePortText = Read-AegisValue -Label "远端 API 端口" -Default "8000"
+        $remotePort = 0
+        if (-not [int]::TryParse($remotePortText, [ref]$remotePort) -or $remotePort -lt 1 -or $remotePort -gt 65535) {
+            throw "远端 API 端口必须位于 1 到 65535 之间。"
+        }
 
-            $target = ([string]$savedSsh.target).Trim()
-            if ($target -and ($target.StartsWith("-") -or $target -notmatch '^[^\s@]+@[^\s@]+$')) {
-                throw "SSH target 必须采用 user@host 格式。"
-            }
-
-            $server = "http://127.0.0.1:18000"
-            $sshConfig = [pscustomobject]@{
-                Target = $target
+        $token = Read-AegisToken -Label "远端 Aegis API Token（不是 SSH 密码）" `
+            -SavedToken $defaults.Ssh.Token
+        $defaults.Ssh.Token = $token
+        $localPort = Get-AegisFreeTcpPort
+        $connection = [pscustomobject]@{
+            Mode = "ssh"; Server = "http://127.0.0.1:$localPort"; Token = $token; ApiPort = 0
+            Ssh = [pscustomobject]@{
+                Target = $match.Groups[2].Value
                 Port = $sshPort
-                LocalPort = 18000
-                RemoteApiHost = "127.0.0.1"
-                RemoteApiPort = 8000
+                LocalPort = $localPort
+                RemoteApiHost = $remoteHost
+                RemoteApiPort = $remotePort
             }
-        }
-        elseif ($server -and $server -notmatch '^https?://') {
-            throw "API 地址必须以 http:// 或 https:// 开头。"
-        }
-
-        $configured = [bool]($server -and $token -and ($savedMode -ne "ssh" -or $sshConfig.Target))
-        return [pscustomobject]@{
-            IsConfigured = $configured; Mode = $savedMode; Server = $server
-            Token = $token; ApiPort = $apiPort; Ssh = $sshConfig
         }
     }
 
-    # -----------------------------------------------------------------
-    # 交互配置
-    # -----------------------------------------------------------------
-    if ($Action -eq "configure") {
-        try { $current = Invoke-AegisConnection -Action read -ConfigPath $ConfigPath }
-        catch {
-            Write-Host "      [警告] 现有配置不可用，将重新创建。" -ForegroundColor Yellow
-            $current = [pscustomobject]@{
-                Mode = "direct"; Token = ""; Server = ""; ApiPort = 8000; Ssh = $null
+    # 三种模式共用一次原子写入；中途中断不会留下半个 JSON。
+    $null = [IO.Directory]::CreateDirectory($StateRoot)
+    $tempPath = Join-Path $StateRoot ("config.{0}.{1}.tmp" -f $PID, [Guid]::NewGuid().ToString("N"))
+    $document = [ordered]@{
+        version = 2
+        defaults = [ordered]@{
+            direct = [ordered]@{
+                server = [string]$defaults.Direct.Server
+                token = [string]$defaults.Direct.Token
             }
-        }
-
-        if (-not $Mode) {
-            do {
-                $Mode = (Read-AegisValue -Label "连接模式 direct/local/ssh" -Default $current.Mode).ToLowerInvariant()
-                if ($Mode -notin @("direct", "local", "ssh")) {
-                    Write-Host "      [错误] 连接模式只能是 direct、local 或 ssh。" -ForegroundColor Red
-                }
-            } while ($Mode -notin @("direct", "local", "ssh"))
-        }
-
-        # Aegis API Token 与 SSH 登录密码相互独立，密码只由 ssh.exe 读取。
-        $tokenLabel = if ($Mode -eq "ssh") { "Aegis API Token（不是 SSH 密码）" } else { "API Token" }
-        $prompt = if ($current.Token) { "$tokenLabel（留空保留当前值）" } else { $tokenLabel }
-        $secureToken = Read-Host $prompt -AsSecureString
-        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
-        try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
-        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
-        if (-not $token) { $token = $current.Token }
-        if (-not $token) { throw "API Token 不能为空。" }
-
-        $launcherConfig = [ordered]@{ version = 1; mode = $Mode }
-        if ($Mode -eq "direct") {
-            $defaultServer = if ($current.Mode -eq "direct") { $current.Server } else { "" }
-            $server = (Read-AegisValue -Label "API 地址" -Default $defaultServer -Required).TrimEnd("/")
-            if ($server -notmatch '^https?://') { throw "API 地址必须以 http:// 或 https:// 开头。" }
-        }
-        elseif ($Mode -eq "local") {
-            $defaultPort = if ($current.Mode -eq "local") { $current.ApiPort } else { 8000 }
-            $portValue = Read-AegisValue -Label "本地 API 端口" -Default ([string]$defaultPort)
-            $apiPort = 0
-            if (
-                -not [int]::TryParse($portValue, [ref]$apiPort) -or
-                $apiPort -lt 1 -or $apiPort -gt 65535
-            ) {
-                throw "本地 API 端口必须位于 1 到 65535 之间。"
+            local = [ordered]@{
+                api_port = [int]$defaults.Local.ApiPort
+                token = [string]$defaults.Local.Token
             }
-            $launcherConfig.api_port = $apiPort
-            $server = "http://127.0.0.1:$apiPort"
+            ssh = [ordered]@{ token = [string]$defaults.Ssh.Token }
+        }
+    }
+    try {
+        $json = $document | ConvertTo-Json -Depth 5
+        [IO.File]::WriteAllText($tempPath, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tempPath -Destination $configPath -Force
+    }
+    finally {
+        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+    }
+    return $connection
+}
+
+# =====================================================================
+# 建立与关闭当前连接
+# =====================================================================
+# direct 只验证已有 API。local/ssh 每次创建新进程和独立会话目录，从不复用旧 SSH 配置。
+function Open-AegisConnection {
+    param(
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$StateRoot,
+        [Parameter(Mandatory = $true)][string]$PythonPath,
+        [Parameter(Mandatory = $true)][string]$ProjectRoot
+    )
+
+    if ($Config.Mode -eq "direct") {
+        Write-Host ""
+        Write-Host ">>> [验证服务] 正在验证直连 API..." -ForegroundColor Cyan
+        Wait-AegisApi -Server $Config.Server -Token $Config.Token
+        Write-Host "      [-] API 地址: $($Config.Server)"
+        return $null
+    }
+
+    $sessionId = "{0}-{1}" -f [DateTime]::Now.ToString("yyyyMMdd-HHmmss"), [Guid]::NewGuid().ToString("N").Substring(0, 8)
+    $sessionRoot = Join-Path (Join-Path $StateRoot "sessions") $sessionId
+    $null = [IO.Directory]::CreateDirectory($sessionRoot)
+    $process = $null
+    $jobHandle = [IntPtr]::Zero
+
+    try {
+        $jobHandle = [AegisLauncher.JobObject]::CreateKillOnClose()
+        if ($Config.Mode -eq "local") {
+            Write-Host ""
+            Write-Host ">>> [启动服务] 正在启动本次会话的本地 API..." -ForegroundColor Cyan
+            $tokenWasSet = Test-Path Env:AEGIS_API_TOKEN
+            $previousToken = $env:AEGIS_API_TOKEN
+            try {
+                $env:AEGIS_API_TOKEN = $Config.Token
+                $process = Start-Process -FilePath $PythonPath -ArgumentList @(
+                    "-B", "-m", "uvicorn", "utils.api_server:app",
+                    "--host", "127.0.0.1", "--port", [string]$Config.ApiPort
+                ) -WorkingDirectory $ProjectRoot `
+                    -RedirectStandardOutput (Join-Path $sessionRoot "stdout.log") `
+                    -RedirectStandardError (Join-Path $sessionRoot "stderr.log") `
+                    -WindowStyle Hidden -PassThru
+            }
+            finally {
+                if ($tokenWasSet) { $env:AEGIS_API_TOKEN = $previousToken }
+                else { Remove-Item Env:AEGIS_API_TOKEN -ErrorAction SilentlyContinue }
+            }
         }
         else {
-            # 解析云平台提供的完整 SSH 命令，也允许省略 ssh 或 -p 22。
-            $sshCommand = Read-AegisValue -Label "SSH 连接命令（例如 ssh -p 31544 root@host）" -Required
-            $match = [Regex]::Match(
-                $sshCommand,
-                '^(?:ssh(?:\.exe)?\s+)?(?:-p\s+([0-9]+)\s+)?([^\s@]+@[^\s@]+)$',
-                [Text.RegularExpressions.RegexOptions]::IgnoreCase
-            )
-            if (-not $match.Success) {
-                throw "SSH 连接命令格式应为 ssh -p 端口 user@host。"
-            }
-
-            $sshPort = 22
-            if (
-                $match.Groups[1].Success -and
-                (-not [int]::TryParse($match.Groups[1].Value, [ref]$sshPort) -or
-                    $sshPort -lt 1 -or $sshPort -gt 65535)
-            ) {
-                throw "SSH 端口必须位于 1 到 65535 之间。"
-            }
-
-            $launcherConfig.ssh = [ordered]@{
-                target = $match.Groups[2].Value
-                port = $sshPort
-            }
-            $server = "http://127.0.0.1:18000"
-        }
-
-        $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $ConfigPath))
-        $json = [ordered]@{ server = $server; token = $token; launcher = $launcherConfig } |
-            ConvertTo-Json -Depth 6
-        [IO.File]::WriteAllText($ConfigPath, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-        Write-Host "      [-] 连接模式: $Mode"
-        Write-Host "      [-] API 地址: $server"
-        Write-Host "      [-] 配置已保存: $ConfigPath" -ForegroundColor Green
-        return Invoke-AegisConnection -Action read -ConfigPath $ConfigPath
-    }
-
-    # -----------------------------------------------------------------
-    # 状态与回收
-    # -----------------------------------------------------------------
-    if ($Action -eq "status") {
-        Write-Host "      [-] 连接模式: $($Config.Mode)"
-        if (-not $Config.IsConfigured) {
-            Write-Host "      [警告] 尚未完成连接配置。" -ForegroundColor Yellow
-            return $false
-        }
-        Write-Host "      [-] API 地址: $($Config.Server)"
-        try {
-            $null = Wait-AegisApi -Server $Config.Server -Token $Config.Token -TimeoutSeconds 3
-            Write-Host "      [-] API 当前可用。" -ForegroundColor Green
-            return $true
-        }
-        catch {
-            Write-Host "      [错误] API 当前不可用: $($_.Exception.Message)" -ForegroundColor Red
-            return $false
-        }
-    }
-
-    if ($Action -eq "stop") {
-        $null = Stop-AegisProcess -ProjectRoot $ProjectRoot -Name "ssh-tunnel"
-        $null = Stop-AegisProcess -ProjectRoot $ProjectRoot -Name "local-api"
-        return
-    }
-
-    # -----------------------------------------------------------------
-    # 建立连接
-    # -----------------------------------------------------------------
-    if ($Action -eq "open") {
-        if (-not $Config.IsConfigured) {
-            Write-Host "      [警告] 尚未配置 API 连接；请先选择连接模式。" -ForegroundColor Yellow
-            return $null
-        }
-        if ($Config.Mode -eq "direct") {
+            $ssh = Get-Command ssh.exe -ErrorAction Stop
+            $knownHostsPath = Join-Path $sessionRoot "known_hosts"
+            $forward = "127.0.0.1:{0}:{1}:{2}" -f $Config.Ssh.LocalPort, $Config.Ssh.RemoteApiHost, $Config.Ssh.RemoteApiPort
             Write-Host ""
-            Write-Host ">>> [验证服务] 正在验证直连 API..." -ForegroundColor Cyan
-            $null = Wait-AegisApi -Server $Config.Server -Token $Config.Token -TimeoutSeconds 15
-            Write-Host "      [-] API 地址: $($Config.Server)"
-            return $null
+            Write-Host ">>> [建立连接] 正在创建本次会话的一次性 SSH 隧道..." -ForegroundColor Cyan
+            Write-Host "      请根据 SSH 提示输入服务器密码；密码不会保存。" -ForegroundColor Yellow
+            $process = Start-Process -FilePath $ssh.Source -ArgumentList @(
+                "-F", "NUL", "-N", "-T"
+                "-o", "ConnectTimeout=15"
+                "-o", "StrictHostKeyChecking=accept-new"
+                "-o", "UserKnownHostsFile=`"$knownHostsPath`""
+                "-o", "GlobalKnownHostsFile=NUL"
+                "-o", "ExitOnForwardFailure=yes"
+                "-o", "PreferredAuthentications=password,keyboard-interactive"
+                "-o", "PubkeyAuthentication=no"
+                "-L", $forward
+                "-p", [string]$Config.Ssh.Port
+                $Config.Ssh.Target
+            ) -WorkingDirectory $ProjectRoot -NoNewWindow -PassThru
         }
 
-        # 已经就绪的 local/ssh 地址直接复用，不创建新的托管进程。
-        try {
-            $null = Wait-AegisApi -Server $Config.Server -Token $Config.Token -TimeoutSeconds 5
-            Write-Host "      [-] 已复用现有 $($Config.Mode) 连接。"
-            return $null
-        }
-        catch {
-            if ($Config.Mode -eq "ssh" -and $_.Exception -is [UnauthorizedAccessException]) { throw }
-        }
-
-        $stateRoot = Join-Path $ProjectRoot ".cache\connections"
-        $null = [IO.Directory]::CreateDirectory($stateRoot)
-        $recordName = if ($Config.Mode -eq "local") { "local-api" } else { "ssh-tunnel" }
-        $recordPath = Join-Path $stateRoot "$recordName.json"
-        if (Test-Path -LiteralPath $recordPath -PathType Leaf) {
-            throw "$recordName 正在启动或配置已经变化；请稍后重试，或先使用 -Action stop。"
-        }
-
-        $managedProcess = $null
+        [AegisLauncher.JobObject]::Assign($jobHandle, $process.Handle)
         $timeout = if ($Config.Mode -eq "local") { 90 } else { 180 }
-        try {
-            if ($Config.Mode -eq "local") {
-                Write-Host ""
-                Write-Host ">>> [启动服务] 正在启动本地 API..." -ForegroundColor Cyan
-                $tokenWasSet = Test-Path Env:AEGIS_API_TOKEN
-                $previousToken = $env:AEGIS_API_TOKEN
-                try {
-                    $env:AEGIS_API_TOKEN = $Config.Token
-                    $start = @{
-                        FilePath = $PythonPath
-                        ArgumentList = @("-B", "-m", "uvicorn", "utils.api_server:app", "--host", "127.0.0.1", "--port", [string]$Config.ApiPort)
-                        WorkingDirectory = $ProjectRoot
-                        RedirectStandardOutput = Join-Path $stateRoot "local-api.stdout.log"
-                        RedirectStandardError = Join-Path $stateRoot "local-api.stderr.log"
-                        WindowStyle = "Hidden"
-                        PassThru = $true
-                    }
-                    $managedProcess = Start-Process @start
-                }
-                finally {
-                    if ($tokenWasSet) { $env:AEGIS_API_TOKEN = $previousToken }
-                    else { Remove-Item Env:AEGIS_API_TOKEN -ErrorAction SilentlyContinue }
-                }
-            }
-            else {
-                $ssh = Get-Command ssh.exe -ErrorAction Stop
-                Write-Host ""
-                Write-Host ">>> [建立连接] 正在连接 SSH 并创建端口转发..." -ForegroundColor Cyan
-                Write-Host "      请根据 SSH 提示输入服务器密码；输入内容不会显示。" -ForegroundColor Yellow
-
-                # OpenSSH 继承当前终端并直接读取密码，密码不会进入脚本、配置或日志。
-                $forward = "127.0.0.1:{0}:{1}:{2}" -f $Config.Ssh.LocalPort, $Config.Ssh.RemoteApiHost, $Config.Ssh.RemoteApiPort
-                $arguments = @(
-                    "-N", "-T"
-                    "-o", "ConnectTimeout=15"
-                    "-o", "StrictHostKeyChecking=accept-new"
-                    "-o", "ExitOnForwardFailure=yes"
-                    "-o", "PreferredAuthentications=password,keyboard-interactive"
-                    "-o", "PubkeyAuthentication=no"
-                    "-L", $forward
-                    "-p", [string]$Config.Ssh.Port
-                    $Config.Ssh.Target
-                )
-                $start = @{
-                    FilePath = $ssh.Source
-                    ArgumentList = $arguments
-                    WorkingDirectory = $ProjectRoot
-                    NoNewWindow = $true
-                    PassThru = $true
-                }
-                $managedProcess = Start-Process @start
-            }
-
-            # local 与 ssh 共用进程记录、就绪等待和失败回收流程。
-            $record = [ordered]@{
-                pid = $managedProcess.Id
-                process_name = $managedProcess.ProcessName
-                start_time_ticks = $managedProcess.StartTime.ToUniversalTime().Ticks
-            } | ConvertTo-Json
-            [IO.File]::WriteAllText($recordPath, $record + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-            Write-Host ""
-            Write-Host ">>> [验证服务] 正在等待 $recordName 就绪..." -ForegroundColor Cyan
-            $null = Wait-AegisApi -Server $Config.Server -Token $Config.Token -TimeoutSeconds $timeout -Process $managedProcess
-
-            if ($Config.Mode -eq "local") {
-                Write-Host "      [-] 本地 API 将在当前 CLI 退出时关闭。"
-            }
-            else {
-                Write-Host "      [-] SSH 目标: $($Config.Ssh.Target)"
-            }
-            Write-Host "      [-] API 地址: $($Config.Server)"
-            return $managedProcess
+        Write-Host ""
+        Write-Host ">>> [验证服务] 正在等待 $($Config.Mode) 连接就绪..." -ForegroundColor Cyan
+        Wait-AegisApi -Server $Config.Server -Token $Config.Token -TimeoutSeconds $timeout -Process $process
+        Write-Host "      [-] API 地址: $($Config.Server)"
+        if ($Config.Mode -eq "ssh") {
+            Write-Host "      [-] SSH 目标: $($Config.Ssh.Target)"
+            Write-Host "      [-] 本地转发端口: $($Config.Ssh.LocalPort)"
         }
-        catch {
-            $null = Stop-AegisProcess -ProjectRoot $ProjectRoot -Name $recordName -Process $managedProcess
-            throw
+        Write-Host "      [-] 当前 CLI 退出时将关闭本次连接。"
+        return [pscustomobject]@{
+            Mode = $Config.Mode
+            Process = $process
+            JobHandle = $jobHandle
+            SessionRoot = $sessionRoot
         }
     }
-
-    # CLI 退出时只关闭本次会话创建的本地 API 或 SSH 隧道。
-    if ($Action -eq "close") {
-        if ($null -ne $Process) {
-            $recordName = if ($Config.Mode -eq "local") { "local-api" } else { "ssh-tunnel" }
-            $connectionName = if ($Config.Mode -eq "local") { "本地 API" } else { "SSH 隧道" }
-            Write-Host ""
-            Write-Host ">>> [回收连接] 正在关闭 $connectionName..." -ForegroundColor Cyan
-            $null = Stop-AegisProcess -ProjectRoot $ProjectRoot -Name $recordName -Process $Process
+    catch {
+        if ($jobHandle -ne [IntPtr]::Zero) {
+            [AegisLauncher.JobObject]::Close($jobHandle)
         }
+        if ($null -ne $process) {
+            try {
+                $process.Refresh()
+                if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            }
+            catch { }
+        }
+        Remove-Item -LiteralPath $sessionRoot -Recurse -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
+# 关闭顺序固定为“进程、Job、会话目录”；独立 known_hosts 和日志随本次会话一起删除。
+function Close-AegisConnection {
+    param(
+        [Parameter(Mandatory = $true)]$ManagedConnection,
+        [Parameter(Mandatory = $true)][string]$StateRoot
+    )
+
+    Write-Host ""
+    $name = if ($ManagedConnection.Mode -eq "local") { "本地 API" } else { "SSH 隧道" }
+    Write-Host ">>> [回收连接] 正在关闭 $name..." -ForegroundColor Cyan
+    try {
+        $ManagedConnection.Process.Refresh()
+        if (-not $ManagedConnection.Process.HasExited) {
+            Stop-Process -Id $ManagedConnection.Process.Id -Force -ErrorAction Stop
+            $null = $ManagedConnection.Process.WaitForExit(5000)
+        }
+    }
+    catch {
+        Write-Host "      [警告] 进程回收失败，将由 Job Object 强制关闭。" -ForegroundColor Yellow
+    }
+    finally {
+        if ($ManagedConnection.JobHandle -ne [IntPtr]::Zero) {
+            [AegisLauncher.JobObject]::Close($ManagedConnection.JobHandle)
+        }
+        try { $null = $ManagedConnection.Process.WaitForExit(5000) } catch { }
+    }
+
+    # SessionRoot 只接受 StateRoot\sessions 下的路径，避免递归删除越出统一目录。
+    $separator = [IO.Path]::DirectorySeparatorChar
+    $sessionsRoot = [IO.Path]::GetFullPath((Join-Path $StateRoot "sessions")).TrimEnd($separator) + $separator
+    $sessionRoot = [IO.Path]::GetFullPath([string]$ManagedConnection.SessionRoot).TrimEnd($separator) + $separator
+    if (-not $sessionRoot.StartsWith($sessionsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "      [警告] 拒绝清理统一会话目录之外的路径。" -ForegroundColor Yellow
         return
     }
+    try {
+        Remove-Item -LiteralPath $ManagedConnection.SessionRoot -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+        Write-Host "      [警告] 会话目录未能删除: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    Write-Host "      [-] 当前连接已关闭。"
 }
