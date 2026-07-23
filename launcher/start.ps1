@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # Aegis-LoRA - Windows 共用启动器
 # 本脚本负责解析入口参数、准备 Python 环境、建立 CLI 连接，并在退出时回收本次会话资源。
 
@@ -23,11 +23,16 @@ param(
 # =====================================================================
 # 控制台与公共输出
 # =====================================================================
-# 将 PowerShell 错误转为可捕获异常，并统一 UTF-8 控制台编码。
+# 文件 BOM 保证 PowerShell 5.1 正确解析源码；以下设置统一当前进程与子进程输出。
 $ErrorActionPreference = "Stop"
-[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$Utf8Encoding = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $Utf8Encoding
+[Console]::OutputEncoding = $Utf8Encoding
 $OutputEncoding = [Console]::OutputEncoding
+
+# Python 输出不依赖系统活动代码页，CLI、uvicorn 和依赖工具统一使用 UTF-8。
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 
 # 输出统一的启动阶段标题。
 function Write-Stage([string]$Name, [string]$Message) {
