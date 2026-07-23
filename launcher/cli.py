@@ -1,4 +1,5 @@
 # Aegis-LoRA - 命令行客户端
+# 本模块只消费当前会话的 API 地址与 Token，负责请求、终端展示和文件下载，不持久化连接状态。
 import json
 import os
 import time
@@ -13,57 +14,30 @@ from rich.table import Table
 from rich.text import Text
 
 # =====================================================================
-# 客户端配置
+# 命令注册
 # =====================================================================
-# Typer 负责命令注册、参数解析和帮助信息；未传命令时直接展示帮助。
+# app 统一注册业务命令、参数解析和帮助信息；未传命令时直接展示帮助。
 app = typer.Typer(
     name="aegis",
     help="Aegis-LoRA 远程检测与清洗客户端",
     no_args_is_help=True,
 )
 
-# 工程资源统一从 ROOT 定位，运行时配置路径在实际使用位置解析。
-ROOT = Path(__file__).resolve().parents[1]
-
-
 # =====================================================================
-# 核心逻辑
+# API 客户端与请求
 # =====================================================================
 def _client() -> httpx.Client:
-    """读取本次会话凭据，或回退到手动登录保存的直连默认值。"""
+    """使用启动器为当前进程注入的 API 地址和 Token 创建客户端。"""
 
-    # 启动器为 direct/local/ssh 都注入这两个变量；只设置其中一个属于无效会话。
+    # server / token 由 start.ps1 注入；连接选择、持久化和隧道生命周期属于 connect.ps1。
     server = os.getenv("AEGIS_API_SERVER", "").strip().rstrip("/")
     token = os.getenv("AEGIS_API_TOKEN", "")
-    if server or token:
-        if not server or not token:
-            typer.echo("当前 CLI 会话的 API 地址或 Token 不完整。")
-            raise typer.Exit(1)
-    else:
-        # 手动运行 python -m launcher.cli 时只回退到明确保存的 direct 默认值。
-        config_file = Path(
-            os.getenv("AEGIS_CONFIG_FILE") or ROOT / ".cache" / "cli" / "config.json"
-        ).expanduser()
-        if not config_file.is_file():
-            typer.echo("尚未配置直连 API，请使用 start-cli.bat 或先执行 login。")
-            raise typer.Exit(1)
-        try:
-            saved_config = json.loads(config_file.read_text(encoding="utf-8"))
-            defaults = saved_config.get("defaults")
-            if saved_config.get("version") != 2 or not isinstance(defaults, dict):
-                raise ValueError("配置结构不受支持")
-            direct = defaults.get("direct")
-            if not isinstance(direct, dict):
-                raise ValueError("direct 默认值无效")
-        except (AttributeError, OSError, TypeError, ValueError) as exc:
-            typer.echo(f"CLI 配置无效：{exc}")
-            raise typer.Exit(1)
-
-        server = str(direct.get("server", "")).strip().rstrip("/")
-        token = str(direct.get("token", ""))
-        if not server or not token:
-            typer.echo("尚未配置直连 API，请使用 start-cli.bat 或先执行 login。")
-            raise typer.Exit(1)
+    if not server or not token:
+        typer.echo(
+            "当前 CLI 会话缺少 API 地址或 Token；请使用 start-cli.bat，"
+            "或设置 AEGIS_API_SERVER 和 AEGIS_API_TOKEN。"
+        )
+        raise typer.Exit(1)
 
     return httpx.Client(
         base_url=server,
@@ -78,19 +52,23 @@ def _request(
     url: str,
     *,
     output: Path | None = None,
+    fatal: bool = True,
     **kwargs,
 ):
     """统一处理 JSON 请求、API 错误和流式文件下载。"""
+
+    # fatal 控制错误是否立即结束命令；批量扫描使用非致命错误继续处理后续 LoRA。
+    # output 为空时返回 JSON，指定路径时改用流式下载并返回 None。
 
     # -----------------------------------------------------------------
     # 1. 发送普通请求或流式下载
     # -----------------------------------------------------------------
     try:
         if output is None:
-            # 普通接口响应较小，直接请求并在末尾解析 JSON。
+            # response 保存普通 API 的完整响应，成功后统一解析 JSON。
             response = client.request(method, url, **kwargs)
         else:
-            # 报告和模型产物使用流式下载，避免大文件一次性进入内存。
+            # 报告和模型产物可能较大，使用流式下载避免一次性进入内存。
             output = output.expanduser().resolve()
             output.parent.mkdir(parents=True, exist_ok=True)
             with client.stream(method, url, **kwargs) as response:
@@ -104,8 +82,11 @@ def _request(
                             file.write(chunk)
     except httpx.RequestError as exc:
         # DNS、连接拒绝和传输中断统一视为服务器连接问题。
-        typer.echo(f"无法连接服务器：{exc}")
-        raise typer.Exit(1)
+        message = f"无法连接服务器：{exc}"
+        if fatal:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise RuntimeError(message) from exc
 
     # -----------------------------------------------------------------
     # 2. 转换 API 错误信息
@@ -117,8 +98,11 @@ def _request(
             detail = data.get("detail", response.text)
         except (ValueError, AttributeError):
             detail = response.text
-        typer.echo(f"请求失败 [{response.status_code}]：{detail}")
-        raise typer.Exit(1)
+        message = f"请求失败 [{response.status_code}]：{detail}"
+        if fatal:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise RuntimeError(message)
 
     # -----------------------------------------------------------------
     # 3. 返回下载结果或 JSON 数据
@@ -129,8 +113,49 @@ def _request(
     return response.json()
 
 
+def _upload_lora(
+    client: httpx.Client,
+    lora_path: Path,
+    *,
+    fatal: bool = True,
+):
+    """上传一个标准 PEFT LoRA，并返回服务器生成的一次性资源编号。"""
+
+    # weights_path / config_path 是服务端上传协议要求的标准 PEFT 文件。
+    # scan 与 audit 共用此函数，避免两条流程分别维护 multipart 结构。
+    weights_path = lora_path / "adapter_model.safetensors"
+    config_path = lora_path / "adapter_config.json"
+    try:
+        with (
+            weights_path.open("rb") as weights_file,
+            config_path.open("rb") as config_file,
+        ):
+            return _request(
+                client,
+                "POST",
+                "/v1/loras",
+                fatal=fatal,
+                files={
+                    "weights": (
+                        weights_path.name,
+                        weights_file,
+                        "application/octet-stream",
+                    ),
+                    "config": (config_path.name, config_file, "application/json"),
+                },
+            )
+    except OSError as exc:
+        message = f"无法读取 LoRA 文件：{exc}"
+        if fatal:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise RuntimeError(message) from exc
+
+
 def _display(view: str, data, json_output: bool = False):
     """将接口数据转换为统一的终端摘要，并按需保留原始 JSON。"""
+
+    # view 选择展示布局，data 保留服务端响应；json_output 跳过所有 Rich 格式化。
 
     # -----------------------------------------------------------------
     # 1. 处理原始 JSON 模式
@@ -143,7 +168,7 @@ def _display(view: str, data, json_output: bool = False):
     # -----------------------------------------------------------------
     # 2. 准备统一终端样式
     # -----------------------------------------------------------------
-    # states 统一状态语义和颜色；modes 统一清洗模式的中文名称。
+    # states 统一服务、扫描和任务状态；modes 统一清洗模式的中文名称。
     console = Console(highlight=False)
     states = {
         "ready": Text("就绪", style="bold green"),
@@ -157,7 +182,7 @@ def _display(view: str, data, json_output: bool = False):
     }
     modes = {"fast": "快速", "deep": "深度"}
 
-    # table_style 被本次页面中的所有表格复用，保持间距和边框一致。
+    # table_style 被所有视图复用，保持表头、边框和列间距一致。
     table_style = dict(box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1))
     console.print()
 
@@ -167,25 +192,25 @@ def _display(view: str, data, json_output: bool = False):
     # 健康检查突出总体结论，并按类别列出所有运行能力。
     if view == "health":
         # status 是服务器总体结论，ready 之外均表示存在不可用能力。
-        status = data.get("status", "unknown")
+        status = data["status"]
         console.print(
-            f"[bold]{data.get('service', '-')} v{data.get('version', '-')}[/bold]  ",
+            f"[bold]{data['service']} v{data['version']}[/bold]  ",
             states.get(status, str(status)),
         )
         # rows 将基础能力、模型、签名和运行目录统一为三列表格数据。
         rows = [
-            ("基础能力", "认证", data.get("auth_ready")),
-            ("基础能力", "静态检测器", data.get("detector_ready")),
+            ("基础能力", "认证", data["auth_ready"]),
+            ("基础能力", "静态检测器", data["detector_ready"]),
             *(
                 ("基础模型", name, ready)
-                for name, ready in data.get("models_ready", {}).items()
+                for name, ready in data["models_ready"].items()
             ),
             *(
                 ("快速清洗", name, ready)
-                for name, ready in data.get("fast_cleanse_ready", {}).items()
+                for name, ready in data["fast_cleanse_ready"].items()
             ),
-            ("深度清洗", "训练与恢复数据", data.get("deep_cleanse_ready")),
-            ("运行环境", "存储目录", data.get("storage_ready")),
+            ("深度清洗", "训练与恢复数据", data["deep_cleanse_ready"]),
+            ("运行环境", "存储目录", data["storage_ready"]),
         ]
         # 状态列统一使用“就绪/缺失”，类别切换时插入空行提高可读性。
         table = Table(**table_style)
@@ -225,9 +250,9 @@ def _display(view: str, data, json_output: bool = False):
     # 单独扫描先给出判定，再展示影响判定的核心指标。
     elif view == "scan":
         # risk 与 threshold 共同决定 verdict，差值用于直观看出越界程度。
-        risk = float(data.get("risk_score", 0.0))
-        threshold = float(data.get("threshold", 0.0))
-        verdict = data.get("verdict", "unknown")
+        risk = float(data["risk_score"])
+        threshold = float(data["threshold"])
+        verdict = data["verdict"]
         console.print("[bold]检测结论[/bold]  ", states.get(verdict, str(verdict)))
 
         # 检测器和耗时作为审计信息保留，但不干扰首行判定结论。
@@ -237,12 +262,12 @@ def _display(view: str, data, json_output: bool = False):
         table.add_row("风险分数", f"{risk:.4f}")
         table.add_row("判定阈值", f"{threshold:.4f}")
         table.add_row("阈值差值", f"{risk - threshold:+.4f}")
-        table.add_row("检测器", str(data.get("detector", "-")))
-        table.add_row("耗时", f"{float(data.get('elapsed_seconds', 0.0)):.2f} 秒")
+        table.add_row("检测器", str(data["detector"]))
+        table.add_row("耗时", f"{float(data['elapsed_seconds']):.2f} 秒")
         console.print(table)
         console.print(
             "[yellow]建议：使用 audit 命令创建清洗任务。[/yellow]"
-            if data.get("is_poisoned")
+            if data["is_poisoned"]
             else "[green]未发现超过判定阈值的风险特征。[/green]"
         )
 
@@ -350,98 +375,12 @@ def _display(view: str, data, json_output: bool = False):
         else:
             console.print("[yellow]任务尚未结束，可稍后再次执行 show。[/yellow]")
 
-
-# =====================================================================
-# 登录
-# =====================================================================
-@app.command()
-def login(
-    server: str = typer.Argument(..., help="API 地址"),
-    token: str = typer.Option(..., "--token", prompt=True, hide_input=True),
-):
-    """验证并保存服务器地址和 Token。"""
-
-    # -----------------------------------------------------------------
-    # 1. 使用受保护接口验证连接信息
-    # -----------------------------------------------------------------
-    # 去掉末尾斜杠，避免后续接口路径出现重复分隔符。
-    server = server.rstrip("/")
-    with httpx.Client(
-        base_url=server,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10.0,
-    ) as client:
-        _request(client, "GET", "/v1/me")
-
-    # -----------------------------------------------------------------
-    # 2. 只更新统一配置中的 direct 默认值
-    # -----------------------------------------------------------------
-    # config_file 由启动器显式覆盖，手动运行时回退到工程缓存目录。
-    config_file = Path(
-        os.getenv("AEGIS_CONFIG_FILE") or ROOT / ".cache" / "cli" / "config.json"
-    ).expanduser()
-    saved_config = {
-        "version": 2,
-        "defaults": {
-            "direct": {"server": "", "token": ""},
-            "local": {"api_port": 8000, "token": ""},
-            "ssh": {"token": ""},
-        },
-    }
-    if config_file.is_file():
-        try:
-            saved_config = json.loads(config_file.read_text(encoding="utf-8"))
-            defaults = saved_config.get("defaults")
-            if saved_config.get("version") != 2 or not isinstance(defaults, dict):
-                raise ValueError("配置结构不受支持")
-        except (AttributeError, OSError, TypeError, ValueError) as exc:
-            typer.echo(f"CLI 配置无效：{exc}")
-            raise typer.Exit(1)
-
-    # login 只更新 direct 默认值，不影响 local/ssh 的启动器配置。
-    saved_config["defaults"]["direct"] = {"server": server, "token": token}
-    config_file.parent.mkdir(parents=True, exist_ok=True)
-    config_file.write_text(
-        json.dumps(saved_config, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    typer.echo(f"登录成功：{server}")
-
-
-@app.command()
-def logout():
-    """清除手动 CLI 使用的直连默认值。"""
-
-    # local/ssh 的默认值属于启动器设置，logout 只清空 direct 凭据。
-    config_file = Path(
-        os.getenv("AEGIS_CONFIG_FILE") or ROOT / ".cache" / "cli" / "config.json"
-    ).expanduser()
-    if not config_file.is_file():
-        typer.echo("已清除直连登录。")
-        return
-    try:
-        saved_config = json.loads(config_file.read_text(encoding="utf-8"))
-        defaults = saved_config.get("defaults")
-        if saved_config.get("version") != 2 or not isinstance(defaults, dict):
-            raise ValueError("配置结构不受支持")
-    except (AttributeError, OSError, TypeError, ValueError) as exc:
-        typer.echo(f"CLI 配置无效：{exc}")
-        raise typer.Exit(1)
-
-    saved_config["defaults"]["direct"] = {"server": "", "token": ""}
-    config_file.write_text(
-        json.dumps(saved_config, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    typer.echo("已清除直连登录。")
-
-
 # =====================================================================
 # 服务器状态
 # =====================================================================
 @app.command()
 def health(
-    server: str | None = typer.Argument(None, help="API 地址；省略时使用登录配置"),
+    server: str | None = typer.Argument(None, help="公开健康检查地址；省略时使用当前会话"),
     json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
 ):
     """检查服务器检测与清洗能力是否就绪。"""
@@ -449,7 +388,7 @@ def health(
     # -----------------------------------------------------------------
     # 1. 请求公开健康接口
     # -----------------------------------------------------------------
-    # 显式地址用于未登录诊断；省略时复用当前登录服务器。
+    # 显式地址只用于无 Token 的公开探活；省略时复用当前启动器会话。
     if server:
         with httpx.Client(base_url=server.rstrip("/"), timeout=10.0) as client:
             result = _request(client, "GET", "/health")
@@ -521,49 +460,27 @@ def scan(
                 )
 
             try:
-                # 每个 LoRA 由标准权重和 PEFT 配置共同组成。
-                weights_path = current_path / "adapter_model.safetensors"
-                config_path = current_path / "adapter_config.json"
-                with (
-                    weights_path.open("rb") as weights_file,
-                    config_path.open("rb") as config_file,
-                ):
-                    # 上传接口返回一次性 lora_id，扫描接口使用后由服务端回收资源。
-                    uploaded = _request(
-                        client,
-                        "POST",
-                        "/v1/loras",
-                        files={
-                            "weights": (
-                                weights_path.name,
-                                weights_file,
-                                "application/octet-stream",
-                            ),
-                            "config": (
-                                config_path.name,
-                                config_file,
-                                "application/json",
-                            ),
-                        },
-                    )
-                    scan_result = _request(
-                        client,
-                        "POST",
-                        "/v1/scan",
-                        json={"lora_id": uploaded["lora_id"]},
-                    )
+                # 批量失败必须转换为普通异常，避免错误文字污染 --json 标准输出。
+                uploaded = _upload_lora(client, current_path, fatal=not batch)
+                scan_result = _request(
+                    client,
+                    "POST",
+                    "/v1/scan",
+                    fatal=not batch,
+                    json={"lora_id": uploaded["lora_id"]},
+                )
 
                 # 单扫描保持原始响应；批量归档在响应前增加 LoRA 名称。
                 results.append(
                     {"name": current_path.name, **scan_result} if batch else scan_result
                 )
-            except (OSError, typer.Exit) as exc:
-                # 单扫描沿用原有异常；批量扫描记录失败项后继续处理其余 LoRA。
-                if not batch:
-                    raise
+            except RuntimeError as exc:
+                # 批量模式记录失败项后继续；单项模式的错误已由 fatal 分支直接退出。
                 results.append(
                     {"name": current_path.name, "error": str(exc) or "扫描失败"}
                 )
+                if not json_output:
+                    typer.echo(f"扫描失败：{exc}")
 
     # -----------------------------------------------------------------
     # 3. 汇总并归档扫描结果
@@ -617,35 +534,17 @@ def audit(
     """上传 LoRA，创建审计任务并按需等待完成。"""
 
     # -----------------------------------------------------------------
-    # 1. 定位待审计 LoRA
+    # 1. 定位并上传待审计 LoRA
     # -----------------------------------------------------------------
     lora_path = lora_path.expanduser().resolve()
-    weights_path = lora_path / "adapter_model.safetensors"
-    config_path = lora_path / "adapter_config.json"
 
     # -----------------------------------------------------------------
     # 2. 上传 LoRA 并创建后台任务
     # -----------------------------------------------------------------
     typer.echo("正在上传 LoRA...")
-    with (
-        _client() as client,
-        weights_path.open("rb") as weights_file,
-        config_path.open("rb") as config_file,
-    ):
+    with _client() as client:
         # 上传结果中的 lora_id 是创建审计任务时使用的临时资源编号。
-        uploaded = _request(
-            client,
-            "POST",
-            "/v1/loras",
-            files={
-                "weights": (
-                    weights_path.name,
-                    weights_file,
-                    "application/octet-stream",
-                ),
-                "config": (config_path.name, config_file, "application/json"),
-            },
-        )
+        uploaded = _upload_lora(client, lora_path)
         # job 保存最新任务快照，轮询期间会被服务器响应持续替换。
         job = _request(
             client,

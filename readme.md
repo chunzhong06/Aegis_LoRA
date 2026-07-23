@@ -31,61 +31,111 @@ Aegis-LoRA 聚焦第三方 LoRA 的可信接入：在适配器正式挂载前执
 | 多入口使用   | 支持本地 WebUI、远程 API、CLI 客户端和独立演示脚本               |
 | 审计留痕     | 生成 HTML/JSON 报告及标准 LoRA 清洗产物                          |
 
-## 快速开始
+## 快速开始与使用
 
-### 环境要求
+Windows 一键启动需要 PowerShell 5.1 或更高版本；自己配置环境需要 Python 3.10，支持 Windows 和 Linux。推荐使用 NVIDIA GPU，无兼容 GPU 时也可使用 CPU。
 
-- Windows 一键启动：PowerShell 5.1 或更高版本
-- 手动安装：Python 3.10，Windows 或 Linux
-- 推荐使用 NVIDIA GPU；无兼容 GPU 时可使用 CPU
+### 使用一键启动
 
-### Windows 一键启动
+下载或克隆项目后进入项目根目录。启动器会优先复用或创建 Conda 环境 `aegis_env`；未检测到 Conda 时改用项目内 `.venv`。两种方式都通过 `launcher/uv.lock` 同步 Python 3.10 依赖。
 
-下载或克隆项目后，在项目根目录选择入口。首次运行会自动准备 Python 与依赖环境。
+#### GUI
 
-启动本地 WebUI：
+运行本地图形界面：
 
 ```bat
 start-gui.bat
 ```
 
-进入交互 CLI：
+启动完成后访问 `http://127.0.0.1:7860`，填写基座模型与 LoRA 路径后即可执行检测、清洗、对话验证和报告下载。
+
+启动器会读取 NVIDIA 驱动支持的 CUDA 上限，自动选择不高于驱动能力的 PyTorch 构建；无兼容 GPU 时使用 CPU。也可手动指定：
 
 ```bat
-start-cli.bat
+start-gui.bat -Torch cu130
+start-gui.bat -Torch cpu
 ```
 
-启动器优先复用或创建 Conda 环境 `aegis_env`；未检测到 Conda 时，由 uv 管理项目内的 `.venv`。两种方式均使用 Python 3.10，并按 `launcher/uv.lock` 同步依赖。
+| 驱动 CUDA 上限 | 自动档位 | 锁定的 Torch / torchvision |
+| -------------- | -------- | -------------------------- |
+| 11.8–12.0      | `cu118`  | 2.7.1 / 0.22.1             |
+| 12.1–12.3      | `cu121`  | 2.5.1 / 0.20.1             |
+| 12.4–12.5      | `cu124`  | 2.6.0 / 0.21.0             |
+| 12.6–12.7      | `cu126`  | 2.10.0 / 0.25.0            |
+| 12.8–12.9      | `cu128`  | 2.10.0 / 0.25.0            |
+| 13.0 及以上    | `cu130`  | 2.10.0 / 0.25.0            |
 
-#### CLI 连接模式
+#### CLI
 
-每次运行 `start-cli.bat` 都必须明确选择本次模式：
-
-| 模式     | 用途                                                               |
-| -------- | ------------------------------------------------------------------ |
-| `direct` | 连接已有 API；复用已保存地址和 Token 前仍需明确确认                |
-| `local`  | 配置完整算法环境并新建本地 API；本地 API 随当前 CLI 退出而关闭     |
-| `ssh`    | 每次重新输入 SSH 目标并新建动态端口隧道；隧道随当前 CLI 退出而关闭 |
-
-CLI 的所有连接文件统一位于项目的 `.cache/cli`。其中 `config.json` 只保存允许复用的 API 地址、Token 和本地端口；local/ssh 每次使用独立的 `sessions/<会话>` 目录，正常退出时连同日志和 SSH 主机指纹一起删除，异常遗留目录也不会被后续连接复用。
-
-进入 `AEGIS>` 后可持续执行命令，输入 `exit` 退出：
+CLI 启动器负责准备环境、建立本次 API 连接，并在交互窗口关闭后回收本地服务或 SSH 隧道。进入 `AEGIS>` 后可持续执行：
 
 ```bat
+# 检查服务和模型
 aegis health
 aegis models
+
+# 单独或批量扫描 LoRA
 aegis scan D:\path\to\lora
+aegis scan D:\path\to\lora-root --batch
+
+# 创建快速清洗审计任务
+aegis audit D:\path\to\lora --model qwen2.5-3b --mode fast
 ```
 
-单次执行无需进入交互会话，但仍会先选择本次连接模式：
+批量扫描会递归查找包含 `adapter_model.safetensors` 的 LoRA 目录，单项失败不会中断后续扫描。结果默认保存为 `scan_archive_日期_时间.json`，可使用 `--output PATH` 指定归档位置。
+
+审计完成后可下载报告和清洗产物：
 
 ```bat
-start-cli.bat health
+aegis report JOB_ID
+aegis artifact JOB_ID
 ```
+
+服务端当前注册的模型编号：
+
+| 模型编号           | 模型                          |
+| ------------------ | ----------------------------- |
+| `qwen2.5-3b`       | Qwen 2.5 3B Instruct          |
+| `llama-3.2-3b`     | Llama 3.2 3B Instruct         |
+| `deepseek-r1-1.5b` | DeepSeek R1 Distill Qwen 1.5B |
+
+输入 `exit` 退出当前 CLI 会话。也可将命令直接传给 `start-cli.bat` 单次执行，例如 `start-cli.bat health`。
+
+##### 本地 API
+
+在本机启动一套仅供当前 CLI 会话使用的 API：
+
+```bat
+start-cli.bat -ConnectionMode local
+```
+
+按提示输入本地端口和 API Token。启动器会配置完整算法环境、启动本地 API，并在 CLI 退出时关闭该 API。
+
+##### SSH
+
+远端服务器已运行 Aegis-LoRA API 时，可创建本次会话的一次性 SSH 隧道：
+
+```bat
+start-cli.bat -ConnectionMode ssh
+```
+
+按提示输入 SSH 命令（例如 `ssh -p 31544 root@host`）、远端 API 主机与端口、API Token。SSH 密码由 `ssh.exe` 直接读取且不会保存；API Token 与 SSH 密码相互独立。
+
+启动器通过 `-F NUL` 禁止读取用户 SSH 配置，并把主机指纹写入本次会话目录，不会读取或修改默认 `.ssh`。正常退出时会关闭隧道并删除本次日志和独立主机指纹。
+
+如果 API 已经可以直接访问，不需要本地服务或 SSH 隧道，可使用：
+
+```bat
+start-cli.bat -ConnectionMode direct
+```
+
+CLI 连接文件统一位于 `.cache/cli`。`config.json` 只保存允许复用的 API 地址、Token 和本地端口；local / ssh 的运行文件位于独立的 `sessions/<会话>` 目录，即使异常遗留也不会被后续启动复用。
 
 启动器不会自动下载模型、检测器或算法数据；缺失资源会在相关功能实际使用时报告。
 
-## 手动安装
+### 自己配置环境
+
+#### 安装依赖
 
 ```bash
 git clone https://github.com/chunzhong06/Aegis_LoRA.git
@@ -104,102 +154,58 @@ pip install -r launcher/requirements.txt
 pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
 ```
 
-## 使用方式
-
-### 本地图形界面
+#### 启动 GUI
 
 ```bash
 python -m launcher.webui
 ```
 
-浏览器访问 `http://127.0.0.1:7860`，填写基座模型与 LoRA 路径后即可执行检测、清洗、对话验证和报告下载。
+浏览器访问 `http://127.0.0.1:7860`。
 
-#### PyTorch 配置
+#### 启动 API 与 CLI
 
-Windows 启动器会读取 NVIDIA 驱动支持的 CUDA 上限，自动选择不高于驱动能力的官方 PyTorch 构建；无兼容 GPU 时使用 CPU。也可手动指定：
-
-```bat
-start-gui.bat -Torch cu130
-start-gui.bat -Torch cpu
-```
-
-| 驱动 CUDA 上限 | 自动档位 | 锁定的 Torch / torchvision |
-| -------------- | -------- | -------------------------- |
-| 11.8–12.0      | `cu118`  | 2.7.1 / 0.22.1             |
-| 12.1–12.3      | `cu121`  | 2.5.1 / 0.20.1             |
-| 12.4–12.5      | `cu124`  | 2.6.0 / 0.21.0             |
-| 12.6–12.7      | `cu126`  | 2.10.0 / 0.25.0            |
-| 12.8–12.9      | `cu128`  | 2.10.0 / 0.25.0            |
-| 13.0 及以上    | `cu130`  | 2.10.0 / 0.25.0            |
-
-### 远程 API
-
-API 使用 Bearer Token 保护业务接口。启动前需要配置 `AEGIS_API_TOKEN`：
+API 使用 Bearer Token 保护业务接口。先在一个终端设置 Token 并启动服务：
 
 ```powershell
 # PowerShell
 $env:AEGIS_API_TOKEN="YOUR_TOKEN"
-python -m uvicorn utils.api_server:app --host 0.0.0.0 --port 8000
+python -m uvicorn utils.api_server:app --host 127.0.0.1 --port 8000
 ```
 
 ```bash
 # Bash
 export AEGIS_API_TOKEN="YOUR_TOKEN"
-python -m uvicorn utils.api_server:app --host 0.0.0.0 --port 8000
+python -m uvicorn utils.api_server:app --host 127.0.0.1 --port 8000
 ```
 
-服务启动后可访问公开健康检查：`GET /health`。上传、检测、审计、报告和清洗产物接口统一位于 `/v1`。
+`127.0.0.1` 只允许本机访问；需要从其他设备或 SSH 隧道访问时，可根据网络和防火墙配置改为 `0.0.0.0`。服务启动后可访问公开健康检查 `GET /health`，业务接口统一位于 `/v1`。
 
-### CLI 客户端
+再在另一个终端设置同一地址和 Token：
 
-Windows 一键启动的交互会话使用 `aegis <命令>`；手动安装或普通终端使用等价的 `python -m launcher.cli <命令>`：
-
-```bash
-# 登录并保存服务地址与 Token
-python -m launcher.cli login http://127.0.0.1:8000 --token YOUR_TOKEN
-
-# 检查服务和模型
+```powershell
+# PowerShell
+$env:AEGIS_API_SERVER="http://127.0.0.1:8000"
+$env:AEGIS_API_TOKEN="YOUR_TOKEN"
 python -m launcher.cli health
-python -m launcher.cli models
-
-# 单独扫描 LoRA
-python -m launcher.cli scan /path/to/lora
-
-# 递归批量扫描目录中的 LoRA
-python -m launcher.cli scan /path/to/lora-root --batch
-
-# 创建快速清洗审计任务
-python -m launcher.cli audit /path/to/lora --model qwen2.5-3b --mode fast
 ```
 
-批量扫描会递归查找包含 `adapter_model.safetensors` 的 LoRA 目录，单项失败不会中断后续扫描。结果默认保存为 `scan_archive_日期_时间.json`，可使用 `--output PATH` 指定归档位置。
+```bash
+# Bash
+export AEGIS_API_SERVER="http://127.0.0.1:8000"
+export AEGIS_API_TOKEN="YOUR_TOKEN"
+python -m launcher.cli health
+```
 
-审计完成后可继续下载报告和清洗产物：
+`cli.py` 不读取或写入连接配置，普通终端必须显式提供这两个环境变量。其命令参数与一键启动中的 `aegis` 完全相同：
 
 ```bash
+python -m launcher.cli models
+python -m launcher.cli scan /path/to/lora
+python -m launcher.cli scan /path/to/lora-root --batch
+python -m launcher.cli audit /path/to/lora --model qwen2.5-3b --mode fast
 python -m launcher.cli report JOB_ID
 python -m launcher.cli artifact JOB_ID
 ```
-
-服务端当前注册的模型编号：
-
-| 模型编号           | 模型                          |
-| ------------------ | ----------------------------- |
-| `qwen2.5-3b`       | Qwen 2.5 3B Instruct          |
-| `llama-3.2-3b`     | Llama 3.2 3B Instruct         |
-| `deepseek-r1-1.5b` | DeepSeek R1 Distill Qwen 1.5B |
-
-#### Windows 连接管理
-
-可在命令行中显式指定本次模式，从而跳过模式菜单；地址、Token 和 SSH 参数仍按该模式的规则询问：
-
-```bat
-start-cli.bat -ConnectionMode direct
-start-cli.bat -ConnectionMode local
-start-cli.bat -ConnectionMode ssh
-```
-
-SSH 模式可粘贴云平台提供的命令，例如 `ssh -p 31544 root@host`，并继续输入远端 API 主机和端口。SSH 密码由 `ssh.exe` 在终端中直接读取且不会保存；API Token 与 SSH 密码相互独立。启动器通过 `-F NUL` 禁止读取用户 SSH 配置，并把主机指纹写入本次会话目录，因此不会读取或修改默认 `.ssh`，也不会在下次启动时复用。
 
 ## 实验结果
 
@@ -221,12 +227,11 @@ SSH 模式可粘贴云平台提供的命令，例如 `ssh -p 31544 root@host`，
 
 ## 支持范围
 
-| 类别     | 当前覆盖                          |
-| -------- | --------------------------------- |
-| 模型架构 | Qwen、LLaMA、DeepSeek             |
-| 后门领域 | 代码注入、负向情感、拒绝服务      |
-| 攻击方式 | BadNets、CTBA、Sleeper Agent、VPI |
-| 输出产物 | 清洗后 LoRA、HTML/JSON 审计报告   |
+| 类别     | 当前覆盖                        |
+| -------- | ------------------------------- |
+| 模型架构 | Qwen、LLaMA、DeepSeek           |
+| 后门领域 | 代码注入、负向情感、拒绝服务    |
+| 输出产物 | 清洗后 LoRA、HTML/JSON 审计报告 |
 
 快速清洗依赖 `datasets/` 中与模型架构匹配的离线签名；深度清洗依赖变体数据和康复数据。
 
