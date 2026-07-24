@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from .model_registry import (
     download_and_register,
     refresh_registry,
-    is_community_model_id,
     registered_model,
     resolve_candidate,
 )
@@ -20,37 +19,39 @@ from .model_registry import (
 # =====================================================================
 # 配置与状态
 # =====================================================================
-# 工程根目录是全部服务端资源的统一定位基准，避免依赖启动命令所在目录。
+# 项目资源统一基于当前模块定位，避免依赖服务启动目录。
 ROOT = Path(__file__).resolve().parents[1]
 
-# MODELS 保持稳定对象身份，api_server 持有的别名可在注册表刷新后立即看到新模型。
+# MODELS 必须保持对象身份，社区模型注册后由 model_registry 原地更新。
 MODELS = {}
 refresh_registry(MODELS)
 
-# API 运行目录统一放在 .cache，具体路径在使用位置由 ROOT 直接解析。
+# API 上传、报告和产物统一写入 .cache。
 for directory in ("uploads", "api_reports", "artifacts"):
     (ROOT / ".cache" / directory).mkdir(parents=True, exist_ok=True)
 
-# jobs 保存可序列化任务快照，供查询接口和服务重启恢复共同使用。
+# jobs 保存可序列化任务状态，也是查询接口和重启恢复的共同数据源。
 jobs = {}
 
-# job_lock 保护任务状态；model_lock 串行化所有占用模型资源的操作。
+# job_lock 保护任务状态；model_lock 串行化检测和清洗等模型操作。
 job_lock = Lock()
 model_lock = Lock()
 
-# 审计任务只使用一个后台线程，避免多个清洗流程同时争抢显存。
+# 单线程执行器避免多个清洗任务同时争抢显存。
 executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="aegis-audit")
 
 
-def sync_jobs():
+# =====================================================================
+# 任务持久化与启动恢复
+# =====================================================================
+def sync_jobs(*, cleanup_orphans: bool = False):
     """裁剪历史任务并使用临时文件原子保存状态。"""
-    # 状态文件在保存时直接由工程根目录定位，不保留额外路径常量。
     jobs_file = ROOT / ".cache" / "api_jobs.json"
 
     # -----------------------------------------------------------------
     # 步骤 1：保留全部活动任务和最近一百条终态任务
     # -----------------------------------------------------------------
-    # 终态任务按结束时间倒序排列；活动任务不参与数量限制。
+    # 活动任务全部保留，终态任务按结束时间只保留最近一百条。
     with job_lock:
         terminal = sorted(
             (
@@ -65,10 +66,10 @@ def sync_jobs():
             reverse=True,
         )
 
-        # 排序后一百条之外的终态任务进入过期集合，等待从状态和产物中共同移除。
+        # expired 同时用于裁剪内存状态和对应归档产物。
         expired = {job_id for job_id, _ in terminal[100:]}
 
-        # 快照同时保留全部活动任务和有效终态任务，作为本次持久化的唯一数据源。
+        # snapshot 是本次写入磁盘的完整任务视图。
         snapshot = {
             job_id: job for job_id, job in jobs.items() if job_id not in expired
         }
@@ -76,38 +77,41 @@ def sync_jobs():
         # -----------------------------------------------------------------
         # 步骤 2：先落盘新快照，再同步更新内存任务表
         # -----------------------------------------------------------------
-        # 写入失败时不修改内存，避免磁盘状态和当前服务状态产生分歧。
+        # 写入失败时不裁剪内存，避免磁盘和运行时状态进一步分歧。
         content = json.dumps(snapshot, ensure_ascii=False, indent=2)
 
-        # 临时文件与正式文件位于同一目录，写入完整后再原子替换状态文件。
+        # 临时文件同目录写入，完整后再原子替换。
         temp_path = jobs_file.with_suffix(".tmp")
         temp_path.write_text(content, encoding="utf-8")
         temp_path.replace(jobs_file)
 
-        # 磁盘替换成功后再裁剪内存，并保存仍允许访问产物的任务编号集合。
         for job_id in expired:
             jobs.pop(job_id, None)
-        retained = set(jobs)
 
     # -----------------------------------------------------------------
-    # 步骤 3：删除已经没有任务记录的报告和模型产物
+    # 步骤 3：仅在启动或实际裁剪历史时扫描孤立产物
     # -----------------------------------------------------------------
-    # 两个目录只保存 API 归档文件，因此可以按文件名中的 job_id 清理孤立产物。
+    if not cleanup_orphans and not expired:
+        return
+    with job_lock:
+        retained = set(jobs)
+
+    # 报告与 ZIP 均以 job_id 命名，可直接判断是否仍有任务引用。
     for directory in ("api_reports", "artifacts"):
-        # HTML、JSON 和 ZIP 都使用 job_id 作为文件主名，可直接对应任务记录。
         for path in (ROOT / ".cache" / directory).iterdir():
             if path.is_file() and path.stem not in retained:
                 try:
-                    # 只删除已经失去任务记录的普通文件，不处理目录或有效任务产物。
                     path.unlink()
                 except OSError as exc:
-                    # 单个历史文件删除失败不影响状态同步和其他产物清理。
+                    # 单个清理失败不影响其他状态与产物。
                     print(f"      [警告] 历史产物清理失败: {path.name}: {exc}")
 
 
 def expire_confirmations() -> int:
     """将已经超过确认截止时间的任务转为失败，并回收对应上传。"""
     now = datetime.now(timezone.utc)
+
+    # expired_loras 延迟到锁外删除，避免文件系统操作长时间占用任务锁。
     expired_loras = []
     with job_lock:
         for job in jobs.values():
@@ -126,6 +130,7 @@ def expire_confirmations() -> int:
                     finished_at=now.isoformat(timespec="seconds"),
                     error="社区模型确认已超时。",
                 )
+                job.pop("confirmation_deadline", None)
                 expired_loras.append(job.get("lora_id"))
     for lora_id in expired_loras:
         if isinstance(lora_id, str):
@@ -133,32 +138,31 @@ def expire_confirmations() -> int:
     return len(expired_loras)
 
 
-# 启动时恢复历史任务；损坏记录不会阻止服务继续启动。
+# -----------------------------------------------------------------
+# 启动恢复：读取任务、处理中断状态并回收孤立资源
+# -----------------------------------------------------------------
+# 损坏的历史状态只记录警告，不阻止服务启动。
 try:
-    # 首次启动没有状态文件时使用空字典，后续启动读取上一次任务快照。
     loaded = (
         json.loads((ROOT / ".cache" / "api_jobs.json").read_text(encoding="utf-8"))
         if (ROOT / ".cache" / "api_jobs.json").is_file()
         else {}
     )
 
-    # 根节点必须是 job_id 到任务记录的映射，其他结构直接视为损坏。
     if not isinstance(loaded, dict):
         raise ValueError("任务状态文件的根节点必须是 JSON 对象。")
 
-    # 单条异常记录不会污染整个任务表，仅恢复值为字典的历史记录。
+    # 单条异常记录被跳过，避免污染整个任务表。
     jobs.update(
         {job_id: job for job_id, job in loaded.items() if isinstance(job, dict)}
     )
 except (OSError, ValueError) as exc:
     print(f"      [警告] 历史任务读取失败: {exc}")
 
-# 线程任务无法跨进程恢复，因此重启前未结束的任务统一标记为中断。
-# 同一启动时间用于本轮全部中断任务，避免逐条生成略有差异的结束时间。
+# 后台线程无法跨进程恢复，queued/running 统一标记为中断。
 interrupted_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 for job in jobs.values():
     if job.get("status") in ("queued", "running"):
-        # 保留原任务参数，只覆盖执行状态、结束时间和中断原因。
         job.update(
             status="failed",
             stage="中断",
@@ -166,18 +170,16 @@ for job in jobs.values():
             error="服务重启，未完成的任务已经中断。",
         )
 
-# 待确认任务跨重启保留，但已过截止时间的记录立即转为确认超时。
+# awaiting_confirmation 跨重启保留，过期任务立即转为确认超时。
 expire_confirmations()
 
-# 启动时统一裁剪历史任务并清理已经没有记录的报告和模型产物。
+# 启动时执行一次历史裁剪和孤立归档清理。
 try:
-    # 即使没有中断任务也执行一次同步，使历史上限和孤立产物立即生效。
-    sync_jobs()
+    sync_jobs(cleanup_orphans=True)
 except (OSError, TypeError) as exc:
-    # 启动同步失败只降低历史管理能力，不阻止健康检查和服务进程启动。
     print(f"      [警告] 启动任务状态同步失败: {exc}")
 
-# 待确认任务仍需要原始 LoRA；其他孤立或中断任务上传在启动时回收。
+# 待确认任务需要保留上传，其余孤立或中断上传在启动时回收。
 retained_uploads = {
     job.get("lora_id")
     for job in jobs.values()
@@ -187,10 +189,8 @@ for path in (ROOT / ".cache" / "uploads").iterdir():
     if path.name in retained_uploads:
         continue
     try:
-        # 上传目录和可能遗留的临时文件统一删除，只跳过仍有活动任务引用的目录。
         shutil.rmtree(path) if path.is_dir() else path.unlink()
     except OSError as exc:
-        # 单个缓存清理失败仅记录警告，其余上传资源继续处理。
         print(f"      [警告] 启动上传缓存清理失败: {path.name}: {exc}")
 
 # 服务异常退出可能留下未验证下载；稳定模型目录不在这里处理。
@@ -202,35 +202,32 @@ if community_root.is_dir():
 
 def resolve_lora(lora_id: str) -> Path:
     """定位并检查服务器上的 LoRA 资源。"""
-    # 上传根目录在资源解析时由 ROOT 进入，不保留模块级路径常量。
     uploads = (ROOT / ".cache" / "uploads").resolve()
 
-    # resolve 后校验父目录，防止资源编号逃逸出 uploads 目录。
+    # lora_path 必须是 uploads 的直接子目录，防止路径穿越。
     lora_path = (uploads / lora_id).resolve()
     if lora_path.parent != uploads:
         raise HTTPException(status_code=400, detail="LoRA 资源编号不合法。")
 
-    # 资源编号合法但目录不存在时，明确告知调用方该资源尚未上传。
     if not lora_path.is_dir():
         raise HTTPException(status_code=404, detail="LoRA 资源不存在。")
 
-    # 只有权重和配置同时存在时，资源才允许进入检测流水线。
+    # 权重和配置必须同时存在，避免后台任务接收半成品上传。
     if not (lora_path / "adapter_model.safetensors").is_file():
         raise HTTPException(status_code=409, detail="LoRA 权重文件不完整。")
     if not (lora_path / "adapter_config.json").is_file():
         raise HTTPException(status_code=409, detail="LoRA 配置文件不完整。")
 
-    # 返回规范化后的服务端目录，算法层无需再次处理相对路径。
     return lora_path
 
 
 def scan_lora(lora_path: Path) -> dict:
     """串行调用静态探测流水线并转换算法异常。"""
     try:
-        # 延迟导入算法模块，使健康检查无需加载完整模型依赖。
+        # 延迟导入，服务启动和健康检查不加载完整算法依赖。
         from .pipeline import run_static_scan_pipeline
 
-        # 独立扫描可能与后台清洗并发，统一模型锁用于避免争抢模型资源。
+        # 独立扫描与后台清洗共享 model_lock，避免争用模型资源。
         with model_lock:
             return run_static_scan_pipeline(
                 lora_path=str(lora_path),
@@ -240,19 +237,16 @@ def scan_lora(lora_path: Path) -> dict:
                 return_details=True,
             )
 
-    # 探测器文件或必要算法资源缺失，表示服务端尚未就绪。
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    # 流水线拒绝当前 LoRA 时，将具体输入错误返回客户端。
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # 探测器参数或内部结构无效时按服务配置错误处理。
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    # 未知异常只写入服务日志，避免向外暴露实现细节和内部路径。
+    # 未知异常只写服务日志，不向客户端暴露内部路径和堆栈。
     except Exception as exc:
         print(f"      [错误] API 静态检测失败: {exc}")
         raise HTTPException(
@@ -260,8 +254,14 @@ def scan_lora(lora_path: Path) -> dict:
         ) from exc
 
 
+# =====================================================================
+# 审计任务状态机
+# =====================================================================
 def run_job(job_id: str):
     """执行检测、清洗、归档和任务状态更新。"""
+    # -----------------------------------------------------------------
+    # 步骤 1：领取排队任务并建立本次执行上下文
+    # -----------------------------------------------------------------
     with job_lock:
         if job_id not in jobs or jobs[job_id].get("status") != "queued":
             return
@@ -273,14 +273,21 @@ def run_job(job_id: str):
             or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
 
+    # 中间路径用于 finally 统一回收；待确认分支通过 preserve_lora 保留上传。
     lora_path = None
     output_path = None
     source_html = None
     source_json = None
     preserve_lora = False
+    sync_on_exit = True
 
     try:
+        # -----------------------------------------------------------------
+        # 步骤 2：解析 LoRA 并执行或复用静态检测
+        # -----------------------------------------------------------------
         lora_path = resolve_lora(job["lora_id"])
+
+        # 确认后的任务保留 scan_result，重新入队时不得重复检测。
         scan_result = job.get("scan_result")
         if scan_result is None:
             scan_result = scan_lora(lora_path)
@@ -288,14 +295,19 @@ def run_job(job_id: str):
                 jobs[job_id]["scan_result"] = scan_result
 
         if not scan_result["is_poisoned"]:
+            # 安全 LoRA 直接通过，不解析、下载或加载社区模型。
             result = {"action": "passed", "scan": scan_result, "cleanse": None}
         else:
+            # -----------------------------------------------------------------
+            # 步骤 3：中毒后解析已注册模型或社区模型候选
+            # -----------------------------------------------------------------
             model = registered_model(
                 MODELS,
                 job["model_id"],
                 job.get("model_revision"),
             )
             if model is None:
+                # model_candidate 只在首次解析后保存，确认恢复时直接复用。
                 candidate = job.get("model_candidate")
                 if candidate is None:
                     try:
@@ -330,13 +342,18 @@ def run_job(job_id: str):
                             confirmation_deadline=deadline.isoformat(
                                 timespec="seconds"
                             ),
-                            download=None,
                         )
                     preserve_lora = True
                     sync_jobs()
+                    sync_on_exit = False
+
+                    # 待确认状态已落盘，当前线程立即返回并释放执行器。
                     return
 
-                if not job.get("model_confirmed"):
+                # -----------------------------------------------------------------
+                # 步骤 4：确认后下载并注册社区模型
+                # -----------------------------------------------------------------
+                if not job.get("confirmed_at"):
                     raise ValueError("社区模型尚未确认。")
                 if candidate["cleanse_mode"] != "deep":
                     raise ValueError("未登记专属签名的社区模型只能使用深度清洗。")
@@ -355,13 +372,8 @@ def run_job(job_id: str):
                 with job_lock:
                     jobs[job_id].update(
                         stage="准备模型",
-                        download={
-                            "downloaded_bytes": 0,
-                            "total_bytes": int(candidate["estimated_size"]),
-                            "percent": 0,
-                        },
+                        downloaded_bytes=0,
                     )
-                sync_jobs()
                 model = download_and_register(
                     candidate,
                     job_id,
@@ -370,13 +382,13 @@ def run_job(job_id: str):
                     job_lock,
                 )
                 with job_lock:
-                    jobs[job_id]["download"] = {
-                        "downloaded_bytes": int(candidate["estimated_size"]),
-                        "total_bytes": int(candidate["estimated_size"]),
-                        "percent": 100,
-                    }
-                sync_jobs()
+                    jobs[job_id]["downloaded_bytes"] = int(
+                        candidate["estimated_size"]
+                    )
 
+            # -----------------------------------------------------------------
+            # 步骤 5：复核清洗资源并调用对应流水线
+            # -----------------------------------------------------------------
             base_path = Path(model["path"]).resolve()
             if not (base_path / "config.json").is_file():
                 raise FileNotFoundError("基础模型尚未就绪。")
@@ -393,6 +405,7 @@ def run_job(job_id: str):
             from .pipeline import run_fast_cleanse_pipeline, run_immunization_pipeline
 
             signature = None
+            # output_path 是流水线约定的临时清洗目录，完成后统一打包并删除。
             suffix = (
                 "_fast_immunized" if job["cleanse_mode"] == "fast" else "_immunized"
             )
@@ -431,6 +444,7 @@ def run_job(job_id: str):
                         )
                     )
 
+            # pipeline_output 必须与约定目录完全一致，防止归档任意路径。
             candidate = Path(pipeline_output).resolve()
             uploads = (ROOT / ".cache" / "uploads").resolve()
             if (
@@ -446,6 +460,9 @@ def run_job(job_id: str):
             if not source_html.is_file() or not source_json.is_file():
                 raise FileNotFoundError("清洗完成，但审计报告不完整。")
 
+            # -----------------------------------------------------------------
+            # 步骤 6：归档报告并打包清洗后的 LoRA
+            # -----------------------------------------------------------------
             source_html.replace(ROOT / ".cache" / "api_reports" / f"{job_id}.html")
             source_json.replace(ROOT / ".cache" / "api_reports" / f"{job_id}.json")
 
@@ -476,15 +493,27 @@ def run_job(job_id: str):
                 },
             }
 
+        # -----------------------------------------------------------------
+        # 步骤 7：写入成功终态并移除执行期临时字段
+        # -----------------------------------------------------------------
         with job_lock:
-            jobs[job_id].update(
+            completed = jobs[job_id]
+            completed.update(
                 status="succeeded",
                 stage="完成",
                 finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 result=result,
-                error=None,
             )
+            for field in (
+                "scan_result",
+                "model_candidate",
+                "confirmation_deadline",
+                "downloaded_bytes",
+            ):
+                completed.pop(field, None)
+            completed.pop("error", None)
     except Exception as exc:
+        # 异常任务不得保留不完整报告或产物。
         for path in (
             ROOT / ".cache" / "api_reports" / f"{job_id}.html",
             ROOT / ".cache" / "api_reports" / f"{job_id}.json",
@@ -511,6 +540,7 @@ def run_job(job_id: str):
                 error=error,
             )
     finally:
+        # 流水线原始报告已归档或失败，均可清理。
         for path in (source_html, source_json):
             if path is not None:
                 try:
@@ -518,11 +548,14 @@ def run_job(job_id: str):
                 except OSError as exc:
                     print(f"      [警告] 流水线报告清理失败: {exc}")
 
+        # 待确认任务只保留原始 LoRA，其余路径在任务退出时回收。
         for path in (output_path, None if preserve_lora else lora_path):
             if path is not None:
                 shutil.rmtree(path, ignore_errors=True)
 
-        try:
-            sync_jobs()
-        except (OSError, TypeError) as exc:
-            print(f"      [警告] 任务状态同步失败: {exc}")
+        # 待确认分支已主动同步，避免 finally 连续重复落盘。
+        if sync_on_exit:
+            try:
+                sync_jobs()
+            except (OSError, TypeError) as exc:
+                print(f"      [警告] 任务状态同步失败: {exc}")

@@ -90,12 +90,13 @@ aegis audit D:\path\to\lora --model Qwen/Qwen2.5-3B-Instruct --revision master
 社区模型只接受精确的 `owner/model`，不接受短名称、本地路径、URL 或模糊搜索。服务器始终先执行静态检测：安全 LoRA 直接通过，不访问 ModelScope，也不会创建社区模型目录；只有中毒 LoRA 才解析候选，并进入 `awaiting_confirmation`（待确认）。交互式 `--wait` 会展示名称、Repo ID、revision、预计大小、LoRA 声明的基座模型及有效清洗模式后询问；非交互终端不会自动确认。`--no-wait` 场景可稍后执行：
 
 ```bat
+# 查看候选并确认或拒绝同一任务
 aegis show JOB_ID
 aegis confirm JOB_ID --accept
 aegis confirm JOB_ID --reject
 ```
 
-确认后同一任务恢复执行，`aegis jobs` 和 `aegis show JOB_ID` 会在“准备模型”阶段显示下载字节数和百分比。待确认任务默认保留 24 小时，拒绝或超时都不会下载模型。
+确认后同一任务恢复执行；`aegis jobs` 保持精简摘要，`aegis show JOB_ID` 会在“准备模型”阶段显示下载字节数和百分比。待确认任务默认保留 24 小时，拒绝或超时都不会下载模型。
 
 审计完成后可下载报告和清洗产物：
 
