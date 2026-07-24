@@ -252,10 +252,8 @@ def download_padbench_poisoned_loras(
 
 
 if __name__ == "__main__":
-    DATASET_DIR = r"D:\Aegis_LoRA\datasets"
-
     # 1) 深度免疫 / 康复微调用 clean 数据。
-    # download_and_prepare_alpaca(output_path=DATASET_DIR, required_samples=5000)
+    # download_and_prepare_alpaca(output_path="D:\Aegis_LoRA\datasets", required_samples=5000)
 
     # 2)  detector 训练集。
     # download_paper_aligned_subset(r"D:\Aegis_LoRA\datasets\PADBench", target_model="llama2")

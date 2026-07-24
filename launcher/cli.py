@@ -1,5 +1,7 @@
 # Aegis-LoRA - 命令行客户端
+# 本模块只消费当前会话的 API 地址与 Token，负责请求、终端展示和文件下载，不持久化连接状态。
 import json
+import os
 import time
 from pathlib import Path
 from typing import Literal
@@ -12,39 +14,34 @@ from rich.table import Table
 from rich.text import Text
 
 # =====================================================================
-# 客户端配置
+# 命令注册
 # =====================================================================
-# Typer 负责命令注册、参数解析和帮助信息；未传命令时直接展示帮助。
+# app 统一注册业务命令、参数解析和帮助信息；未传命令时直接展示帮助。
 app = typer.Typer(
     name="aegis",
     help="Aegis-LoRA 远程检测与清洗客户端",
     no_args_is_help=True,
 )
 
-# 登录信息固定保存在用户目录，不依赖工程位置和当前终端目录。
-CONFIG_FILE = Path.home() / ".aegis" / "config.json"
-
-
 # =====================================================================
-# 核心逻辑
+# API 客户端与请求
 # =====================================================================
 def _client() -> httpx.Client:
-    """读取登录配置并创建适合长耗时任务的 HTTP 客户端。"""
+    """使用启动器为当前进程注入的 API 地址和 Token 创建客户端。"""
 
-    # -----------------------------------------------------------------
-    # 1. 读取当前登录信息
-    # -----------------------------------------------------------------
-    if not CONFIG_FILE.is_file():
-        typer.echo("尚未登录，请先执行 login。")
+    # server / token 由 start.ps1 注入；连接选择、持久化和隧道生命周期属于 connect.ps1。
+    server = os.getenv("AEGIS_API_SERVER", "").strip().rstrip("/")
+    token = os.getenv("AEGIS_API_TOKEN", "")
+    if not server or not token:
+        typer.echo(
+            "当前 CLI 会话缺少 API 地址或 Token；请使用 start-cli.bat，"
+            "或设置 AEGIS_API_SERVER 和 AEGIS_API_TOKEN。"
+        )
         raise typer.Exit(1)
 
-    # config 只保存服务地址和 Token，是所有受保护命令的共同连接上下文。
-    config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-
-    # 读取阶段不设总超时，避免深度清洗轮询被客户端提前中断。
     return httpx.Client(
-        base_url=config["server"],
-        headers={"Authorization": f"Bearer {config['token']}"},
+        base_url=server,
+        headers={"Authorization": f"Bearer {token}"},
         timeout=httpx.Timeout(None, connect=10.0),
     )
 
@@ -55,19 +52,23 @@ def _request(
     url: str,
     *,
     output: Path | None = None,
+    fatal: bool = True,
     **kwargs,
 ):
     """统一处理 JSON 请求、API 错误和流式文件下载。"""
+
+    # fatal 控制错误是否立即结束命令；批量扫描使用非致命错误继续处理后续 LoRA。
+    # output 为空时返回 JSON，指定路径时改用流式下载并返回 None。
 
     # -----------------------------------------------------------------
     # 1. 发送普通请求或流式下载
     # -----------------------------------------------------------------
     try:
         if output is None:
-            # 普通接口响应较小，直接请求并在末尾解析 JSON。
+            # response 保存普通 API 的完整响应，成功后统一解析 JSON。
             response = client.request(method, url, **kwargs)
         else:
-            # 报告和模型产物使用流式下载，避免大文件一次性进入内存。
+            # 报告和模型产物可能较大，使用流式下载避免一次性进入内存。
             output = output.expanduser().resolve()
             output.parent.mkdir(parents=True, exist_ok=True)
             with client.stream(method, url, **kwargs) as response:
@@ -81,8 +82,11 @@ def _request(
                             file.write(chunk)
     except httpx.RequestError as exc:
         # DNS、连接拒绝和传输中断统一视为服务器连接问题。
-        typer.echo(f"无法连接服务器：{exc}")
-        raise typer.Exit(1)
+        message = f"无法连接服务器：{exc}"
+        if fatal:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise RuntimeError(message) from exc
 
     # -----------------------------------------------------------------
     # 2. 转换 API 错误信息
@@ -94,8 +98,11 @@ def _request(
             detail = data.get("detail", response.text)
         except (ValueError, AttributeError):
             detail = response.text
-        typer.echo(f"请求失败 [{response.status_code}]：{detail}")
-        raise typer.Exit(1)
+        message = f"请求失败 [{response.status_code}]：{detail}"
+        if fatal:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise RuntimeError(message)
 
     # -----------------------------------------------------------------
     # 3. 返回下载结果或 JSON 数据
@@ -106,8 +113,49 @@ def _request(
     return response.json()
 
 
+def _upload_lora(
+    client: httpx.Client,
+    lora_path: Path,
+    *,
+    fatal: bool = True,
+):
+    """上传一个标准 PEFT LoRA，并返回服务器生成的一次性资源编号。"""
+
+    # weights_path / config_path 是服务端上传协议要求的标准 PEFT 文件。
+    # scan 与 audit 共用此函数，避免两条流程分别维护 multipart 结构。
+    weights_path = lora_path / "adapter_model.safetensors"
+    config_path = lora_path / "adapter_config.json"
+    try:
+        with (
+            weights_path.open("rb") as weights_file,
+            config_path.open("rb") as config_file,
+        ):
+            return _request(
+                client,
+                "POST",
+                "/v1/loras",
+                fatal=fatal,
+                files={
+                    "weights": (
+                        weights_path.name,
+                        weights_file,
+                        "application/octet-stream",
+                    ),
+                    "config": (config_path.name, config_file, "application/json"),
+                },
+            )
+    except OSError as exc:
+        message = f"无法读取 LoRA 文件：{exc}"
+        if fatal:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise RuntimeError(message) from exc
+
+
 def _display(view: str, data, json_output: bool = False):
     """将接口数据转换为统一的终端摘要，并按需保留原始 JSON。"""
+
+    # view 选择展示布局，data 保留服务端响应；json_output 跳过所有 Rich 格式化。
 
     # -----------------------------------------------------------------
     # 1. 处理原始 JSON 模式
@@ -120,7 +168,7 @@ def _display(view: str, data, json_output: bool = False):
     # -----------------------------------------------------------------
     # 2. 准备统一终端样式
     # -----------------------------------------------------------------
-    # states 统一状态语义和颜色；modes 统一清洗模式的中文名称。
+    # states 统一服务、扫描和任务状态；modes 统一清洗模式的中文名称。
     console = Console(highlight=False)
     states = {
         "ready": Text("就绪", style="bold green"),
@@ -134,7 +182,7 @@ def _display(view: str, data, json_output: bool = False):
     }
     modes = {"fast": "快速", "deep": "深度"}
 
-    # table_style 被本次页面中的所有表格复用，保持间距和边框一致。
+    # table_style 被所有视图复用，保持表头、边框和列间距一致。
     table_style = dict(box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1))
     console.print()
 
@@ -144,38 +192,41 @@ def _display(view: str, data, json_output: bool = False):
     # 健康检查突出总体结论，并按类别列出所有运行能力。
     if view == "health":
         # status 是服务器总体结论，ready 之外均表示存在不可用能力。
-        status = data.get("status", "unknown")
+        status = data["status"]
         console.print(
-            "[bold]服务状态[/bold]  ",
+            f"[bold]{data['service']} v{data['version']}[/bold]  ",
             states.get(status, str(status)),
-            f"  {data.get('service', '-')} v{data.get('version', '-')}",
         )
         # rows 将基础能力、模型、签名和运行目录统一为三列表格数据。
         rows = [
-            ("基础能力", "认证", data.get("auth_ready")),
-            ("基础能力", "静态检测器", data.get("detector_ready")),
+            ("基础能力", "认证", data["auth_ready"]),
+            ("基础能力", "静态检测器", data["detector_ready"]),
             *(
                 ("基础模型", name, ready)
-                for name, ready in data.get("models_ready", {}).items()
+                for name, ready in data["models_ready"].items()
             ),
             *(
                 ("快速清洗", name, ready)
-                for name, ready in data.get("fast_cleanse_ready", {}).items()
+                for name, ready in data["fast_cleanse_ready"].items()
             ),
-            ("深度清洗", "训练与恢复数据", data.get("deep_cleanse_ready")),
-            ("运行环境", "存储目录", data.get("storage_ready")),
+            ("深度清洗", "训练与恢复数据", data["deep_cleanse_ready"]),
+            ("运行环境", "存储目录", data["storage_ready"]),
         ]
-        # 同一状态列只使用“就绪/缺失”，缺失项以红色突出。
+        # 状态列统一使用“就绪/缺失”，类别切换时插入空行提高可读性。
         table = Table(**table_style)
         table.add_column("类别", style="cyan", no_wrap=True)
         table.add_column("对象")
         table.add_column("状态", no_wrap=True)
+        previous_category = None
         for category, name, ready in rows:
+            if previous_category is not None and category != previous_category:
+                table.add_section()
             table.add_row(
                 category,
                 name,
                 Text("就绪" if ready else "缺失", style="green" if ready else "red"),
             )
+            previous_category = category
         console.print(table)
 
     # 模型列表只展示选择模型时真正需要的编号、系列和状态。
@@ -199,9 +250,9 @@ def _display(view: str, data, json_output: bool = False):
     # 单独扫描先给出判定，再展示影响判定的核心指标。
     elif view == "scan":
         # risk 与 threshold 共同决定 verdict，差值用于直观看出越界程度。
-        risk = float(data.get("risk_score", 0.0))
-        threshold = float(data.get("threshold", 0.0))
-        verdict = data.get("verdict", "unknown")
+        risk = float(data["risk_score"])
+        threshold = float(data["threshold"])
+        verdict = data["verdict"]
         console.print("[bold]检测结论[/bold]  ", states.get(verdict, str(verdict)))
 
         # 检测器和耗时作为审计信息保留，但不干扰首行判定结论。
@@ -211,12 +262,12 @@ def _display(view: str, data, json_output: bool = False):
         table.add_row("风险分数", f"{risk:.4f}")
         table.add_row("判定阈值", f"{threshold:.4f}")
         table.add_row("阈值差值", f"{risk - threshold:+.4f}")
-        table.add_row("检测器", str(data.get("detector", "-")))
-        table.add_row("耗时", f"{float(data.get('elapsed_seconds', 0.0)):.2f} 秒")
+        table.add_row("检测器", str(data["detector"]))
+        table.add_row("耗时", f"{float(data['elapsed_seconds']):.2f} 秒")
         console.print(table)
         console.print(
             "[yellow]建议：使用 audit 命令创建清洗任务。[/yellow]"
-            if data.get("is_poisoned")
+            if data["is_poisoned"]
             else "[green]未发现超过判定阈值的风险特征。[/green]"
         )
 
@@ -324,54 +375,12 @@ def _display(view: str, data, json_output: bool = False):
         else:
             console.print("[yellow]任务尚未结束，可稍后再次执行 show。[/yellow]")
 
-
-# =====================================================================
-# 登录
-# =====================================================================
-@app.command()
-def login(
-    server: str = typer.Argument(..., help="API 地址"),
-    token: str = typer.Option(..., "--token", prompt=True, hide_input=True),
-):
-    """验证并保存服务器地址和 Token。"""
-
-    # -----------------------------------------------------------------
-    # 1. 使用受保护接口验证连接信息
-    # -----------------------------------------------------------------
-    # 去掉末尾斜杠，避免后续接口路径出现重复分隔符。
-    server = server.rstrip("/")
-    with httpx.Client(
-        base_url=server,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10.0,
-    ) as client:
-        _request(client, "GET", "/v1/me")
-
-    # -----------------------------------------------------------------
-    # 2. 保存已经验证通过的登录信息
-    # -----------------------------------------------------------------
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(
-        json.dumps({"server": server, "token": token}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    typer.echo(f"登录成功：{server}")
-
-
-@app.command()
-def logout():
-    """删除本地登录配置。"""
-    # missing_ok 使重复退出保持幂等。
-    CONFIG_FILE.unlink(missing_ok=True)
-    typer.echo("已退出登录。")
-
-
 # =====================================================================
 # 服务器状态
 # =====================================================================
 @app.command()
 def health(
-    server: str | None = typer.Argument(None, help="API 地址；省略时使用登录配置"),
+    server: str | None = typer.Argument(None, help="公开健康检查地址；省略时使用当前会话"),
     json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
 ):
     """检查服务器检测与清洗能力是否就绪。"""
@@ -379,7 +388,7 @@ def health(
     # -----------------------------------------------------------------
     # 1. 请求公开健康接口
     # -----------------------------------------------------------------
-    # 显式地址用于未登录诊断；省略时复用当前登录服务器。
+    # 显式地址只用于无 Token 的公开探活；省略时复用当前启动器会话。
     if server:
         with httpx.Client(base_url=server.rstrip("/"), timeout=10.0) as client:
             result = _request(client, "GET", "/health")
@@ -411,54 +420,108 @@ def list_models():
 @app.command()
 def scan(
     lora_path: Path,
+    batch: bool = typer.Option(False, "--batch", help="批量扫描目录中的 LoRA"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="扫描结果 JSON 归档路径"
+    ),
     json_output: bool = typer.Option(False, "--json", help="输出原始 JSON"),
 ):
-    """上传并单独检测 LoRA。"""
+    """上传并检测单个或一组 LoRA。"""
 
     # -----------------------------------------------------------------
-    # 1. 定位标准 LoRA 文件
+    # 1. 定位待扫描 LoRA
     # -----------------------------------------------------------------
-    # weights_path 与 config_path 共同组成服务端可加载的 PEFT 适配器。
+    # 单扫描直接使用目标目录；批量扫描根据标准权重文件递归定位各 LoRA。
     lora_path = lora_path.expanduser().resolve()
-    weights_path = lora_path / "adapter_model.safetensors"
-    config_path = lora_path / "adapter_config.json"
+    lora_paths = (
+        sorted({path.parent for path in lora_path.rglob("adapter_model.safetensors")})
+        if batch
+        else [lora_path]
+    )
+    if not lora_paths:
+        typer.echo(f"目录中未发现 LoRA：{lora_path}")
+        raise typer.Exit(1)
 
     # -----------------------------------------------------------------
-    # 2. 上传 LoRA 并执行静态检测
+    # 2. 依次上传并扫描 LoRA
     # -----------------------------------------------------------------
-    # JSON 模式保持标准输出纯净，因此不打印上传进度。
-    if not json_output:
-        typer.echo("正在上传 LoRA...")
-    with (
-        _client() as client,
-        weights_path.open("rb") as weights_file,
-        config_path.open("rb") as config_file,
-    ):
-        # uploaded 只保留服务器资源编号，后续扫描不再传递本地路径。
-        uploaded = _request(
-            client,
-            "POST",
-            "/v1/loras",
-            files={
-                "weights": (
-                    weights_path.name,
-                    weights_file,
-                    "application/octet-stream",
-                ),
-                "config": (config_path.name, config_file, "application/json"),
-            },
+    # results 保存每个 LoRA 的独立结果；批量模式额外保留名称用于归档定位。
+    results = []
+
+    # 同一批次复用连接，LoRA 仍按顺序上传扫描，避免并发请求争用服务端检测器。
+    with _client() as client:
+        for index, current_path in enumerate(lora_paths, start=1):
+            # JSON 模式保持标准输出纯净，其余模式展示当前扫描进度。
+            if not json_output:
+                typer.echo(
+                    f"[{index}/{len(lora_paths)}] 正在扫描 {current_path.name}..."
+                    if batch
+                    else "正在上传 LoRA..."
+                )
+
+            try:
+                # 批量失败必须转换为普通异常，避免错误文字污染 --json 标准输出。
+                uploaded = _upload_lora(client, current_path, fatal=not batch)
+                scan_result = _request(
+                    client,
+                    "POST",
+                    "/v1/scan",
+                    fatal=not batch,
+                    json={"lora_id": uploaded["lora_id"]},
+                )
+
+                # 单扫描保持原始响应；批量归档在响应前增加 LoRA 名称。
+                results.append(
+                    {"name": current_path.name, **scan_result} if batch else scan_result
+                )
+            except RuntimeError as exc:
+                # 批量模式记录失败项后继续；单项模式的错误已由 fatal 分支直接退出。
+                results.append(
+                    {"name": current_path.name, "error": str(exc) or "扫描失败"}
+                )
+                if not json_output:
+                    typer.echo(f"扫描失败：{exc}")
+
+    # -----------------------------------------------------------------
+    # 3. 汇总并归档扫描结果
+    # -----------------------------------------------------------------
+    if batch:
+        # 批量归档保留四项计数和逐项结果，不额外生成报告或模型产物。
+        result = {
+            "total": len(results),
+            "safe": sum(item.get("verdict") == "safe" for item in results),
+            "poisoned": sum(item.get("verdict") == "poisoned" for item in results),
+            "failed": sum("error" in item for item in results),
+            "items": results,
+        }
+
+        # 未指定输出路径时，以当前时间生成不会重复的默认归档名。
+        output = output or Path(f"scan_archive_{time.strftime('%Y%m%d_%H%M%S')}.json")
+    else:
+        # 单扫描继续返回服务端原始结果，兼容原有终端和 JSON 输出。
+        result = results[0]
+
+    # output 同时适用于单扫描和批量扫描，归档内容统一使用 UTF-8 JSON。
+    if output is not None:
+        output = output.expanduser().resolve()
+        output.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
-        # 单独扫描消费上传资源，并返回风险分数与最终判定。
-        result = _request(
-            client,
-            "POST",
-            "/v1/scan",
-            json={"lora_id": uploaded["lora_id"]},
-        )
-    # -----------------------------------------------------------------
-    # 3. 输出检测结果
-    # -----------------------------------------------------------------
-    _display("scan", result, json_output)
+
+    # 批量模式输出整体统计，单扫描继续复用现有详情视图。
+    if batch:
+        if json_output:
+            typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            typer.echo(
+                f"批量扫描完成：共 {result['total']} 个，安全 {result['safe']} 个，"
+                f"疑似中毒 {result['poisoned']} 个，失败 {result['failed']} 个。"
+            )
+    else:
+        _display("scan", result, json_output)
+    if output is not None and not json_output:
+        typer.echo(f"扫描归档已保存：{output}")
 
 
 @app.command()
@@ -471,35 +534,17 @@ def audit(
     """上传 LoRA，创建审计任务并按需等待完成。"""
 
     # -----------------------------------------------------------------
-    # 1. 定位待审计 LoRA
+    # 1. 定位并上传待审计 LoRA
     # -----------------------------------------------------------------
     lora_path = lora_path.expanduser().resolve()
-    weights_path = lora_path / "adapter_model.safetensors"
-    config_path = lora_path / "adapter_config.json"
 
     # -----------------------------------------------------------------
     # 2. 上传 LoRA 并创建后台任务
     # -----------------------------------------------------------------
     typer.echo("正在上传 LoRA...")
-    with (
-        _client() as client,
-        weights_path.open("rb") as weights_file,
-        config_path.open("rb") as config_file,
-    ):
+    with _client() as client:
         # 上传结果中的 lora_id 是创建审计任务时使用的临时资源编号。
-        uploaded = _request(
-            client,
-            "POST",
-            "/v1/loras",
-            files={
-                "weights": (
-                    weights_path.name,
-                    weights_file,
-                    "application/octet-stream",
-                ),
-                "config": (config_path.name, config_file, "application/json"),
-            },
-        )
+        uploaded = _upload_lora(client, lora_path)
         # job 保存最新任务快照，轮询期间会被服务器响应持续替换。
         job = _request(
             client,
@@ -598,5 +643,5 @@ def artifact(
 
 
 if __name__ == "__main__":
-    # 直接运行 cli.py 时启动 Typer；作为模块导入时只注册命令。
-    app()
+    # 无论由启动器还是模块方式运行，帮助信息统一展示 aegis 命令。
+    app(prog_name="aegis")

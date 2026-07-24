@@ -6,6 +6,34 @@ import math
 import torch
 
 
+def merge_score_dict(target, source):
+    """将当前任务域的可疑分数按逐元素最大值合并到全局分数表。"""
+
+    # -----------------------------------------------------------------
+    # 逐项规范化当前任务域的分数。
+    # -----------------------------------------------------------------
+    # target 保存跨任务域的全局分数，source 保存当前任务域待合并的分数；
+    # key 对应参数位置，score 是该位置的可疑分数张量。
+    for key, score in source.items():
+        # 聚合只在 CPU 上使用 float32，并切断输入张量的计算图。
+        score = torch.as_tensor(score).detach().cpu().float()
+
+        # 首次出现的参数位置必须复制张量，避免全局分数与输入意外共享存储。
+        if key not in target:
+            target[key] = score.clone()
+            continue
+
+        # 同一参数位置必须保持结构一致，否则逐元素比较没有意义。
+        if target[key].shape != score.shape:
+            raise RuntimeError(
+                f"      [错误] 多域签名聚合时分数形状不一致: {key}, "
+                f"{tuple(target[key].shape)} vs {tuple(score.shape)}"
+            )
+
+        # 已存在的参数位置保留各任务域逐元素的最高可疑分数。
+        target[key] = torch.maximum(target[key], score)
+
+
 # ====================================================
 # 后门签名提取
 # ====================================================
@@ -91,15 +119,11 @@ def extract_bd_vax_signature_strict(
             for A_bd, B_bd, A_clean, B_clean in packs:
                 if score_output:
                     # gate/up/q/k/v 按输出通道计算 poisoned-clean 有效增量。
-                    block = (
-                        B_bd[start:end] @ A_bd
-                        - B_clean[start:end] @ A_clean
-                    )
+                    block = B_bd[start:end] @ A_bd - B_clean[start:end] @ A_clean
                 else:
                     # down/o 按输入通道计算，转置后统一为 [通道, 特征]。
                     block = (
-                        B_bd @ A_bd[:, start:end]
-                        - B_clean @ A_clean[:, start:end]
+                        B_bd @ A_bd[:, start:end] - B_clean @ A_clean[:, start:end]
                     ).transpose(0, 1)
                 blocks.append(block)
 
@@ -117,9 +141,7 @@ def extract_bd_vax_signature_strict(
 
             # alignment 取所有变体对的均值；最终分数以强度为主、一致性为修正。
             alignment *= 2.0 / (len(packs) * (len(packs) - 1))
-            score_chunks.append(
-                (norms.mean(dim=0) + lambda_weight * alignment).cpu()
-            )
+            score_chunks.append((norms.mean(dim=0) + lambda_weight * alignment).cpu())
 
         # 恢复当前 projection 的完整通道顺序。
         channel_scores = torch.cat(score_chunks)
@@ -129,9 +151,7 @@ def extract_bd_vax_signature_strict(
             mlp_projection_scores[(layer_idx, proj)] = channel_scores
         else:
             # Attention 将连续的 head_dim 个通道压缩为一个物理 head 分数。
-            physical_heads = (
-                num_kv_heads if proj in ("k_proj", "v_proj") else num_heads
-            )
+            physical_heads = num_kv_heads if proj in ("k_proj", "v_proj") else num_heads
             attn_projection_scores[(layer_idx, proj)] = channel_scores.view(
                 physical_heads,
                 head_dim,
@@ -150,10 +170,7 @@ def extract_bd_vax_signature_strict(
     )
     for layer_idx in mlp_layers:
         mlp_scores[layer_idx] = torch.stack(
-            [
-                mlp_projection_scores[(layer_idx, proj)]
-                for proj in mlp_projections
-            ]
+            [mlp_projection_scores[(layer_idx, proj)] for proj in mlp_projections]
         ).mean(dim=0)
 
     # -----------------------------------------------------------------
@@ -311,8 +328,7 @@ def bd_vax_surgeon_strict(
             query_heads = selected_heads[layer_idx]
             if proj in ("k_proj", "v_proj"):
                 physical_heads = {
-                    (head_idx * num_kv_heads) // num_heads
-                    for head_idx in query_heads
+                    (head_idx * num_kv_heads) // num_heads for head_idx in query_heads
                 }
             else:
                 physical_heads = query_heads

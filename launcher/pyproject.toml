@@ -1,0 +1,153 @@
+[project]
+name = "aegis-lora-runtime"
+version = "0.3.0"
+description = "Locked runtime environment for Aegis-LoRA"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "httpx==0.28.1",
+    "rich==14.3.3",
+    "typer==0.24.1",
+]
+
+[project.optional-dependencies]
+full = [
+    "accelerate==1.13.0",
+    "bitsandbytes==0.49.2",
+    "datasets==4.8.3",
+    "fastapi==0.136.1",
+    "gradio==6.14.0",
+    "hf-transfer==0.1.9",
+    "huggingface-hub==1.7.1",
+    "jieba==0.42.1",
+    "matplotlib==3.10.9",
+    "modelscope==1.35.0",
+    "numpy==2.2.6",
+    "pandas==2.3.3",
+    "peft==0.18.1",
+    "pydantic==2.13.3",
+    "python-multipart==0.0.27",
+    "rouge-chinese==1.0.3",
+    "safetensors==0.7.0",
+    "scikit-learn==1.7.2",
+    "scipy==1.15.3",
+    "starlette==1.0.0",
+    "tokenizers==0.22.2",
+    "tqdm==4.67.3",
+    "transformers==5.3.0",
+    "trl==1.4.0",
+    "uvicorn==0.46.0",
+]
+cpu = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+cu118 = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+cu121 = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+cu124 = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+cu126 = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+cu128 = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+cu130 = ["torch>=2.4,<2.11", "torchvision>=0.19,<0.26"]
+
+[dependency-groups]
+dev = ["black==26.3.1"]
+
+[tool.uv]
+package = false
+constraint-dependencies = [
+    "aiohappyeyeballs==2.6.1",
+    "aiohttp==3.13.3",
+    "anyio==4.12.1",
+    "certifi==2026.2.25",
+    "charset-normalizer==3.4.6",
+    "click==8.3.1",
+    "filelock==3.20.0",
+    "fonttools==4.62.1",
+    "fsspec==2025.12.0",
+    "hf-xet==1.4.2",
+    "idna==3.11",
+    "markdown-it-py==4.0.0",
+    "markupsafe==3.0.2",
+    "mypy-extensions==1.1.0",
+    "orjson==3.11.8",
+    "packaging==25.0",
+    "pathspec==1.1.1",
+    "pillow==12.0.0",
+    "platformdirs==4.9.6",
+    "propcache==0.4.1",
+    "pyarrow==23.0.1",
+    "pygments==2.19.2",
+    "pytokens==0.4.1",
+    "pytz==2026.1.post1",
+    "regex==2026.2.28",
+    "requests==2.32.5",
+    "setuptools==80.10.2",
+    "tomli==2.4.1",
+    "typing-extensions==4.15.0",
+    "tzdata==2025.3",
+    "urllib3==2.6.3",
+    "xxhash==3.6.0",
+    "yarl==1.23.0",
+]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cu118" },
+        { extra = "cu121" },
+        { extra = "cu124" },
+        { extra = "cu126" },
+        { extra = "cu128" },
+        { extra = "cu130" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu118", extra = "cu118" },
+    { index = "pytorch-cu121", extra = "cu121" },
+    { index = "pytorch-cu124", extra = "cu124" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu118", extra = "cu118" },
+    { index = "pytorch-cu121", extra = "cu121" },
+    { index = "pytorch-cu124", extra = "cu124" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

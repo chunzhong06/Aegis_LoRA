@@ -296,7 +296,7 @@ def run_job(job_id: str):
                             recovery_data_path=str(
                                 ROOT / "datasets" / "clean_data_recovery.json"
                             ),
-                            auto_batch_size=False,
+                            auto_batch_size=True,
                         )
                     )
                 else:
@@ -311,7 +311,7 @@ def run_job(job_id: str):
                             recovery_data_path=str(
                                 ROOT / "datasets" / "clean_data_recovery.json"
                             ),
-                            auto_batch_size=False,
+                            auto_batch_size=True,
                         )
                     )
 

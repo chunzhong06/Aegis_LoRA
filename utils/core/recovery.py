@@ -111,8 +111,9 @@ def lightweight_recovery_finetuning(
     # 4. 配置轻量训练参数：低 LR、小样本、无中间 checkpoint
     # -----------------------------------------------------------------
     grad_accum = max(1, 8 // max(1, int(batch_size)))
-    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    use_fp16 = torch.cuda.is_available() and not use_bf16
+    use_cuda = torch.cuda.is_available()
+    use_bf16 = use_cuda and torch.cuda.is_bf16_supported()
+    use_fp16 = use_cuda and not use_bf16
 
     training_args = TrainingArguments(
         output_dir=output_dir,

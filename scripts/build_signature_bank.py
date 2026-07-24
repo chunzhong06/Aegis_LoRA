@@ -26,7 +26,7 @@ PROJECT_ROOT = find_project_root(__file__)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.core.cleanse import extract_bd_vax_signature_strict
+from utils.core.cleanse import extract_bd_vax_signature_strict, merge_score_dict
 from utils.core.dataset_builder import (
     build_poisoned_variants_for_domain,
     build_shared_clean_subsets,
@@ -49,7 +49,7 @@ CLEAN_VARIANT_DATA_PATH = r"D:\Aegis_LoRA\datasets\clean_data_variants.json"
 SIGNATURE_SAVE_PATH = r"D:\Aegis_LoRA\datasets\deepseek_multidomain_signatures.pt"
 
 # -----------------------------------------------------------------------------
-# 2. 实验参数：默认与当前 pipeline.py 的深度免疫逻辑保持一致
+# 2. 离线签名构建的人工配置
 # -----------------------------------------------------------------------------
 AUTO_BATCH_SIZE = False
 RESET_WORK_DIR = True
@@ -59,27 +59,6 @@ def assert_path_exists(path: str, label: str) -> None:
     """提前检查关键路径，避免训练跑到中途才因路径错误崩溃。"""
     if not os.path.exists(path):
         raise FileNotFoundError(f"      [错误] {label} 不存在: {path}")
-
-
-def merge_score_dict(target: dict, source: dict) -> None:
-    """
-    将一个任务域提取出的 signature 合并到全局 signature。
-    聚合策略：同一层 / 模块 / 通道取最大可疑分数，相当于多域后门特征并集。
-    """
-    for key, score in source.items():
-        score = torch.as_tensor(score).detach().cpu().float()
-
-        if key not in target:
-            target[key] = score.clone()
-            continue
-
-        if target[key].shape != score.shape:
-            raise RuntimeError(
-                f"      [错误] signature 聚合形状不一致: {key}, "
-                f"{tuple(target[key].shape)} vs {tuple(score.shape)}"
-            )
-
-        target[key] = torch.maximum(target[key], score)
 
 
 def clear_cuda_cache() -> None:

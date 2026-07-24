@@ -27,7 +27,7 @@ def main():
             tau=0.4,
             resume_from_checkpoint=True,
             auto_batch_size=False,
-            num_epochs=0,
+            num_epochs=5,
             attention_top_k=8,
             domain_keys=("refusal", "sentiment", "code_injection"),
         )

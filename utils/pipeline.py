@@ -21,7 +21,11 @@ from utils.core.delta_extractor import (
     run_variant_training_isolated,
     compute_state_dict_difference,
 )
-from utils.core.cleanse import extract_bd_vax_signature_strict, bd_vax_surgeon_strict
+from utils.core.cleanse import (
+    bd_vax_surgeon_strict,
+    extract_bd_vax_signature_strict,
+    merge_score_dict,
+)
 from utils.core.recovery import lightweight_recovery_finetuning
 
 # 导入报告生成模块
@@ -36,6 +40,9 @@ from utils.core.detector import (
 # 配置日志级别，抑制 transformers 和 peft 的冗长警告
 transformers.logging.set_verbosity_warning()
 warnings.filterwarnings("ignore", category=UserWarning, module="peft")
+
+# 项目内置资源统一基于当前模块定位，避免依赖启动命令所在目录。
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # =====================================================================
@@ -173,7 +180,9 @@ def probe_optimal_batch_size(
 # =====================================================================
 def run_static_scan_pipeline(
     lora_path: str,
-    detector_path: str = "./models/detectors/spectral_detector_llama.pkl",
+    detector_path: str = os.path.join(
+        PROJECT_ROOT, "models", "detectors", "spectral_detector_llama.pkl"
+    ),
     return_details: bool = False,
 ):
     print("\n" + "=" * 60)
@@ -238,8 +247,12 @@ def run_static_scan_pipeline(
 def run_immunization_pipeline(
     base_model_path: str,
     lora_path: str,
-    variant_data_path: str = "./datasets/clean_data_variants.json",
-    recovery_data_path: str = "./datasets/clean_data_recovery.json",
+    variant_data_path: str = os.path.join(
+        PROJECT_ROOT, "datasets", "clean_data_variants.json"
+    ),
+    recovery_data_path: str = os.path.join(
+        PROJECT_ROOT, "datasets", "clean_data_recovery.json"
+    ),
     tau: float = 0.40,
     n_variants: int = 6,
     sample_size: int = 200,
@@ -262,7 +275,7 @@ def run_immunization_pipeline(
 
     # 以原始 LoRA 名称构造独立缓存目录，保存签名和变体训练 checkpoint。
     lora_basename = os.path.basename(os.path.normpath(lora_path))
-    cache_root = os.path.abspath(".cache")
+    cache_root = os.path.join(PROJECT_ROOT, ".cache")
     temp_work_dir = os.path.abspath(
         os.path.join(cache_root, f"immunization_{lora_basename}")
     )
@@ -286,28 +299,8 @@ def run_immunization_pipeline(
 
     # 自动探测训练 batch size；若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
-        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 4
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
     )
-
-    def merge_score_dict(target_dict, source_dict):
-        """将某一个 domain 的可疑分数合并到全局分数表。"""
-        for key, score in source_dict.items():
-            score = torch.as_tensor(score).detach().cpu().float()
-
-            # 第一次出现该模块 key，直接写入全局表。
-            if key not in target_dict:
-                target_dict[key] = score.clone()
-                continue
-
-            # 同一个模块的 score shape 必须一致，否则无法安全逐元素聚合。
-            if target_dict[key].shape != score.shape:
-                raise RuntimeError(
-                    f"      [错误] 多域签名聚合时分数形状不一致: {key}, "
-                    f"{tuple(target_dict[key].shape)} vs {tuple(score.shape)}"
-                )
-
-            # 多域聚合：保留每个位置在所有 domain 中的最高可疑分数。
-            target_dict[key] = torch.maximum(target_dict[key], score)
 
     # -----------------------------------------------------------------
     # 步骤 1：生成或读取多域聚合签名
@@ -462,10 +455,11 @@ def run_immunization_pipeline(
         trust_remote_code=True,
     )
 
+    use_cuda = torch.cuda.is_available()
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else None,
+        dtype=torch.bfloat16 if use_cuda else torch.float32,
+        device_map="auto" if use_cuda else None,
         local_files_only=True,
         trust_remote_code=True,
         attn_implementation="sdpa",
@@ -517,7 +511,7 @@ def run_immunization_pipeline(
     # -----------------------------------------------------------------
     print("\n>>> [步骤 4/4] 正在导出防篡改审计报告...")
 
-    reports_dir = os.path.join(".cache", "reports")
+    reports_dir = os.path.join(PROJECT_ROOT, ".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
     lora_name = os.path.basename(os.path.normpath(lora_path))
@@ -567,7 +561,9 @@ def run_fast_cleanse_pipeline(
     base_model_path: str,
     lora_path: str,
     signature_path: str,
-    recovery_data_path: str = "./datasets/clean_data_recovery.json",
+    recovery_data_path: str = os.path.join(
+        PROJECT_ROOT, "datasets", "clean_data_recovery.json"
+    ),
     tau: float = 0.40,
     sample_size: int = 200,
     num_epochs: int = 5,
@@ -590,7 +586,7 @@ def run_fast_cleanse_pipeline(
     # 根据当前硬件自动探测康复微调使用的 batch size。
     # 若关闭自动探测，则使用保守默认值 2。
     optimal_bs = (
-        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 4
+        probe_optimal_batch_size(base_model_path, lora_path) if auto_batch_size else 2
     )
 
     # -----------------------------------------------------------------
@@ -623,10 +619,11 @@ def run_fast_cleanse_pipeline(
 
     # 加载基座模型。
     # device_map="auto" 会自动分配设备；显存不足时可能发生 CPU offload。
+    use_cuda = torch.cuda.is_available()
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else None,
+        dtype=torch.bfloat16 if use_cuda else torch.float32,
+        device_map="auto" if use_cuda else None,
         local_files_only=True,
         trust_remote_code=True,
         attn_implementation="sdpa",
@@ -691,7 +688,7 @@ def run_fast_cleanse_pipeline(
     )
 
     # 所有报告统一写入 .cache/reports。
-    reports_dir = os.path.join(".cache", "reports")
+    reports_dir = os.path.join(PROJECT_ROOT, ".cache", "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
     # 根据 LoRA 名称生成报告文件名，避免不同 LoRA 的报告互相覆盖。

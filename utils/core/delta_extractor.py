@@ -122,10 +122,11 @@ def setup_extraction_model(base_model_path, lora_path):
         # 2. 加载基座模型。
         # -----------------------------------------------------------------
         # GPU 环境使用 bf16 + cuda:0；CPU 环境回退到 float32。
+        use_cuda = torch.cuda.is_available()
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
-            dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-            device_map={"": 0} if torch.cuda.is_available() else None,
+            dtype=torch.bfloat16 if use_cuda else torch.float32,
+            device_map={"": 0} if use_cuda else None,
             local_files_only=True,
             trust_remote_code=True,
             attn_implementation="sdpa",
@@ -264,10 +265,11 @@ def run_variant_training(
         # -----------------------------------------------------------------
         # 2. 重新加载模型，并注入统一初始 LoRA 权重
         # -----------------------------------------------------------------
+        use_cuda = torch.cuda.is_available()
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
-            dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-            device_map={"": 0} if torch.cuda.is_available() else None,
+            dtype=torch.bfloat16 if use_cuda else torch.float32,
+            device_map={"": 0} if use_cuda else None,
             local_files_only=True,
             trust_remote_code=True,
             attn_implementation="sdpa",
@@ -301,7 +303,7 @@ def run_variant_training(
         # -----------------------------------------------------------------
         # 3. 配置短训 SFT：8bit AdamW + 梯度检查点 + completion-only loss
         # -----------------------------------------------------------------
-        use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        use_bf16 = use_cuda and torch.cuda.is_bf16_supported()
 
         training_args = SFTConfig(
             output_dir=output_dir,
@@ -310,7 +312,7 @@ def run_variant_training(
             learning_rate=2e-4,
             num_train_epochs=3,
             bf16=use_bf16,
-            fp16=torch.cuda.is_available() and not use_bf16,
+            fp16=use_cuda and not use_bf16,
             logging_steps=100,
             save_strategy="steps",
             save_steps=100,

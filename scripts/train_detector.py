@@ -259,17 +259,7 @@ def calibrate_and_evaluate(data_dir, model_prefix="llama2"):
     os.makedirs(save_dir, exist_ok=True)
 
     model_path = os.path.join(save_dir, f"spectral_detector_{model_prefix}.pkl")
-
-    with open(model_path, "wb") as f:
-        pickle.dump(
-            {
-                "scaler": detector.scaler,
-                "clf": detector.classifier,
-                "trained": detector.is_trained,
-                "threshold": detector.threshold,
-            },
-            f,
-        )
+    detector.save_model(model_path)
 
     print(f"\n      [-] [完成] 统计学探测器模型已保存至: {model_path}")
 

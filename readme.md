@@ -2,233 +2,272 @@
 
 > 面向大语言模型 LoRA 适配器的后门检测、参数级清洗与安全审计工具。
 
-Aegis-LoRA 面向开源大模型生态中第三方 LoRA 适配器的可信接入问题。系统在 LoRA 正式挂载前读取适配器权重，提取权重谱特征完成静态风险检测；当发现可疑后门风险后，可继续执行快速清洗或深度清洗，并生成可追溯的审计报告。项目适用于本地大模型部署、第三方 LoRA 使用前检查、模型安全实验复现和竞赛作品演示。
+Aegis-LoRA 聚焦第三方 LoRA 的可信接入：在适配器正式挂载前执行静态权重检测，发现风险后继续完成快速清洗或深度清洗，并输出清洗后的 LoRA 与可追溯审计报告。项目同时提供本地 WebUI、远程 API、CLI 客户端和竞赛演示脚本。
 
----
+| 检测准确率 |  平均检测耗时 | 未清洗平均 ASR | 深度清洗后 ASR | 清洗后 C-Acc |
+| ---------: | ------------: | -------------: | -------------: | -----------: |
+|     92.78% | 0.702 秒/LoRA |         97.50% |          1.90% |       约 99% |
 
-## ✨ 核心功能
-
-### 静态权重检测
-
-系统直接分析 LoRA 适配器权重，从注意力投影矩阵中提取谱统计特征，形成权重谱画像，并由静态探测器判断中毒风险。该过程不依赖真实触发词，也不需要先把可疑 LoRA 挂载到模型中进行多轮推理。
-
-### 参数级清洗
-
-系统将后门风险定位到 LoRA 的高风险通道和注意力头，并在 LoRA A/B 因子中进行定向清零，尽量阻断可疑低秩更新路径，同时避免修改基座模型主体参数。
-
-### 快速清洗与深度清洗
-
-- **快速清洗**：加载离线多域签名库，跳过在线变体训练，适合日常下载后的快速查杀。
-- **深度清洗**：围绕当前 LoRA 构造 clean / poisoned 对照变体，在线提取多域免疫签名，适合安全要求更高的分析场景。
-
-### 图形化工作台
-
-项目提供 Gradio 可视化界面，将模型路径配置、静态检测、风险拦截、清洗处理、对话验证和审计报告生成整合到同一流程中。
-
----
-
-## 📁 项目结构
+## 工作流程
 
 ```text
-Aegis_LoRA/
-│   main.py                         # 图形化工作台入口
-│   readme.md                       # 项目说明文档
-│   requirements.txt                # Python 依赖列表
-│
-├── datasets/
-│   │   clean_data_recovery.json    # 清洗后轻量康复数据
-│   │   clean_data_variants.json    # clean / poisoned 变体构造数据
-│   │   deepseek_multidomain_signatures.pt
-│   │   llama_multidomain_signatures.pt
-│   │   qwen_multidomain_signatures.pt
-│   │
-│   └── test_data/                  # ASR 与 C-Acc 测试数据
-│       ├── clean/                  # 干净测试集
-│       └── poison/                 # 含触发器测试集
-│
-├── models/
-│   └── detectors/
-│       └── spectral_detector_llama.pkl  # 权重谱静态检测器
-│
-├── scripts/
-│   │   build_signature_bank.py     # 构建离线多域签名库
-│   │   data_fetcher.py             # 数据下载脚本
-│   │   run_detector.py             # 静态检测脚本
-│   │   run_evaluator.py            # ASR / C-Acc 评估脚本
-│   │   run_fast_purification.py    # 快速清洗脚本
-│   │   run_purification.py         # 深度清洗脚本
-│   │   train_detector.py           # 静态检测器训练脚本
-│
-└── utils/
-    │   cleanse.py                  # 签名提取与神经元手术模块
-    │   dataset_builder.py          # 数据集构建模块
-    │   delta_extractor.py          # 差分提取模块
-    │   detector.py                 # 后门探测器模块
-    │   evaluator.py                # 通用后门指标评估器
-    │   pipeline.py                 # 核心流水线模块
-    │   recovery.py                 # 康复微调模块
-    │   report_generator.py         # 报告生成模块
+[第三方 LoRA]
+       ↓
+[静态权重检测]
+       ├── 安全 ──→ [允许挂载]
+       │
+       └── 可疑 ──→ [快速清洗 / 深度清洗]
+                              ↓
+                       [验证与审计报告]
 ```
 
----
+## 核心能力
 
-## 环境要求
+| 能力         | 说明                                                             |
+| ------------ | ---------------------------------------------------------------- |
+| 静态权重检测 | 从 Q、K、V、O 注意力投影中提取谱特征，无需触发词和模型推理       |
+| 快速清洗     | 复用离线多域签名，适合下载后的即时查杀和批量处理                 |
+| 深度清洗     | 在线构造 clean/poisoned 对照变体，提取更贴合当前 LoRA 的免疫签名 |
+| 多入口使用   | 支持本地 WebUI、远程 API、CLI 客户端和独立演示脚本               |
+| 审计留痕     | 生成 HTML/JSON 报告及标准 LoRA 清洗产物                          |
 
-推荐环境：
+## 快速开始与使用
 
-- Python 3.10
-- Windows / Linux
-- NVIDIA GPU
+Windows 一键启动需要 PowerShell 5.1 或更高版本；自己配置环境需要 Python 3.10，支持 Windows 和 Linux。推荐使用 NVIDIA GPU，无兼容 GPU 时也可使用 CPU。
 
-本项目不在仓库中内置大语言模型基座或第三方 LoRA 权重。运行时需要用户在界面中填写本地基座模型路径和待审计 LoRA 路径。
+### 使用一键启动
 
----
+下载或克隆项目后进入项目根目录。启动器会优先复用或创建 Conda 环境 `aegis_env`；未检测到 Conda 时改用项目内 `.venv`。两种方式都通过 `launcher/uv.lock` 同步 Python 3.10 依赖。
 
-## 安装方式
+#### GUI
+
+运行本地图形界面：
+
+```bat
+start-gui.bat
+```
+
+启动完成后访问 `http://127.0.0.1:7860`，填写基座模型与 LoRA 路径后即可执行检测、清洗、对话验证和报告下载。
+
+启动器会读取 NVIDIA 驱动支持的 CUDA 上限，自动选择不高于驱动能力的 PyTorch 构建；无兼容 GPU 时使用 CPU。也可手动指定：
+
+```bat
+start-gui.bat -Torch cu130
+start-gui.bat -Torch cpu
+```
+
+| 驱动 CUDA 上限 | 自动档位 | 锁定的 Torch / torchvision |
+| -------------- | -------- | -------------------------- |
+| 11.8–12.0      | `cu118`  | 2.7.1 / 0.22.1             |
+| 12.1–12.3      | `cu121`  | 2.5.1 / 0.20.1             |
+| 12.4–12.5      | `cu124`  | 2.6.0 / 0.21.0             |
+| 12.6–12.7      | `cu126`  | 2.10.0 / 0.25.0            |
+| 12.8–12.9      | `cu128`  | 2.10.0 / 0.25.0            |
+| 13.0 及以上    | `cu130`  | 2.10.0 / 0.25.0            |
+
+#### CLI
+
+CLI 启动器负责准备环境、建立本次 API 连接，并在交互窗口关闭后回收本地服务或 SSH 隧道。进入 `AEGIS>` 后可持续执行：
+
+```bat
+# 检查服务和模型
+aegis health
+aegis models
+
+# 单独或批量扫描 LoRA
+aegis scan D:\path\to\lora
+aegis scan D:\path\to\lora-root --batch
+
+# 创建快速清洗审计任务
+aegis audit D:\path\to\lora --model qwen2.5-3b --mode fast
+```
+
+批量扫描会递归查找包含 `adapter_model.safetensors` 的 LoRA 目录，单项失败不会中断后续扫描。结果默认保存为 `scan_archive_日期_时间.json`，可使用 `--output PATH` 指定归档位置。
+
+审计完成后可下载报告和清洗产物：
+
+```bat
+aegis report JOB_ID
+aegis artifact JOB_ID
+```
+
+服务端当前注册的模型编号：
+
+| 模型编号           | 模型                          |
+| ------------------ | ----------------------------- |
+| `qwen2.5-3b`       | Qwen 2.5 3B Instruct          |
+| `llama-3.2-3b`     | Llama 3.2 3B Instruct         |
+| `deepseek-r1-1.5b` | DeepSeek R1 Distill Qwen 1.5B |
+
+输入 `exit` 退出当前 CLI 会话。也可将命令直接传给 `start-cli.bat` 单次执行，例如 `start-cli.bat health`。
+
+##### 本地 API
+
+在本机启动一套仅供当前 CLI 会话使用的 API：
+
+```bat
+start-cli.bat -ConnectionMode local
+```
+
+按提示输入本地端口和 API Token。启动器会配置完整算法环境、启动本地 API，并在 CLI 退出时关闭该 API。
+
+##### SSH
+
+远端服务器已运行 Aegis-LoRA API 时，可创建本次会话的一次性 SSH 隧道：
+
+```bat
+start-cli.bat -ConnectionMode ssh
+```
+
+按提示输入 SSH 命令（例如 `ssh -p 31544 root@host`）、远端 API 主机与端口、API Token。SSH 密码由 `ssh.exe` 直接读取且不会保存；API Token 与 SSH 密码相互独立。
+
+启动器通过 `-F NUL` 禁止读取用户 SSH 配置，并把主机指纹写入本次会话目录，不会读取或修改默认 `.ssh`。正常退出时会关闭隧道并删除本次日志和独立主机指纹。
+
+如果 API 已经可以直接访问，不需要本地服务或 SSH 隧道，可使用：
+
+```bat
+start-cli.bat -ConnectionMode direct
+```
+
+CLI 连接文件统一位于 `.cache/cli`。`config.json` 只保存允许复用的 API 地址、Token 和本地端口；local / ssh 的运行文件位于独立的 `sessions/<会话>` 目录，即使异常遗留也不会被后续启动复用。
+
+启动器不会自动下载模型、检测器或算法数据；缺失资源会在相关功能实际使用时报告。
+
+### 自己配置环境
+
+#### 安装依赖
 
 ```bash
-# 1. 获取项目代码
 git clone https://github.com/chunzhong06/Aegis_LoRA.git
 cd Aegis_LoRA
 
-# 2. 创建 Conda 环境
 conda create -n aegis_env python=3.10 -y
 conda activate aegis_env
 
-# 3. 升级 pip
 python -m pip install --upgrade pip
-
-# 4. 安装 PyTorch
-# 若本机支持 CUDA 13.0，可使用以下命令：
-pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
-
-# 如果显卡驱动或 CUDA 环境不匹配，请根据 PyTorch 官网选择对应版本。
-
-# 5. 安装其余依赖
-pip install -r requirements.txt
+pip install -r launcher/requirements.txt
 ```
 
----
-
-## 启动图形化界面
-
-在项目根目录执行：
+`launcher/requirements.txt` 不固定 PyTorch，请根据本机驱动与 CUDA 环境单独安装兼容版本。例如 CUDA 13.0：
 
 ```bash
-python main.py
+pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
 ```
 
-服务启动后，在浏览器中打开终端输出的本地地址。默认情况下通常为：
+#### 启动 GUI
+
+```bash
+python -m launcher.webui
+```
+
+浏览器访问 `http://127.0.0.1:7860`。
+
+#### 启动 API 与 CLI
+
+API 使用 Bearer Token 保护业务接口。先在一个终端设置 Token 并启动服务：
+
+```powershell
+# PowerShell
+$env:AEGIS_API_TOKEN="YOUR_TOKEN"
+python -m uvicorn utils.api_server:app --host 127.0.0.1 --port 8000
+```
+
+```bash
+# Bash
+export AEGIS_API_TOKEN="YOUR_TOKEN"
+python -m uvicorn utils.api_server:app --host 127.0.0.1 --port 8000
+```
+
+`127.0.0.1` 只允许本机访问；需要从其他设备或 SSH 隧道访问时，可根据网络和防火墙配置改为 `0.0.0.0`。服务启动后可访问公开健康检查 `GET /health`，业务接口统一位于 `/v1`。
+
+再在另一个终端设置同一地址和 Token：
+
+```powershell
+# PowerShell
+$env:AEGIS_API_SERVER="http://127.0.0.1:8000"
+$env:AEGIS_API_TOKEN="YOUR_TOKEN"
+python -m launcher.cli health
+```
+
+```bash
+# Bash
+export AEGIS_API_SERVER="http://127.0.0.1:8000"
+export AEGIS_API_TOKEN="YOUR_TOKEN"
+python -m launcher.cli health
+```
+
+`cli.py` 不读取或写入连接配置，普通终端必须显式提供这两个环境变量。其命令参数与一键启动中的 `aegis` 完全相同：
+
+```bash
+python -m launcher.cli models
+python -m launcher.cli scan /path/to/lora
+python -m launcher.cli scan /path/to/lora-root --batch
+python -m launcher.cli audit /path/to/lora --model qwen2.5-3b --mode fast
+python -m launcher.cli report JOB_ID
+python -m launcher.cli artifact JOB_ID
+```
+
+## 实验结果
+
+### 静态检测
+
+| Accuracy | Precision | Recall | F1-Score |   FPR | ROC-AUC | 平均耗时 |
+| -------: | --------: | -----: | -------: | ----: | ------: | -------: |
+|   92.78% |   100.00% | 86.00% |   92.47% | 0.00% |  0.9930 | 0.702 秒 |
+
+### 后门清洗
+
+| 状态       | 平均 ASR | 平均 C-Acc |
+| ---------- | -------: | ---------: |
+| 清洗前     |   97.50% |     88.10% |
+| 快速清洗后 |    4.50% |     99.20% |
+| 深度清洗后 |    1.90% |     99.10% |
+
+实验覆盖388个健康/中毒 LoRA 检测样本，以及情感倾向、代码注入和拒绝服务三类清洗任务；完整实验设置与对比分析见竞赛作品报告。
+
+## 支持范围
+
+| 场景           | 支持范围                                                                               |
+| -------------- | -------------------------------------------------------------------------------------- |
+| 本地快速清洗   | 依赖与基座模型匹配的离线签名，因此仅支持已有签名覆盖的模型                             |
+| 本地深度清洗   | 不依赖离线签名或预设模型名单，支持当前 Transformers/PEFT 环境能够正确加载的模型与 LoRA |
+| 服务器快速清洗 | 仅支持服务器已注册且具有匹配离线签名的模型                                             |
+| 服务器深度清洗 | 当前仅能选择服务器已注册的模型；清洗算法本身不受离线签名或模型系列限制                 |
+| 后续服务器能力 | 计划允许提交魔搭社区模型 ID，由服务器下载模型后执行深度清洗                            |
+| 攻击方式       | 不设置攻击方法或触发类型白名单；实验中使用的攻击类别不代表能力边界                     |
+
+快速清洗的模型范围由离线签名决定；深度清洗没有这一限制。服务器当前的模型范围来自注册和资源管理机制，不是深度清洗算法本身的限制。
+
+## 项目结构
 
 ```text
-http://127.0.0.1:7860
+Aegis_LoRA/
+├── start-gui.bat                 # WebUI 一键启动
+├── start-cli.bat                 # CLI 命令入口
+├── launcher/                     # 应用入口与运行环境
+│   ├── webui.py                  # 本地图形界面
+│   ├── cli.py                    # 远程 API 客户端
+│   ├── start.ps1                 # 环境检查、配置与启动
+│   ├── connect.ps1               # CLI 会话连接与进程生命周期
+│   ├── pyproject.toml            # 依赖与环境定义
+│   └── uv.lock                   # 锁定依赖版本
+├── utils/
+│   ├── pipeline.py               # 检测与清洗流水线
+│   ├── api_server.py             # 远程 API
+│   └── core/                     # 核心检测、清洗与报告逻辑
+├── competition/                  # 竞赛演示与评测
+├── scripts/                      # 数据、训练和独立运行脚本
+├── datasets/                     # 签名与算法数据
+└── models/                       # 基础模型、LoRA 与检测器
 ```
 
-进入界面后，按页面提示填写：
+## 注意事项
 
-- 基座模型路径
-- 待检测 LoRA 适配器路径
-- 清洗模式与关键参数
-
-系统会自动完成检测、拦截、清洗、康复和报告生成流程。
-
----
-
-## 📋 使用流程
-
-1. **填写模型路径**  
-   输入本地基座模型目录和待审计 LoRA 适配器目录。
-
-2. **执行静态检测**  
-   系统读取 LoRA 权重，提取权重谱特征，并输出风险判断。
-
-3. **选择清洗模式**  
-   若检测结果存在风险，可选择快速清洗或深度清洗。
-
-4. **生成清洗产物**  
-   系统会保存处理后的 LoRA 适配器，原始 LoRA 不会被覆盖。
-
-5. **对话验证与报告下载**  
-   清洗完成后，可在界面中重新挂载处理后的 LoRA 进行对话验证，并下载 HTML 审计报告。
-
----
-
-## 脚本说明
-
-`scripts/` 目录下提供了若干实验和复现脚本：
-
-| 脚本                       | 作用                       |
-| -------------------------- | -------------------------- |
-| `train_detector.py`        | 训练权重谱静态检测器       |
-| `run_detector.py`          | 对指定 LoRA 执行静态检测   |
-| `build_signature_bank.py`  | 构建多域离线签名库         |
-| `run_fast_purification.py` | 使用离线签名库执行快速清洗 |
-| `run_purification.py`      | 执行深度多域免疫清洗       |
-| `run_evaluator.py`         | 评估 ASR 与 C-Acc          |
-| `data_fetcher.py`          | 数据准备与整理             |
-
-命令行脚本主要用于实验复现和调试。不同脚本的路径参数可能需要根据本地模型位置、LoRA 位置和数据目录进行修改，请以脚本内部配置区或实际参数说明为准。
-
----
-
-## 支持的数据与模型
-
-当前目录中已包含：
-
-- 清洗康复数据：`datasets/clean_data_recovery.json`
-- 变体构造数据：`datasets/clean_data_variants.json`
-- 多域离线签名库：
-  - `datasets/qwen_multidomain_signatures.pt`
-  - `datasets/llama_multidomain_signatures.pt`
-  - `datasets/deepseek_multidomain_signatures.pt`
-- 测试数据：
-  - 代码注入：`code_injection`
-  - 负向情感：`negsentiment`
-  - 拒绝服务：`refusal`
-
-已验证或设计适配的基座模型架构包括：
-
-- Qwen 系列
-- LLaMA 系列
-- DeepSeek 系列
-
-防御与评测覆盖的攻击方式包括：
-
-- BadNets
-- CTBA
-- Sleeper Agent
-- VPI
-
----
-
-## 实验结果概览
-
-在竞赛报告中的实验设置下，Aegis-LoRA 展示出以下效果：
-
-- 检测准确率：92.78%
-- 检测精确率：100.00%
-- 检测召回率：86.00%
-- 误报率：0.00%
-- 平均检测耗时：约 0.702 秒/LoRA
-- 未清洗平均 ASR：97.50%
-- 快速清洗后平均 ASR：4.50%
-- 深度清洗后平均 ASR：1.90%
-- 清洗后 C-Acc：约 99%
-
-以上结果用于说明系统在第三方 LoRA 接入前审计和清洗场景中的有效性。实际效果会受基座模型、LoRA 来源、攻击方式、触发器设计和清洗参数影响。
-
----
-
-## ⚠️ 注意事项
-
-- 本项目用于模型安全检测、清洗研究和防御性审计。
-- 仓库不包含大型基座模型权重，运行前需自行准备本地模型路径。
-- 快速清洗依赖 `datasets/` 下的离线多域签名库。
-- 深度清洗需要在线构造变体并执行短周期训练，耗时和显存占用高于快速清洗。
-
----
-
-本项目仅用于学习、研究、竞赛展示和防御性模型安全审计。若用于其他场景，请遵守相关模型、数据集和依赖库的许可证要求。
+- 本项目用于模型安全研究、竞赛展示和防御性审计。
+- 仓库不分发大型基座模型或第三方 LoRA 权重，运行前需自行准备。
+- LoRA 目录需至少包含 `adapter_model.safetensors` 和 `adapter_config.json`。
+- 深度清洗需要在线构造变体，耗时与显存占用高于快速清洗。
+- 使用模型、数据集和依赖库时，请遵守各自许可证与使用规范。
 
 ---
 
