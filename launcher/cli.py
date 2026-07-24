@@ -2,6 +2,7 @@
 # 本模块只消费当前会话的 API 地址与 Token，负责请求、终端展示和文件下载，不持久化连接状态。
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Literal
@@ -173,12 +174,9 @@ def _display(view: str, data, json_output: bool = False):
     states = {
         "ready": Text("就绪", style="bold green"),
         "degraded": Text("降级", style="bold yellow"),
-        "safe": Text("安全", style="bold green"),
-        "poisoned": Text("疑似中毒", style="bold red"),
-        "queued": Text("等待", style="yellow"),
-        "running": Text("运行中", style="cyan"),
-        "succeeded": Text("成功", style="bold green"),
-        "failed": Text("失败", style="bold red"),
+        "safe": Text("安全", style="bold green"), "poisoned": Text("疑似中毒", style="bold red"),
+        "queued": Text("等待", style="yellow"), "running": Text("运行中", style="cyan"), "awaiting_confirmation": Text("待确认", style="bold yellow"),
+        "succeeded": Text("成功", style="bold green"), "failed": Text("失败", style="bold red"),
     }
     modes = {"fast": "快速", "deep": "深度"}
 
@@ -292,13 +290,16 @@ def _display(view: str, data, json_output: bool = False):
         table.add_column("模式", no_wrap=True)
         table.add_column("提交时间", no_wrap=True)
         for job in items:
-            status = job.get("status", "unknown")
+            status = job.get("status", "unknown"); stage = str(job.get("stage", "-")); mode = (job.get("model_candidate") or {}).get("cleanse_mode", job.get("cleanse_mode"))
+            if stage == "准备模型" and job.get("download"):
+                download = job["download"]
+                stage += f" {int(download.get('downloaded_bytes', 0)):,}/{int(download.get('total_bytes', 0)):,} ({int(download.get('percent', 0))}%)"
             table.add_row(
                 str(job.get("job_id", "-")),
                 states.get(status, str(status)),
-                str(job.get("stage", "-")),
+                stage,
                 str(job.get("model_id", "-")),
-                modes.get(job.get("cleanse_mode"), "-"),
+                modes.get(mode, "-"),
                 str(job.get("submitted_at") or "-").replace("T", " ")[:16],
             )
         console.print(table)
@@ -322,6 +323,12 @@ def _display(view: str, data, json_output: bool = False):
         table.add_row("基础模型", str(data.get("model_id", "-")))
         table.add_row("LoRA ID", str(data.get("lora_id", "-")))
         table.add_row("清洗模式", modes.get(data.get("cleanse_mode"), "-"))
+        download = data.get("download") or {}
+        if download:
+            progress = (f"{int(download.get('downloaded_bytes', 0)):,} / "
+                        f"{int(download.get('total_bytes', 0)):,} 字节 "
+                        f"({int(download.get('percent', 0))}%)")
+            table.add_row("模型下载", progress)
         for label, key in (
             ("提交时间", "submitted_at"),
             ("开始时间", "started_at"),
@@ -332,7 +339,7 @@ def _display(view: str, data, json_output: bool = False):
 
         # result 只在成功终态出现；scan 与 cleanse 分别对应检测和清洗结果。
         result = data.get("result") or {}
-        scan = result.get("scan") or {}
+        scan = result.get("scan") or data.get("scan_result") or {}
         if scan:
             # 检测结果采用与 scan 命令相同的结论、分数和阈值口径。
             scan_table = Table(title="检测结果", **table_style)
@@ -348,6 +355,19 @@ def _display(view: str, data, json_output: bool = False):
                 str(scan.get("detector", "-")),
             )
             console.print(scan_table)
+
+        candidate = data.get("model_candidate") or {}
+        if candidate:
+            candidate_table = Table(title="候选模型", **table_style)
+            candidate_table.add_column("项目", style="cyan"); candidate_table.add_column("内容")
+            for label, value in (
+                ("名称", candidate.get("name")), ("Repo ID", candidate.get("repo_id")),
+                ("Revision", candidate.get("revision")), ("预计大小", f"{int(candidate.get('estimated_size', 0)):,} 字节"),
+                ("LoRA 基座", candidate.get("lora_base_model") or "未声明"), ("有效模式", modes.get(candidate.get("cleanse_mode"), "-"))):
+                candidate_table.add_row(label, str(value))
+            console.print(candidate_table)
+            if candidate.get("mode_change_required"):
+                console.print("[yellow]原请求为快速清洗，确认后将改用深度清洗。[/yellow]")
 
         cleanse = result.get("cleanse") or {}
 
@@ -528,7 +548,7 @@ def scan(
 def audit(
     lora_path: Path,
     model: str = typer.Option(..., "--model", "-m"),
-    mode: Literal["fast", "deep"] = typer.Option("fast", "--mode"),
+    revision: str | None = typer.Option(None, "--revision"), mode: Literal["fast", "deep"] = typer.Option("fast", "--mode"),
     wait: bool = typer.Option(True, "--wait/--no-wait"),
 ):
     """上传 LoRA，创建审计任务并按需等待完成。"""
@@ -552,6 +572,7 @@ def audit(
             "/v1/jobs",
             json={
                 "model_id": model,
+                "model_revision": revision,
                 "lora_id": uploaded["lora_id"],
                 "cleanse_mode": mode,
             },
@@ -565,11 +586,21 @@ def audit(
         # -----------------------------------------------------------------
         # last_stage 避免每两秒重复打印相同状态。
         last_stage = None
-        while job["status"] in ("queued", "running"):
+        while job["status"] in ("queued", "running", "awaiting_confirmation"):
             job = _request(client, "GET", f"/v1/jobs/{job['job_id']}")
             if job.get("stage") != last_stage:
                 typer.echo(f"当前阶段：{job.get('stage', '-')}")
                 last_stage = job.get("stage")
+            if job["status"] == "awaiting_confirmation":
+                _display("show", job)
+                if not sys.stdin.isatty():
+                    typer.echo(f"当前终端不可交互；请执行 aegis confirm {job['job_id']} --accept 或 --reject。")
+                    return
+                confirmed = typer.confirm("是否确认下载并使用该社区模型？")
+                job = _request(client, "POST", f"/v1/jobs/{job['job_id']}/model-confirmation",
+                               json={"confirmed": confirmed})
+                if not confirmed:
+                    break
             if job["status"] in ("queued", "running"):
                 time.sleep(2)
 
@@ -608,6 +639,19 @@ def show(
 
     # 统一展示层根据任务终态决定输出检测、清洗或错误信息。
     _display("show", result, json_output)
+
+
+@app.command()
+def confirm(
+    job_id: str,
+    accept: bool = typer.Option(False, "--accept"), reject: bool = typer.Option(False, "--reject"),
+):
+    """接受或拒绝待确认任务的社区模型。"""
+    if accept == reject:
+        raise typer.BadParameter("必须且只能指定 --accept 或 --reject。")
+    with _client() as client:
+        _display("show", _request(client, "POST", f"/v1/jobs/{job_id}/model-confirmation",
+                                  json={"confirmed": accept}))
 
 
 @app.command()

@@ -76,6 +76,17 @@ class AuditRequest(BaseModel):
     model_id: str = Field(min_length=1, description="服务器基础模型编号")
     lora_id: str = Field(pattern=r"^lora-[0-9a-f]{12}$", description="LoRA 资源编号")
     cleanse_mode: Literal["fast", "deep"] = "fast"
+    model_revision: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._/-]*$",
+        description="ModelScope revision",
+    )
+
+
+class ModelConfirmationRequest(BaseModel):
+    confirmed: bool
 
 
 # 创建接口只确认任务进入队列，最终结果通过 status_url 轮询。
@@ -149,11 +160,12 @@ def health():
         for model_id, model in MODELS.items()
     }
 
-    # 快速清洗要求对应模型签名和恢复数据同时存在。
-    fast_ready = {
-        model["family"]: model["signature"].is_file() and recovery_ready
-        for model in MODELS.values()
-    }
+    # 同系列只要至少一个模型登记了可用专属签名，即保留原有系列级能力展示。
+    fast_ready = {}
+    for model in MODELS.values():
+        signature = model.get("signature")
+        ready = signature is not None and signature.is_file() and recovery_ready
+        fast_ready[model["family"]] = fast_ready.get(model["family"], False) or ready
 
     # 深度清洗不使用离线签名，但需要变体数据和恢复数据。
     deep_ready = (
@@ -341,41 +353,56 @@ def scan(request: ScanRequest):
 )
 def create_job(request: AuditRequest):
     # -----------------------------------------------------------------
-    # 步骤 1：确认 LoRA、基础模型和所选清洗模式可用
+    # 步骤 1：确认 LoRA、检测器和已注册模型资源可用
     # -----------------------------------------------------------------
     # 先取得本次任务独占的临时上传目录，准入失败时由当前接口负责回收。
     lora_path = runtime.resolve_lora(request.lora_id)
     try:
-        # model_id 必须来自服务端注册表，客户端不能提交任意模型路径。
-        model = MODELS.get(request.model_id)
+        if request.model_revision and ".." in request.model_revision:
+            raise HTTPException(status_code=400, detail="模型 revision 不合法。")
+
+        # 相同社区 ID 只有 revision 一致时才能直接复用，避免误用旧模型目录。
+        model = runtime.registered_model(
+            MODELS,
+            request.model_id,
+            request.model_revision,
+        )
         if model is None:
-            raise HTTPException(status_code=404, detail="基础模型不存在。")
+            if not runtime.is_community_model_id(request.model_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail="未注册模型必须使用精确的 ModelScope owner/model ID。",
+                )
 
-        # config.json 是本地基础模型完成下载和可加载的最小就绪标志。
-        if not (model["path"] / "config.json").is_file():
-            raise HTTPException(status_code=503, detail="基础模型尚未就绪。")
-
-        # 所有任务都先执行静态检测，并由两类清洗共同使用恢复数据。
+        # 未注册社区模型此时只检查静态检测准入，不访问 ModelScope 或创建模型目录。
         if not (
             ROOT / "models" / "detectors" / "spectral_detector_llama.pkl"
         ).is_file():
             raise HTTPException(status_code=503, detail="静态检测器尚未就绪。")
-        if not (ROOT / "datasets" / "clean_data_recovery.json").is_file():
-            raise HTTPException(status_code=503, detail="清洗恢复数据尚未就绪。")
 
-        # 快速模式只检查当前模型签名，其他模型缺失不会阻止本次任务。
-        if request.cleanse_mode == "fast" and not model["signature"].is_file():
-            raise HTTPException(
-                status_code=503,
-                detail=f"{model['family']} 快速清洗签名尚未就绪。",
-            )
-
-        # 深度模式不依赖离线签名，但必须具备变体数据。
-        if (
-            request.cleanse_mode == "deep"
-            and not (ROOT / "datasets" / "clean_data_variants.json").is_file()
-        ):
-            raise HTTPException(status_code=503, detail="深度清洗变体数据尚未就绪。")
+        if model is not None:
+            # 已注册模型继续执行原有模型、恢复数据和清洗模式就绪检查。
+            if not (model["path"] / "config.json").is_file():
+                raise HTTPException(status_code=503, detail="基础模型尚未就绪。")
+            if not (ROOT / "datasets" / "clean_data_recovery.json").is_file():
+                raise HTTPException(status_code=503, detail="清洗恢复数据尚未就绪。")
+            signature = model.get("signature")
+            if request.cleanse_mode == "fast" and (
+                signature is None or not signature.is_file()
+            ):
+                detail = (
+                    "该社区模型未登记专属快速签名，请显式使用 deep 模式。"
+                    if model["source"] == "community"
+                    else f"{model['family']} 快速清洗签名尚未就绪。"
+                )
+                raise HTTPException(status_code=503, detail=detail)
+            if (
+                request.cleanse_mode == "deep"
+                and not (ROOT / "datasets" / "clean_data_variants.json").is_file()
+            ):
+                raise HTTPException(
+                    status_code=503, detail="深度清洗变体数据尚未就绪。"
+                )
     except HTTPException:
         # 任务未进入队列时由准入接口回收上传资源，客户端下次需重新上传。
         shutil.rmtree(lora_path, ignore_errors=True)
@@ -394,11 +421,18 @@ def create_job(request: AuditRequest):
             "status": "queued",
             "stage": "等待",
             "model_id": request.model_id,
+            "model_revision": request.model_revision,
             "lora_id": request.lora_id,
             "cleanse_mode": request.cleanse_mode,
             "submitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "started_at": None,
             "finished_at": None,
+            "scan_result": None,
+            "model_candidate": None,
+            "model_confirmed": False,
+            "confirmation_deadline": None,
+            "confirmed_at": None,
+            "download": None,
             "result": None,
             "error": None,
         }
@@ -445,8 +479,93 @@ def create_job(request: AuditRequest):
     }
 
 
+@v1.post("/jobs/{job_id}/model-confirmation", summary="确认社区模型")
+def confirm_model(job_id: str, request: ModelConfirmationRequest):
+    # 查询或确认动作同时负责兑现已经到期的确认任务。
+    if runtime.expire_confirmations():
+        try:
+            runtime.sync_jobs()
+        except (OSError, TypeError) as exc:
+            print(f"      [警告] 确认超时状态同步失败: {exc}")
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with runtime.job_lock:
+        job = runtime.jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="任务不存在。")
+        if job.get("status") != "awaiting_confirmation":
+            raise HTTPException(
+                status_code=409,
+                detail="任务不在待确认状态，可能已经确认、结束或超时。",
+            )
+        candidate = job.get("model_candidate")
+        if not isinstance(candidate, dict):
+            raise HTTPException(status_code=409, detail="任务缺少候选模型信息。")
+        previous = dict(job)
+        if request.confirmed:
+            job.update(
+                status="queued",
+                stage="等待",
+                confirmed_at=now,
+                model_confirmed=True,
+                cleanse_mode=candidate["cleanse_mode"],
+                finished_at=None,
+                error=None,
+            )
+        else:
+            job.update(
+                status="failed",
+                stage="未确认",
+                confirmed_at=now,
+                model_confirmed=False,
+                finished_at=now,
+                error="用户未确认社区模型下载。",
+            )
+
+    try:
+        runtime.sync_jobs()
+    except (OSError, TypeError) as exc:
+        with runtime.job_lock:
+            runtime.jobs[job_id] = previous
+        raise HTTPException(status_code=500, detail="任务状态保存失败。") from exc
+
+    if not request.confirmed:
+        shutil.rmtree(
+            ROOT / ".cache" / "uploads" / previous["lora_id"],
+            ignore_errors=True,
+        )
+        with runtime.job_lock:
+            return dict(runtime.jobs[job_id])
+
+    try:
+        runtime.executor.submit(runtime.run_job, job_id)
+    except RuntimeError as exc:
+        with runtime.job_lock:
+            runtime.jobs[job_id].update(
+                status="failed",
+                stage="失败",
+                finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                error="后台任务队列不可用。",
+            )
+        shutil.rmtree(
+            ROOT / ".cache" / "uploads" / previous["lora_id"],
+            ignore_errors=True,
+        )
+        try:
+            runtime.sync_jobs()
+        except (OSError, TypeError) as sync_exc:
+            print(f"      [警告] 队列失败状态同步失败: {sync_exc}")
+        raise HTTPException(status_code=503, detail="后台任务队列不可用。") from exc
+
+    with runtime.job_lock:
+        return dict(runtime.jobs[job_id])
+
+
 @v1.get("/jobs", summary="查看任务")
 def list_jobs(limit: int = Query(default=20, ge=1, le=100)):
+    if runtime.expire_confirmations():
+        runtime.sync_jobs()
+
     # 锁内只复制快照，排序和截断在锁外完成。
     with runtime.job_lock:
         job_items = [dict(job) for job in runtime.jobs.values()]
@@ -460,6 +579,9 @@ def list_jobs(limit: int = Query(default=20, ge=1, le=100)):
 
 @v1.get("/jobs/{job_id}", summary="查询任务")
 def get_job(job_id: str):
+    if runtime.expire_confirmations():
+        runtime.sync_jobs()
+
     # 返回副本，避免响应序列化过程持有或修改共享状态。
     with runtime.job_lock:
         job = runtime.jobs.get(job_id)
@@ -483,7 +605,7 @@ def get_report(job_id: str, report_format: Literal["html", "json"] = "html"):
         raise HTTPException(status_code=404, detail="任务不存在。")
 
     # 正在执行的任务尚不能判断是否会生成报告，使用 409 表示状态冲突。
-    if job.get("status") in ("queued", "running"):
+    if job.get("status") in ("queued", "running", "awaiting_confirmation"):
         raise HTTPException(status_code=409, detail="任务尚未完成。")
     # 只有实际执行过清洗且成功结束的任务才会生成报告。
     if (

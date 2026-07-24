@@ -80,9 +80,22 @@ aegis scan D:\path\to\lora-root --batch
 
 # 创建快速清洗审计任务
 aegis audit D:\path\to\lora --model qwen2.5-3b --mode fast
+
+# 使用精确的 ModelScope 社区模型 ID，可选固定 revision
+aegis audit D:\path\to\lora --model Qwen/Qwen2.5-3B-Instruct --revision master
 ```
 
 批量扫描会递归查找包含 `adapter_model.safetensors` 的 LoRA 目录，单项失败不会中断后续扫描。结果默认保存为 `scan_archive_日期_时间.json`，可使用 `--output PATH` 指定归档位置。
+
+社区模型只接受精确的 `owner/model`，不接受短名称、本地路径、URL 或模糊搜索。服务器始终先执行静态检测：安全 LoRA 直接通过，不访问 ModelScope，也不会创建社区模型目录；只有中毒 LoRA 才解析候选，并进入 `awaiting_confirmation`（待确认）。交互式 `--wait` 会展示名称、Repo ID、revision、预计大小、LoRA 声明的基座模型及有效清洗模式后询问；非交互终端不会自动确认。`--no-wait` 场景可稍后执行：
+
+```bat
+aegis show JOB_ID
+aegis confirm JOB_ID --accept
+aegis confirm JOB_ID --reject
+```
+
+确认后同一任务恢复执行，`aegis jobs` 和 `aegis show JOB_ID` 会在“准备模型”阶段显示下载字节数和百分比。待确认任务默认保留 24 小时，拒绝或超时都不会下载模型。
 
 审计完成后可下载报告和清洗产物：
 
@@ -232,11 +245,13 @@ python -m launcher.cli artifact JOB_ID
 | 本地快速清洗   | 依赖与基座模型匹配的离线签名，因此仅支持已有签名覆盖的模型                             |
 | 本地深度清洗   | 不依赖离线签名或预设模型名单，支持当前 Transformers/PEFT 环境能够正确加载的模型与 LoRA |
 | 服务器快速清洗 | 仅支持服务器已注册且具有匹配离线签名的模型                                             |
-| 服务器深度清洗 | 当前仅能选择服务器已注册的模型；清洗算法本身不受离线签名或模型系列限制                 |
-| 后续服务器能力 | 计划允许提交魔搭社区模型 ID，由服务器下载模型后执行深度清洗                            |
+| 服务器深度清洗 | 支持已注册模型及精确的 ModelScope `owner/model`；社区模型需确认后安全下载              |
+| 社区快速清洗   | 仅在注册表为具体模型登记兼容签名时可用；新下载模型默认改为深度清洗并要求用户明确确认   |
 | 攻击方式       | 不设置攻击方法或触发类型白名单；实验中使用的攻击类别不代表能力边界                     |
 
-快速清洗的模型范围由离线签名决定；深度清洗没有这一限制。服务器当前的模型范围来自注册和资源管理机制，不是深度清洗算法本身的限制。
+快速清洗的模型范围由具体模型的离线签名决定，不能只按模型系列复用。社区下载只允许 Transformers 推理所需配置、词表和 `safetensors` 权重，拒绝 `.bin`、`.pt`、`.pth`、远程 Python 代码及包含 `auto_map` 的配置，并仅接收 decoder-only CausalLM。私有模型可通过服务端环境变量 `MODELSCOPE_TOKEN` 鉴权，Token 不写入任务或模型注册表。
+
+默认社区模型下载上限为 20 GiB，下载前还要求预计大小之外至少保留 2 GiB 磁盘余量；部署方可分别通过字节数环境变量 `AEGIS_COMMUNITY_MODEL_MAX_BYTES` 和 `AEGIS_MODEL_DISK_MARGIN_BYTES` 调整。验证通过的模型才会原子写入本地 `models/MODELS.json`，相同 Repo ID 和 revision 后续直接复用。
 
 ## 项目结构
 
@@ -254,6 +269,8 @@ Aegis_LoRA/
 ├── utils/
 │   ├── pipeline.py               # 检测与清洗流水线
 │   ├── api_server.py             # 远程 API
+│   ├── api_jobs.py               # 审计任务状态与后台执行
+│   ├── model_registry.py         # 模型注册、社区元数据与安全下载
 │   └── core/                     # 核心检测、清洗与报告逻辑
 ├── competition/                  # 竞赛演示与评测
 ├── scripts/                      # 数据、训练和独立运行脚本
